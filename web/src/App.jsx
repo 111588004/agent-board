@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal } from "lucide-react";
+import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil } from "lucide-react";
 import * as api from "./api.js";
 
 const COLUMNS = [
@@ -392,6 +392,9 @@ export default function AgentBoard() {
         .detail-value:hover { background: #F4F5F7; }
         ::placeholder { color: #C7CBD4; }
         .cal-day:not(:disabled):not(.cal-day--selected):hover { background: #F4F5F7; }
+        .notes-edit-btn { opacity: 0; transition: opacity .1s ease; }
+        .notes-view:hover .notes-edit-btn, .notes-view:focus-within .notes-edit-btn { opacity: 1; }
+        .notes-view:hover { background: #FAFAFB; }
       `}</style>
 
       {/* Header */}
@@ -2007,14 +2010,24 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                 </div>
               </div>
             ) : form.notes.trim() ? (
-              <div
-                onClick={() => { setNotesDraft(form.notes); setEditingNotes(true); }}
-                className="card-btn"
-                style={{ padding: "9px 11px", borderRadius: 7, fontSize: 12.5, lineHeight: 1.5, color: "#31343B", cursor: "text" }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "#FAFAFB")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(form.notes) }}
-              />
+              <div className="notes-view" style={{ position: "relative", padding: "9px 11px", borderRadius: 7 }}>
+                <button
+                  type="button"
+                  title="Edit description"
+                  onClick={() => { setNotesDraft(form.notes); setEditingNotes(true); }}
+                  className="notes-edit-btn"
+                  style={{
+                    position: "absolute", top: 6, right: 6, background: "#fff", border: "1px solid #E4E6EB",
+                    borderRadius: 6, padding: 5, color: "#5B5F69", cursor: "pointer", display: "flex",
+                  }}
+                >
+                  <Pencil size={12} />
+                </button>
+                <div
+                  style={{ fontSize: 12.5, lineHeight: 1.5, color: "#31343B" }}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(form.notes) }}
+                />
+              </div>
             ) : (
               <button
                 onClick={() => { setNotesDraft(""); setEditingNotes(true); }}
