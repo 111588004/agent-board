@@ -24,8 +24,9 @@ From any other terminal, on any project:
 
 ```bash
 agent-board list [--project=] [--status=] [--parent=] [--workspace=]
-agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=] [--priority=] [--status=] [--workspace=]
-agent-board update <id> --status=<status> [--priority=] [--agent=] [--title=] [--worktree=] [--branch=] [--workspace=]
+agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]
+agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--workspace=]
+agent-board delete <id> [--workspace=]
 agent-board note <id> "<text>" [--agent=<name>] [--workspace=]
 
 agent-board workspace list                # marks the current one with *
@@ -33,6 +34,11 @@ agent-board workspace create <name>
 agent-board workspace use <name>          # sets the default for every command above that omits --workspace=
 agent-board workspace rename <old> <new>
 agent-board workspace delete <name>
+
+agent-board project list
+agent-board project create <name> --prefix=<prefix> [--workspace=]
+agent-board project rename <current-name> [--name=] [--prefix=] [--workspace=]
+agent-board project delete <name> [--workspace=]           # refuses if the project still has tasks
 ```
 
 The CLI is a REST client — it talks to the server above, it does not touch the database directly, and it requires the server to already be running.
@@ -41,7 +47,7 @@ The CLI is a REST client — it talks to the server above, it does not touch the
 
 ## MCP
 
-An MCP server is exposed over HTTP at `POST http://localhost:4317/mcp` (stateless `StreamableHTTPServerTransport`), with 4 tools: `list_tasks`, `create_task`, `update_task_status`, `add_task_note`. Register it with an MCP-capable client, e.g.:
+An MCP server is exposed over HTTP at `POST http://localhost:4317/mcp` (stateless `StreamableHTTPServerTransport`), with 9 tools: `list_tasks`, `create_task`, `update_task`, `delete_task`, `add_task_note`, `list_projects`, `create_project`, `rename_project`, `delete_project`. Register it with an MCP-capable client, e.g.:
 
 ```bash
 claude mcp add agent-board --url http://localhost:4317/mcp
