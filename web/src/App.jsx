@@ -1245,7 +1245,9 @@ function NewProjectDialog({ onClose, onCreate }) {
           </label>
         </div>
         <div style={{ fontSize: 11, color: "#B7BAC2", marginBottom: error ? 12 : 18 }}>
-          Shows up in ticket ids, e.g. {(prefix || suggestedPrefix || "AB")}-1 — leave blank to use the suggestion.
+          {prefix || suggestedPrefix
+            ? `Shows up in ticket ids, e.g. ${prefix || suggestedPrefix}-1 — leave blank to use the suggestion.`
+            : "No suggestion for this name — type a short prefix for ticket ids, e.g. AB."}
         </div>
 
         {error && <div style={{ color: "#E5484D", fontSize: 12, marginBottom: 10 }}>{error}</div>}
