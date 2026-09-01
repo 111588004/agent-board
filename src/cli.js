@@ -57,7 +57,9 @@ switch (cmd) {
 
   case "create": {
     if (!flags.title || !flags.project) {
-      console.error('usage: agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=<name>] [--priority=<low|med|high>] [--status=<status>] [--workspace=<name>]');
+      console.error(
+        'usage: agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=<name>] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=<path>] [--branch=<name>] [--link=<url>] [--notes="..."] [--workspace=<name>]'
+      );
       process.exit(1);
     }
     const task = await run(() =>
@@ -68,6 +70,11 @@ switch (cmd) {
         agent: flags.agent,
         priority: flags.priority,
         status: flags.status,
+        dueDate: flags["due-date"],
+        worktree: flags.worktree,
+        branch: flags.branch,
+        link: flags.link,
+        notes: flags.notes,
         workspace: flags.workspace,
       })
     );
@@ -78,15 +85,29 @@ switch (cmd) {
   case "update": {
     const id = positional[0];
     if (!id) {
-      console.error("usage: agent-board update <id> --status=<status> [--priority=] [--agent=] [--title=] [--worktree=] [--branch=] [--workspace=<name>]");
+      console.error(
+        "usage: agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=<name>] [--title=] [--worktree=] [--branch=] [--link=<url>] [--due-date=<YYYY-MM-DD>] [--workspace=<name>]"
+      );
       process.exit(1);
     }
     const body = { workspace: flags.workspace };
-    for (const key of ["status", "priority", "agent", "title", "worktree", "branch"]) {
+    for (const key of ["status", "priority", "agent", "title", "worktree", "branch", "link"]) {
       if (flags[key] !== undefined) body[key] = flags[key];
     }
+    if (flags["due-date"] !== undefined) body.dueDate = flags["due-date"];
     const task = await run(() => client.updateTask(id, body));
     console.log(`updated ${task.id}`);
+    break;
+  }
+
+  case "delete": {
+    const id = positional[0];
+    if (!id) {
+      console.error("usage: agent-board delete <id> [--workspace=<name>]");
+      process.exit(1);
+    }
+    await run(() => client.deleteTask(id, { workspace: flags.workspace }));
+    console.log(`deleted ${id}`);
     break;
   }
 
@@ -201,6 +222,6 @@ switch (cmd) {
   }
 
   default:
-    console.error("usage: agent-board <list|create|update|note|workspace|project> ...");
+    console.error("usage: agent-board <list|create|update|delete|note|workspace|project> ...");
     process.exit(1);
 }

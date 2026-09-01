@@ -46,15 +46,23 @@ export function createMcpServer() {
       inputSchema: {
         title: z.string(),
         project: z.string(),
-        agent: z.string().optional().describe("Your agent id, e.g. claude"),
-        priority: z.enum(PRIORITY).optional(),
+        agent: z.string().optional().describe("Your agent id, e.g. claude, codex, opencode, gemini, pi — omit to leave unassigned"),
+        priority: z.enum(PRIORITY).optional().describe("Defaults to \"med\""),
+        status: z.enum(STATUS).optional().describe("Defaults to \"backlog\""),
         parentId: z.string().optional().describe("Ticket id of the parent task, to create this as a subtask"),
+        dueDate: z.string().optional().describe("ISO date, e.g. 2026-03-05"),
+        worktree: z.string().optional().describe("Filesystem path of the git worktree this task is being worked in"),
+        branch: z.string().optional().describe("Git branch name"),
+        link: z.string().optional().describe("Repo / PR / issue URL"),
+        notes: z.string().optional().describe("Initial description, markdown — headings, bold, `code`, bullet/numbered lists, [links](url), ![images](url) all render"),
         workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
-    async ({ title, project, agent, priority, parentId, workspace }) => {
+    async ({ title, project, agent, priority, status, parentId, dueDate, worktree, branch, link, notes, workspace }) => {
       try {
-        return json(await client.createTask({ title, project, agent, priority, parentId, workspace }));
+        return json(
+          await client.createTask({ title, project, agent, priority, status, parentId, dueDate, worktree, branch, link, notes, workspace })
+        );
       } catch (e) {
         return toolError(e);
       }
@@ -62,18 +70,27 @@ export function createMcpServer() {
   );
 
   server.registerTool(
-    "update_task_status",
+    "update_task",
     {
-      description: "Change a task's status.",
+      description: "Update one or more fields on an existing task. Only the fields you pass are changed — omit the rest. Use add_task_note for appending a note instead of overwriting the description.",
       inputSchema: {
         taskId: z.string(),
-        status: z.enum(STATUS),
+        status: z.enum(STATUS).optional(),
+        priority: z.enum(PRIORITY).optional(),
+        agent: z.string().optional().describe("Your agent id, e.g. claude, codex, opencode, gemini, pi"),
+        title: z.string().optional(),
+        worktree: z.string().optional().describe("Filesystem path of the git worktree this task is being worked in"),
+        branch: z.string().optional().describe("Git branch name"),
+        link: z.string().optional().describe("Repo / PR / issue URL"),
+        dueDate: z.string().optional().describe("ISO date, e.g. 2026-03-05"),
         workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
-    async ({ taskId, status, workspace }) => {
+    async ({ taskId, status, priority, agent, title, worktree, branch, link, dueDate, workspace }) => {
       try {
-        return json(await client.updateTask(taskId, { status, workspace }));
+        return json(
+          await client.updateTask(taskId, { status, priority, agent, title, worktree, branch, link, dueDate, workspace })
+        );
       } catch (e) {
         return toolError(e);
       }
@@ -94,6 +111,25 @@ export function createMcpServer() {
     async ({ taskId, note, agent, workspace }) => {
       try {
         return json(await client.updateTask(taskId, { note, agent, workspace }));
+      } catch (e) {
+        return toolError(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "delete_task",
+    {
+      description: "Permanently delete a task. This can't be undone — prefer moving it to \"done\" via update_task unless it genuinely shouldn't exist (e.g. created by mistake).",
+      inputSchema: {
+        taskId: z.string(),
+        workspace: z.string().optional().describe(WORKSPACE_DESC),
+      },
+    },
+    async ({ taskId, workspace }) => {
+      try {
+        await client.deleteTask(taskId, { workspace });
+        return json({ deleted: taskId });
       } catch (e) {
         return toolError(e);
       }

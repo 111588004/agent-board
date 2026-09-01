@@ -23,8 +23,8 @@ cd web && npm run dev      # Vite dev server on :5173, proxies /api to :4316
 cd web && npm run build    # production build → web/dist, served by the server above
 
 agent-board list [--project=] [--status=] [--parent=] [--workspace=]
-agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=] [--priority=] [--status=] [--workspace=]
-agent-board update <id> --status=<status> [--priority=] [--agent=] [--title=] [--worktree=] [--branch=] [--workspace=]
+agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]
+agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--workspace=]
 agent-board note <id> "<text>" [--agent=<name>] [--workspace=]   # appends, never overwrites
 
 agent-board workspace list                  # marks the current one with *
@@ -71,8 +71,8 @@ src/
   routes/tasks.js   GET/POST /tasks, PATCH/DELETE /tasks/:id — reads req.db, not a module-level export
   routes/projects.js GET/POST /projects — same req.db pattern
   client.js         shared REST client — fetch wrappers used by BOTH cli.js and mcp/tools.js
-  cli.js            list/create/update/note/workspace — a REST client, not a DB client
-  mcp/tools.js      8 MCP tools (list_tasks/create_task/update_task_status/add_task_note,
+  cli.js            list/create/update/delete/note/workspace — a REST client, not a DB client
+  mcp/tools.js      9 MCP tools (list_tasks/create_task/update_task/delete_task/add_task_note,
                     list_projects/create_project/rename_project/delete_project) — also just REST clients
   server.js         Express wiring: workspace-resolving middleware + REST routes + POST /mcp
                     (stateless StreamableHTTPServerTransport) + static, port 4317
@@ -112,4 +112,4 @@ This is the actual point of the tool: a real project adds a short section to its
 - **Registering the MCP server with a real client**: not done. `claude mcp add agent-board --url http://localhost:4317/mcp` (per `agent-board-handoff.md` §6) will do it for Claude Code; the same pattern applies to Codex/Gemini CLI. Not run yet since it's a persistent config change on whichever machine runs it — do it yourself when ready rather than having an agent run it for you.
 - **`agent-board.jsx`** (repo root): the original single-file prototype, now superseded by `web/src/App.jsx`. Left in place rather than deleted so this file's history stays intact; safe to remove once you're confident nothing still references it.
 - **`agent-board open <id>`** (jump to a task's worktree from the CLI): explicitly out of scope per the handoff doc, not started.
-- **MCP tools for listing/creating/deleting workspaces**: not built — an agent doesn't need to invent or destroy a workspace at runtime, that's a human/CLI decision about which board a project's `CLAUDE.md` points at. The 4 task MCP tools do accept an optional `workspace` param to *use* one, just not to manage the set of them.
+- **MCP tools for listing/creating/deleting workspaces**: not built — an agent doesn't need to invent or destroy a workspace at runtime, that's a human/CLI decision about which board a project's `CLAUDE.md` points at. The 5 task MCP tools do accept an optional `workspace` param to *use* one, just not to manage the set of them.

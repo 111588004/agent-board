@@ -82,6 +82,10 @@ export function updateTask(id, { workspace, ...patch } = {}) {
   return apiRequest("PATCH", `${workspacePath(workspace)}/tasks/${id}`, patch);
 }
 
+export function deleteTask(id, { workspace } = {}) {
+  return apiRequest("DELETE", `${workspacePath(workspace)}/tasks/${id}`);
+}
+
 export function listProjects({ workspace } = {}) {
   return apiRequest("GET", `${workspacePath(workspace)}/projects`);
 }
