@@ -156,7 +156,51 @@ switch (cmd) {
     process.exit(1);
   }
 
+  case "project": {
+    const sub = positional[0];
+    if (sub === "list") {
+      const projects = await run(() => client.listProjects({ workspace: flags.workspace }));
+      if (!projects.length) console.log("(no projects)");
+      for (const p of projects) console.log(`${p.prefix}  ${p.name}`);
+      break;
+    }
+    if (sub === "create") {
+      const name = positional[1];
+      if (!name || !flags.prefix) {
+        console.error("usage: agent-board project create <name> --prefix=<prefix> [--workspace=<name>]");
+        process.exit(1);
+      }
+      await run(() => client.createProject({ name, prefix: flags.prefix, workspace: flags.workspace }));
+      console.log(`created project ${name} (${flags.prefix})`);
+      break;
+    }
+    if (sub === "rename") {
+      const currentName = positional[1];
+      if (!currentName || (!flags.name && !flags.prefix)) {
+        console.error("usage: agent-board project rename <current-name> [--name=<new-name>] [--prefix=<new-prefix>] [--workspace=<name>]");
+        process.exit(1);
+      }
+      const updated = await run(() =>
+        client.renameProject(currentName, { name: flags.name, prefix: flags.prefix, workspace: flags.workspace })
+      );
+      console.log(`updated project ${currentName} -> ${updated.name} (${updated.prefix})`);
+      break;
+    }
+    if (sub === "delete") {
+      const name = positional[1];
+      if (!name) {
+        console.error("usage: agent-board project delete <name> [--workspace=<name>]");
+        process.exit(1);
+      }
+      await run(() => client.deleteProject(name, { workspace: flags.workspace }));
+      console.log(`deleted project ${name}`);
+      break;
+    }
+    console.error("usage: agent-board project <list|create|rename|delete> ...");
+    process.exit(1);
+  }
+
   default:
-    console.error("usage: agent-board <list|create|update|note|workspace> ...");
+    console.error("usage: agent-board <list|create|update|note|workspace|project> ...");
     process.exit(1);
 }

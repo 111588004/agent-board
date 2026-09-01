@@ -32,6 +32,11 @@ agent-board workspace create <name>         # any name is fine — filesystem-sa
 agent-board workspace use <name>            # sets the default for every command below that omits --workspace=
 agent-board workspace rename <old> <new>    # updates current-workspace too, if you renamed the one you're on
 agent-board workspace delete <name>         # can't delete "default"; resets current-workspace to "default" if you deleted it
+
+agent-board project list                                                       # prefix + name
+agent-board project create <name> --prefix=<prefix> [--workspace=]             # must exist before tasks can target it
+agent-board project rename <current-name> [--name=] [--prefix=] [--workspace=] # cascades to every task's project/projectPrefix
+agent-board project delete <name> [--workspace=]                              # refuses if the project still has tasks
 ```
 
 Any of the four task verbs above requires the server to already be running (`agent-board` with no args, in another terminal) — it does not auto-spawn one, deliberately, to avoid orphaned/duplicate server processes; it fails with a clear connection error instead. This works from any directory — the CLI is a REST client.
@@ -65,7 +70,8 @@ src/
   routes/projects.js GET/POST /projects — same req.db pattern
   client.js         shared REST client — fetch wrappers used by BOTH cli.js and mcp/tools.js
   cli.js            list/create/update/note/workspace — a REST client, not a DB client
-  mcp/tools.js      4 MCP tools (list_tasks/create_task/update_task_status/add_task_note) — also just REST clients
+  mcp/tools.js      8 MCP tools (list_tasks/create_task/update_task_status/add_task_note,
+                    list_projects/create_project/rename_project/delete_project) — also just REST clients
   server.js         Express wiring: workspace-resolving middleware + REST routes + POST /mcp
                     (stateless StreamableHTTPServerTransport) + static, port 4317
 web/

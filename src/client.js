@@ -81,3 +81,19 @@ export function createTask({ workspace, ...task }) {
 export function updateTask(id, { workspace, ...patch } = {}) {
   return apiRequest("PATCH", `${workspacePath(workspace)}/tasks/${id}`, patch);
 }
+
+export function listProjects({ workspace } = {}) {
+  return apiRequest("GET", `${workspacePath(workspace)}/projects`);
+}
+
+export function createProject({ name, prefix, workspace }) {
+  return apiRequest("POST", `${workspacePath(workspace)}/projects`, { name, prefix });
+}
+
+export function renameProject(currentName, { name, prefix, workspace } = {}) {
+  return apiRequest("PATCH", `${workspacePath(workspace)}/projects/${encodeURIComponent(currentName)}`, { name, prefix });
+}
+
+export function deleteProject(name, { workspace } = {}) {
+  return apiRequest("DELETE", `${workspacePath(workspace)}/projects/${encodeURIComponent(name)}`);
+}

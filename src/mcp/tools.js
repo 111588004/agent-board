@@ -100,5 +100,80 @@ export function createMcpServer() {
     }
   );
 
+  server.registerTool(
+    "list_projects",
+    {
+      description: "List projects on the board, with their ticket-id prefixes.",
+      inputSchema: {
+        workspace: z.string().optional().describe(WORKSPACE_DESC),
+      },
+    },
+    async ({ workspace }) => {
+      try {
+        return json(await client.listProjects({ workspace }));
+      } catch (e) {
+        return toolError(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "create_project",
+    {
+      description: "Create a new project. Required before tasks can be created for it.",
+      inputSchema: {
+        name: z.string(),
+        prefix: z.string().describe("Ticket-id prefix, e.g. \"AB\" for tickets like AB-1"),
+        workspace: z.string().optional().describe(WORKSPACE_DESC),
+      },
+    },
+    async ({ name, prefix, workspace }) => {
+      try {
+        return json(await client.createProject({ name, prefix, workspace }));
+      } catch (e) {
+        return toolError(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "rename_project",
+    {
+      description: "Rename a project and/or change its ticket-id prefix. Existing tasks are updated to match.",
+      inputSchema: {
+        currentName: z.string(),
+        name: z.string().optional().describe("New name — omit to leave unchanged"),
+        prefix: z.string().optional().describe("New ticket-id prefix — omit to leave unchanged"),
+        workspace: z.string().optional().describe(WORKSPACE_DESC),
+      },
+    },
+    async ({ currentName, name, prefix, workspace }) => {
+      try {
+        return json(await client.renameProject(currentName, { name, prefix, workspace }));
+      } catch (e) {
+        return toolError(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "delete_project",
+    {
+      description: "Delete a project. Fails if it still has tasks — move or delete those first.",
+      inputSchema: {
+        name: z.string(),
+        workspace: z.string().optional().describe(WORKSPACE_DESC),
+      },
+    },
+    async ({ name, workspace }) => {
+      try {
+        await client.deleteProject(name, { workspace });
+        return json({ deleted: name });
+      } catch (e) {
+        return toolError(e);
+      }
+    }
+  );
+
   return server;
 }
