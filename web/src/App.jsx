@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, Code2, Link2, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Settings } from "lucide-react";
+import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, Code2, Link2, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal } from "lucide-react";
 import * as api from "./api.js";
 
 const COLUMNS = [
@@ -98,6 +98,7 @@ export default function AgentBoard() {
   const [projectFilter, setProjectFilter] = useState("all");
   const [agentFilter, setAgentFilter] = useState("all");
   const [modalCard, setModalCard] = useState(null); // null = closed, {} = new
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [dragId, setDragId] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null);
   const [view, setView] = useState("board"); // "board" | "list"
@@ -467,16 +468,11 @@ export default function AgentBoard() {
           ))}
         </div>
 
-        <FilterSelect
-          light
-          icon={<Filter size={13} />}
+        <ProjectFilterSelect
           value={projectFilter}
-          onChange={setProjectFilter}
-          options={[{ id: "all", label: "All projects" }, ...projectNames.map((p) => ({ id: p, label: p }))]}
-        />
-        <ProjectManager
           projects={projects}
-          onCreate={createProject}
+          onChange={setProjectFilter}
+          onRequestCreate={() => setNewProjectOpen(true)}
           onRename={renameProjectByName}
           onDelete={deleteProjectByName}
         />
@@ -663,6 +659,10 @@ export default function AgentBoard() {
           onCreateProject={createProject}
           onOpenSubtask={(status, parentId) => openNew(status, parentId)}
         />
+      )}
+
+      {newProjectOpen && (
+        <NewProjectDialog onClose={() => setNewProjectOpen(false)} onCreate={createProject} />
       )}
     </div>
   );
@@ -971,16 +971,18 @@ function WorkspaceSwitcher({ workspace, workspaces, onSwitch, onRename, onDelete
   );
 }
 
-// Same hover-reveal row-actions pattern as WorkspaceSwitcher — a plain list
-// panel rather than a select, since this manages the set of projects, not a
-// current selection (that's what the "All projects" FilterSelect is for).
-function ProjectManager({ projects, onCreate, onRename, onDelete }) {
+// The "All projects" filter, folded together with project management —
+// same hover-reveal row-actions pattern as WorkspaceSwitcher, so renaming or
+// deleting a project happens right where you'd already look to filter by one.
+function ProjectFilterSelect({ value, projects, onChange, onRequestCreate, onRename, onDelete }) {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
   const [hoveredRow, setHoveredRow] = useState(null);
   const [actionsFor, setActionsFor] = useState(null);
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
+
+  const label = value === "all" ? "All projects" : value;
 
   function openMenu() {
     const rect = triggerRef.current.getBoundingClientRect();
@@ -1016,36 +1018,28 @@ function ProjectManager({ projects, onCreate, onRename, onDelete }) {
     };
   }, [open]);
 
-  async function createNew() {
-    const name = window.prompt("New project name");
-    if (!name) return;
-    const prefix = window.prompt(`Ticket prefix for "${name}" (e.g. AB)`);
-    if (!prefix) return;
-    try {
-      await onCreate(name, prefix);
-    } catch (e) {
-      window.alert(e.message);
-    }
-  }
-
   return (
     <span ref={triggerRef} style={{ display: "inline-block" }}>
       <button
         type="button"
-        title="Manage projects"
         onClick={(e) => { e.stopPropagation(); open ? closeAll() : openMenu(); }}
         style={{
           display: "flex",
           alignItems: "center",
-          background: "none",
+          gap: 6,
+          background: "#fff",
           border: "1px solid #E4E6EB",
           borderRadius: 7,
-          padding: 6,
-          color: "#5B5F69",
+          padding: "6px 10px",
+          color: "#42454D",
+          fontSize: 12.5,
           cursor: "pointer",
+          fontFamily: "inherit",
         }}
       >
-        <Settings size={14} />
+        <Filter size={13} />
+        {label}
+        <ChevronDown size={12} color="#8B8D98" />
       </button>
       {open && menuPos && createPortal(
         <div
@@ -1064,11 +1058,27 @@ function ProjectManager({ projects, onCreate, onRename, onDelete }) {
             minWidth: 190,
           }}
         >
+          <div
+            onClick={() => { onChange("all"); closeAll(); }}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 5,
+              fontSize: 12.5,
+              fontWeight: value === "all" ? 600 : 400,
+              color: "#1D2027",
+              background: value === "all" ? "#F0F4FF" : "transparent",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            All projects
+          </div>
           {projects.map((p) => (
             <div
               key={p.name}
               onMouseEnter={() => setHoveredRow(p.name)}
               onMouseLeave={() => setHoveredRow((h) => (h === p.name ? null : h))}
+              onClick={() => { onChange(p.name); closeAll(); }}
               style={{
                 position: "relative",
                 display: "flex",
@@ -1078,11 +1088,13 @@ function ProjectManager({ projects, onCreate, onRename, onDelete }) {
                 padding: "6px 4px 6px 10px",
                 borderRadius: 5,
                 fontSize: 12.5,
+                fontWeight: p.name === value ? 600 : 400,
                 color: "#1D2027",
+                background: p.name === value ? "#F0F4FF" : "transparent",
+                cursor: "pointer",
                 whiteSpace: "nowrap",
               }}
             >
-              <span className="mono" style={{ color: "#8B8D98", marginRight: 4 }}>{p.prefix}</span>
               <span style={{ flex: 1 }}>{p.name}</span>
               {(hoveredRow === p.name || actionsFor === p.name) && (
                 <button
@@ -1130,7 +1142,7 @@ function ProjectManager({ projects, onCreate, onRename, onDelete }) {
             </div>
           ))}
           <div
-            onClick={() => { createNew(); closeAll(); }}
+            onClick={() => { onRequestCreate(); closeAll(); }}
             style={{ padding: "6px 10px", borderRadius: 5, fontSize: 12.5, color: "#1D2027", cursor: "pointer", whiteSpace: "nowrap" }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "#F4F5F7")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
@@ -1141,6 +1153,121 @@ function ProjectManager({ projects, onCreate, onRename, onDelete }) {
         document.body
       )}
     </span>
+  );
+}
+
+// Centered dialog (unlike the drawer's no-dim split view — this is a small,
+// focused form, not a persistent editing surface) with the name/prefix
+// fields side by side so picking a project's ticket-id prefix isn't a
+// separate prompt() step.
+function NewProjectDialog({ onClose, onCreate }) {
+  const [name, setName] = useState("");
+  const [prefix, setPrefix] = useState("");
+  const [prefixTouched, setPrefixTouched] = useState(false);
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const nameRef = useRef(null);
+
+  useEffect(() => {
+    nameRef.current?.focus();
+  }, []);
+
+  // suggests a prefix from the name's initials (e.g. "Agent Board" -> "AB")
+  // until the user edits the prefix field themselves, then leaves it alone.
+  function handleNameChange(v) {
+    setName(v);
+    if (!prefixTouched) {
+      const initials = v
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((w) => w[0])
+        .join("")
+        .slice(0, 4)
+        .toUpperCase();
+      setPrefix(initials);
+    }
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!name.trim() || !prefix.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onCreate(name.trim(), prefix.trim().toUpperCase());
+      onClose();
+    } catch (err) {
+      setError(err.message);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(15,16,20,0.32)" }} />
+      <form
+        onSubmit={submit}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "relative",
+          background: "#fff",
+          borderRadius: 10,
+          boxShadow: "0 16px 48px rgba(9,10,12,0.28)",
+          width: 420,
+          maxWidth: "92vw",
+          padding: 20,
+        }}
+      >
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>New project</div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 96px", gap: 10, marginBottom: error ? 8 : 18 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#8B8D98" }}>Name</span>
+            <input
+              ref={nameRef}
+              value={name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="Agent Board"
+              style={{ border: "1px solid #E4E6EB", borderRadius: 6, padding: "7px 8px", fontSize: 13, fontFamily: "inherit" }}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#8B8D98" }}>Prefix</span>
+            <input
+              className="mono"
+              value={prefix}
+              onChange={(e) => { setPrefixTouched(true); setPrefix(e.target.value.toUpperCase()); }}
+              placeholder="AB"
+              maxLength={6}
+              style={{ border: "1px solid #E4E6EB", borderRadius: 6, padding: "7px 8px", fontSize: 13, fontFamily: "inherit", textTransform: "uppercase" }}
+            />
+          </label>
+        </div>
+
+        {error && <div style={{ color: "#E5484D", fontSize: 12, marginBottom: 10 }}>{error}</div>}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: "none", border: "1px solid #E4E6EB", borderRadius: 7, padding: "7px 14px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!name.trim() || !prefix.trim() || saving}
+            style={{
+              background: "#1D2027", color: "#fff", border: "none", borderRadius: 7, padding: "7px 14px",
+              fontSize: 12.5, cursor: "pointer", fontFamily: "inherit",
+              opacity: !name.trim() || !prefix.trim() || saving ? 0.5 : 1,
+            }}
+          >
+            Create
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 

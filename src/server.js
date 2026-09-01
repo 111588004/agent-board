@@ -113,7 +113,10 @@ app.delete("/mcp", (req, res) => {
 // serves the built web UI (npm run build in web/) — 404s harmlessly until built
 app.use(express.static(path.join(__dirname, "../web/dist")));
 
-const PORT = process.env.PORT || 4317;
+// dev and npm default to different ports so both can run at once and be
+// compared directly — no more "stop one to test the other." PORT still wins
+// if set explicitly.
+const PORT = process.env.PORT || (meta.source === "dev" ? 4316 : 4317);
 app.listen(PORT, () => {
   console.log(`agent-board v${meta.version} (${meta.source}) listening on http://localhost:${PORT}`);
   console.log(`  root: ${meta.root}`);

@@ -63,12 +63,14 @@ cd agent-board
 npm install
 cd web && npm install && npm run build && cd ..   # builds the web UI into web/dist, served by the server
 
-npm start          # runs THIS checkout on :4317 — node src/server.js
+npm start          # runs THIS checkout on :4316 — node src/server.js
 ```
 
 **Do not `npm link` this repo.** The global `agent-board` command is meant to always be the published npm package — every other project on your machine, and every agent working in them, relies on that being predictable. `npm link` and the real install fight over the same global bin (whichever ran most recently silently wins), which is exactly the kind of ambiguity that makes "is this pointed at my dev changes or the real thing" impossible to answer with confidence. Run this checkout explicitly instead (`npm start`, or `node src/server.js` / `node src/cli.js ...` from inside the repo) — it never touches the global command.
 
-**Pointing an agent at your dev checkout instead of the published version** (e.g. to test a change before publishing): start this checkout with `npm start` in one terminal (it takes over `:4317`, same as the real thing — stop any other `agent-board` instance first, or run it on a different port with `PORT=4321 npm start`). Then in the target project's `CLAUDE.md`/`AGENTS.md`, prefix every `agent-board` command with `AGENT_BOARD_URL=http://localhost:<port>` so the agent's calls land on your dev server instead of the real one — e.g. `AGENT_BOARD_URL=http://localhost:4321 agent-board list --project=...`. Revert that once you're done, or the agent stays pointed at a server that isn't running.
+**Dev defaults to `:4316`, the npm-installed `agent-board` defaults to `:4317`** — different ports on purpose, so both can run at the same time and you can compare them directly instead of stopping one to test the other. `PORT=<port> npm start` overrides it if you need a third one.
+
+**Pointing an agent at your dev checkout instead of the published version** (e.g. to test a change before publishing): start this checkout with `npm start` in one terminal (`:4316`). Then in the target project's `CLAUDE.md`/`AGENTS.md`, prefix every `agent-board` command with `AGENT_BOARD_URL=http://localhost:4316` so the agent's calls land on your dev server instead of the real one — e.g. `AGENT_BOARD_URL=http://localhost:4316 agent-board list --project=...`. Revert that once you're done, or the agent stays pointed at a server that isn't running.
 
 If you're ever unsure which one a running server actually is, `curl localhost:<port>/api/meta` reports `{version, source: "dev"|"npm", root, pid}` — also printed at startup.
 

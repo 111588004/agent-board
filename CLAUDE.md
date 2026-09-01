@@ -13,13 +13,13 @@ The backend (Express + SQLite REST API), frontend (Vite/React, wired to the real
 ```bash
 npm install                # backend deps (express, better-sqlite3)
 
-npm start                   # runs THIS checkout — no args, starts the REST API + static server on :4317
+npm start                   # runs THIS checkout — no args, starts the REST API + static server on :4316
                              # (equivalent: node src/server.js / node src/cli.js with no args, from this directory)
 
-agent-board                 # the GLOBAL command — always the published npm package, never this checkout (see below)
+agent-board                 # the GLOBAL command — always the published npm package, listening on :4317, never this checkout (see below)
 
 cd web && npm install      # frontend deps (first time only)
-cd web && npm run dev      # Vite dev server on :5173, proxies /api to :4317
+cd web && npm run dev      # Vite dev server on :5173, proxies /api to :4316
 cd web && npm run build    # production build → web/dist, served by the server above
 
 agent-board list [--project=] [--status=] [--parent=] [--workspace=]
@@ -42,6 +42,8 @@ agent-board project delete <name> [--workspace=]                              # 
 Any of the four task verbs above requires the server to already be running (`agent-board` with no args, in another terminal) — it does not auto-spawn one, deliberately, to avoid orphaned/duplicate server processes; it fails with a clear connection error instead. This works from any directory — the CLI is a REST client.
 
 **Workspaces** are fully isolated boards (own projects + tasks, own SQLite file) — for separating contexts like personal vs. a client's work, not for multi-user/team access. Every task verb resolves which workspace to hit in this order: explicit `--workspace=name` > `AGENT_BOARD_WORKSPACE` env var > `~/.agent-board/current-workspace` (written by `workspace use`) > `"default"`. A fresh install with zero workspace commands ever run just uses `"default"` transparently — workspaces are opt-in, nothing breaks if you never think about them. The web UI has its own switcher in the header (persists to `localStorage`, also readable/shareable via `?workspace=<name>` in the URL) — it's independent of the CLI's `current-workspace` file, so the browser and your terminal can be pointed at different workspaces at the same time.
+
+**Dev and npm default to different ports on purpose** (`server.js` picks 4316 when it detects it's running from a dev checkout, 4317 when running from the npm-installed copy — see the `source` field on `/api/meta`) so both can be running at the same time and compared directly, instead of having to stop one to test the other. `PORT` still overrides either.
 
 **Running a second, isolated *server instance*** (a distinct concern from workspaces — this is for testing code changes against a completely separate port/process, e.g. verifying npm-published vs. dev code side by side, not for organizing real boards): both the port and the DB root are overridable via env vars, read by `server.js`/`db.js` (server-side) and `client.js` (CLI/MCP):
 
@@ -111,4 +113,3 @@ This is the actual point of the tool: a real project adds a short section to its
 - **`agent-board.jsx`** (repo root): the original single-file prototype, now superseded by `web/src/App.jsx`. Left in place rather than deleted so this file's history stays intact; safe to remove once you're confident nothing still references it.
 - **`agent-board open <id>`** (jump to a task's worktree from the CLI): explicitly out of scope per the handoff doc, not started.
 - **MCP tools for listing/creating/deleting workspaces**: not built — an agent doesn't need to invent or destroy a workspace at runtime, that's a human/CLI decision about which board a project's `CLAUDE.md` points at. The 4 task MCP tools do accept an optional `workspace` param to *use* one, just not to manage the set of them.
-- **Web UI project management**: not built. `agent-board project list|create|rename|delete` (CLI) and the matching `list_projects`/`create_project`/`rename_project`/`delete_project` MCP tools exist (v0.2.1), but the web UI still only supports creating a project inline while creating a task — no rename/delete affordance in the browser yet. Deferred rather than skipped; add it modeled on `WorkspaceSwitcher`'s hover-reveal row actions if/when needed.
