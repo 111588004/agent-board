@@ -4,6 +4,7 @@ import * as client from "../client.js";
 
 const STATUS = ["backlog", "in_progress", "review", "done"];
 const PRIORITY = ["low", "med", "high"];
+const WORKSPACE_DESC = "Board workspace to use — omit to use the CLI's current workspace (agent-board workspace use) or \"default\"";
 
 function json(value) {
   return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
@@ -26,11 +27,12 @@ export function createMcpServer() {
         project: z.string().optional().describe("Filter to one project's tasks"),
         status: z.enum(STATUS).optional(),
         parentId: z.string().optional().describe("Ticket id of a parent task, to list its subtasks"),
+        workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
-    async ({ project, status, parentId }) => {
+    async ({ project, status, parentId, workspace }) => {
       try {
-        return json(await client.listTasks({ project, status, parentId }));
+        return json(await client.listTasks({ project, status, parentId, workspace }));
       } catch (e) {
         return toolError(e);
       }
@@ -47,11 +49,12 @@ export function createMcpServer() {
         agent: z.string().optional().describe("Your agent id, e.g. claude"),
         priority: z.enum(PRIORITY).optional(),
         parentId: z.string().optional().describe("Ticket id of the parent task, to create this as a subtask"),
+        workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
-    async ({ title, project, agent, priority, parentId }) => {
+    async ({ title, project, agent, priority, parentId, workspace }) => {
       try {
-        return json(await client.createTask({ title, project, agent, priority, parentId }));
+        return json(await client.createTask({ title, project, agent, priority, parentId, workspace }));
       } catch (e) {
         return toolError(e);
       }
@@ -65,11 +68,12 @@ export function createMcpServer() {
       inputSchema: {
         taskId: z.string(),
         status: z.enum(STATUS),
+        workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
-    async ({ taskId, status }) => {
+    async ({ taskId, status, workspace }) => {
       try {
-        return json(await client.updateTask(taskId, { status }));
+        return json(await client.updateTask(taskId, { status, workspace }));
       } catch (e) {
         return toolError(e);
       }
@@ -84,11 +88,12 @@ export function createMcpServer() {
         taskId: z.string(),
         note: z.string(),
         agent: z.string().optional().describe("Your agent id, e.g. claude"),
+        workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
-    async ({ taskId, note, agent }) => {
+    async ({ taskId, note, agent, workspace }) => {
       try {
-        return json(await client.updateTask(taskId, { note, agent }));
+        return json(await client.updateTask(taskId, { note, agent, workspace }));
       } catch (e) {
         return toolError(e);
       }
