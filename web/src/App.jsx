@@ -27,7 +27,11 @@ const PRIORITIES = [
   { id: "high", label: "High", color: "#E5484D" },
 ];
 
+const UNASSIGNED_AGENT = { id: null, label: "Unassigned", color: "#8B8D98" };
+const AGENT_OPTIONS = [UNASSIGNED_AGENT, ...AGENTS];
+
 function agentMeta(id) {
+  if (!id) return UNASSIGNED_AGENT;
   return AGENTS.find((a) => a.id === id) || AGENTS[AGENTS.length - 1];
 }
 function priorityMeta(id) {
@@ -232,9 +236,12 @@ export default function AgentBoard() {
     setModalCard({
       id: null,
       title: "",
-      project: (parent && parent.project) || projectNames[0] || "",
+      // don't silently pick an arbitrary project — inherit the parent's, or
+      // the board's active project filter if one is set, otherwise leave it
+      // blank so the Create button stays disabled until the user picks one
+      project: (parent && parent.project) || (projectFilter !== "all" ? projectFilter : ""),
       parentId: parentId || null,
-      agent: "claude",
+      agent: null, // matches the "unassigned until claimed" semantics documented in CLAUDE.md — not a silent default owner
       priority: "med",
       status: status || "backlog",
       notes: "",
@@ -360,7 +367,7 @@ export default function AgentBoard() {
         .drawer-collapse summary { cursor: pointer; list-style: none; }
         .drawer-collapse summary::-webkit-details-marker { display: none; }
         .detail-value:hover { background: #F4F5F7; }
-        .new-project-prefix::placeholder { color: #C7CBD4; }
+        ::placeholder { color: #C7CBD4; }
         .cal-day:not(:disabled):not(.cal-day--selected):hover { background: #F4F5F7; }
       `}</style>
 
@@ -779,7 +786,7 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left" 
         >
           {options.map((o) => (
             <div
-              key={o.id}
+              key={o.id ?? "__none__"}
               onClick={() => { onChange(o.id); setOpen(false); }}
               style={{
                 padding: "6px 10px",
@@ -1580,7 +1587,7 @@ function ListView({ tasks, sortKey, sortDir, onSort, onOpen, projects, onFieldCh
                   <ChipSelect
                     value={t.agent}
                     onChange={(v) => onFieldChange(t.id, "agent", v)}
-                    options={AGENTS}
+                    options={AGENT_OPTIONS}
                     colorFor={(v) => agentMeta(v).color}
                   />
                 </td>
@@ -1695,8 +1702,8 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
     onClose();
   }
 
-  async function handleProjectChange(e) {
-    if (e.target.value === "__new__") {
+  async function handleProjectChange(newValue) {
+    if (newValue === "__new__") {
       const name = window.prompt("New project name");
       if (!name) return;
       const prefix = window.prompt("Project prefix (used in ticket ids, e.g. AB → AB-1)");
@@ -1708,7 +1715,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
         window.alert(`Failed to create project: ${err.message}`);
       }
     } else {
-      setAndSave("project", e.target.value);
+      setAndSave("project", newValue);
     }
   }
 
@@ -1813,72 +1820,89 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
           />
 
           {/* status — its own pill, like Jira's "To Do ▾" button above the Details block */}
-          <div style={{ position: "relative", display: "inline-block", marginBottom: 16 }}>
-            <select
+          <div style={{ marginBottom: 16 }}>
+            <Dropdown
               value={form.status}
-              onChange={(e) => setAndSave("status", e.target.value)}
-              style={{
-                appearance: "none", border: "none", borderRadius: 20, padding: "6px 28px 6px 12px",
-                fontSize: 12.5, fontWeight: 700, cursor: "pointer",
-                background: `${statusMeta(form.status).color}1A`, color: statusMeta(form.status).color,
-              }}
-            >
-              {COLUMNS.map((c) => (
-                <option key={c.id} value={c.id}>{c.label}</option>
-              ))}
-            </select>
-            <ChevronDown
-              size={12}
-              style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: statusMeta(form.status).color }}
+              options={COLUMNS}
+              onChange={(v) => setAndSave("status", v)}
+              renderTrigger={({ onClick }) => (
+                <button
+                  type="button"
+                  onClick={onClick}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                    border: "none", borderRadius: 20, padding: "6px 10px 6px 12px",
+                    fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                    background: `${statusMeta(form.status).color}1A`, color: statusMeta(form.status).color,
+                  }}
+                >
+                  {statusMeta(form.status).label}
+                  <ChevronDown size={12} />
+                </button>
+              )}
             />
           </div>
 
           {/* details — compact vertical rows, icon + label left, value right (mirrors Jira's Details panel) */}
           <div style={{ border: "1px solid #E4E6EB", borderRadius: 8, padding: "2px 10px", marginBottom: 16 }}>
             <DetailRow icon={<Folder size={13} />} label="Project">
-              <select
+              <Dropdown
                 value={form.project}
+                options={[...projectNames.map((p) => ({ id: p, label: p })), { id: "__new__", label: "+ New project…" }]}
                 onChange={handleProjectChange}
-                className="detail-value"
-                style={detailInputStyle}
-              >
-                {projectNames.length === 0 && <option value="">—</option>}
-                {projectNames.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-                <option value="__new__">+ New project…</option>
-              </select>
+                menuAlign="right"
+                renderTrigger={({ onClick }) => (
+                  <button type="button" onClick={onClick} className="detail-value" style={{ ...detailInputStyle, color: form.project ? "#1D2027" : "#8B8D98" }}>
+                    {form.project || "Select project"}
+                  </button>
+                )}
+              />
             </DetailRow>
             <DetailRow icon={<Bot size={13} />} label="Agent">
-              <select value={form.agent} onChange={(e) => setAndSave("agent", e.target.value)} className="detail-value" style={detailInputStyle}>
-                {AGENTS.map((a) => (
-                  <option key={a.id} value={a.id}>{a.label}</option>
-                ))}
-              </select>
+              <Dropdown
+                value={form.agent}
+                options={AGENT_OPTIONS}
+                onChange={(v) => setAndSave("agent", v)}
+                menuAlign="right"
+                renderTrigger={({ onClick }) => (
+                  <button type="button" onClick={onClick} className="detail-value" style={{ ...detailInputStyle, color: form.agent ? "#1D2027" : "#8B8D98" }}>
+                    {agentMeta(form.agent).label}
+                  </button>
+                )}
+              />
             </DetailRow>
             <DetailRow icon={<Flag size={13} />} label="Priority">
-              <select value={form.priority} onChange={(e) => setAndSave("priority", e.target.value)} className="detail-value" style={detailInputStyle}>
-                {PRIORITIES.map((p) => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                ))}
-              </select>
+              <Dropdown
+                value={form.priority}
+                options={PRIORITIES}
+                onChange={(v) => setAndSave("priority", v)}
+                menuAlign="right"
+                renderTrigger={({ onClick }) => (
+                  <button type="button" onClick={onClick} className="detail-value" style={detailInputStyle}>
+                    {priorityMeta(form.priority).label}
+                  </button>
+                )}
+              />
             </DetailRow>
             <DetailRow icon={<CalendarDays size={13} />} label="Due date">
               <DueDateField value={form.dueDate || ""} onChange={(v) => setAndSave("dueDate", v)} />
             </DetailRow>
             <DetailRow icon={<CornerDownRight size={13} />} label="Parent" last>
-              <select
+              <Dropdown
                 value={form.parentId || ""}
-                onChange={(e) => setAndSave("parentId", e.target.value || null)}
-                className="detail-value"
-                style={detailInputStyle}
-                disabled={parentCandidates.length === 0 && !form.parentId}
-              >
-                <option value="">— none —</option>
-                {parentCandidates.map((p) => (
-                  <option key={p.id} value={p.id}>{p.id} — {p.title}</option>
-                ))}
-              </select>
+                options={[{ id: "", label: "— none —" }, ...parentCandidates.map((p) => ({ id: p.id, label: `${p.id} — ${p.title}` }))]}
+                onChange={(v) => setAndSave("parentId", v || null)}
+                menuAlign="right"
+                renderTrigger={({ onClick }) =>
+                  parentCandidates.length === 0 && !form.parentId ? (
+                    <span className="detail-value" style={{ ...detailInputStyle, color: "#C7CBD4", cursor: "default" }}>— none —</span>
+                  ) : (
+                    <button type="button" onClick={onClick} className="detail-value" style={{ ...detailInputStyle, color: form.parentId ? "#1D2027" : "#8B8D98" }}>
+                      {form.parentId ? `${form.parentId} — ${cards.find((c) => c.id === form.parentId)?.title ?? ""}` : "— none —"}
+                    </button>
+                  )
+                }
+              />
             </DetailRow>
           </div>
 
