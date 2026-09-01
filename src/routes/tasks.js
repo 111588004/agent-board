@@ -46,6 +46,13 @@ router.post("/", (req, res) => {
 // leaving notes over time don't stomp on each other's history.
 const MUTABLE_FIELDS = ["title", "agent", "priority", "status", "worktree", "branch", "link", "dueDate", "notes"];
 
+// fields worth an automatic history line: the ones two agents are most
+// likely to race on (claiming/reprioritizing a ticket at the same moment).
+// This doesn't prevent the race — the column still just holds whichever
+// write landed last — but it makes a collision visible after the fact
+// instead of silently disappearing.
+const TRACKED_FIELDS = ["status", "agent", "priority"];
+
 router.patch("/:id", (req, res) => {
   const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
   if (!existing) return res.status(404).json({ error: "task not found" });
@@ -64,6 +71,11 @@ router.patch("/:id", (req, res) => {
     params.push(req.params.id);
     db.prepare(`UPDATE tasks SET ${sets.join(", ")} WHERE id = ?`).run(...params);
   }
+
+  const changes = TRACKED_FIELDS
+    .filter((f) => req.body[f] !== undefined && req.body[f] !== existing[f])
+    .map((f) => `${f}: ${existing[f] ?? "–"} → ${req.body[f]}`);
+  if (changes.length) appendNote(req.params.id, changes.join(", "), req.body.agent);
 
   let row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
   if (req.body.note !== undefined) {
