@@ -729,7 +729,7 @@ function SortHeader({ label, sortKeyName, sortKey, sortDir, onSort, align }) {
 // getBoundingClientRect() — otherwise an absolutely-positioned menu gets
 // silently clipped by any ancestor with overflow:auto (e.g. the List view's
 // scrollable table wrapper), which is exactly what happened before this.
-function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left" }) {
+function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left", block = false }) {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
   const triggerRef = useRef(null);
@@ -765,7 +765,7 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left" 
   }, [open]);
 
   return (
-    <span ref={triggerRef} style={{ display: "inline-block" }}>
+    <span ref={triggerRef} style={{ display: block ? "block" : "inline-block" }}>
       {renderTrigger({ onClick: (e) => { e.stopPropagation(); open ? setOpen(false) : openMenu(); } })}
       {open && menuPos && createPortal(
         <div
@@ -1851,6 +1851,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                 options={[...projectNames.map((p) => ({ id: p, label: p })), { id: "__new__", label: "+ New project…" }]}
                 onChange={handleProjectChange}
                 menuAlign="right"
+                block
                 renderTrigger={({ onClick }) => (
                   <button type="button" onClick={onClick} className="detail-value" style={{ ...detailInputStyle, color: form.project ? "#1D2027" : "#8B8D98" }}>
                     {form.project || "Select project"}
@@ -1864,6 +1865,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                 options={AGENT_OPTIONS}
                 onChange={(v) => setAndSave("agent", v)}
                 menuAlign="right"
+                block
                 renderTrigger={({ onClick }) => (
                   <button type="button" onClick={onClick} className="detail-value" style={{ ...detailInputStyle, color: form.agent ? "#1D2027" : "#8B8D98" }}>
                     {agentMeta(form.agent).label}
@@ -1877,6 +1879,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                 options={PRIORITIES}
                 onChange={(v) => setAndSave("priority", v)}
                 menuAlign="right"
+                block
                 renderTrigger={({ onClick }) => (
                   <button type="button" onClick={onClick} className="detail-value" style={detailInputStyle}>
                     {priorityMeta(form.priority).label}
@@ -1893,6 +1896,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                 options={[{ id: "", label: "— none —" }, ...parentCandidates.map((p) => ({ id: p.id, label: `${p.id} — ${p.title}` }))]}
                 onChange={(v) => setAndSave("parentId", v || null)}
                 menuAlign="right"
+                block
                 renderTrigger={({ onClick }) =>
                   parentCandidates.length === 0 && !form.parentId ? (
                     <span className="detail-value" style={{ ...detailInputStyle, color: "#C7CBD4", cursor: "default" }}>— none —</span>
