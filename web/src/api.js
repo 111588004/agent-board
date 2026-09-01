@@ -59,6 +59,14 @@ export function createProject(name, prefix) {
   return request("POST", "/projects", { name, prefix });
 }
 
+export function renameProject(currentName, { name, prefix }) {
+  return request("PATCH", `/projects/${encodeURIComponent(currentName)}`, { name, prefix });
+}
+
+export function deleteProject(name) {
+  return request("DELETE", `/projects/${encodeURIComponent(name)}`);
+}
+
 export function getMeta() {
   return rawRequest("GET", "/api/meta");
 }

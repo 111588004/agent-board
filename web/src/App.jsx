@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, Code2, Link2, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal } from "lucide-react";
+import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, Code2, Link2, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Settings } from "lucide-react";
 import * as api from "./api.js";
 
 const COLUMNS = [
@@ -297,6 +297,34 @@ export default function AgentBoard() {
     return project;
   }
 
+  async function renameProjectByName(target) {
+    const current = projects.find((p) => p.name === target);
+    const newName = window.prompt(`Rename project "${target}" to:`, target);
+    if (!newName) return;
+    const newPrefix = window.prompt(`Ticket prefix for "${newName}":`, current?.prefix ?? "");
+    if (!newPrefix) return;
+    if (newName === target && newPrefix === current?.prefix) return;
+    try {
+      const updated = await api.renameProject(target, { name: newName, prefix: newPrefix });
+      setProjects((prev) => prev.map((p) => (p.name === target ? updated : p)));
+      setCards((prev) => prev.map((c) => (c.project === target ? { ...c, project: updated.name, projectPrefix: updated.prefix } : c)));
+      if (projectFilter === target) setProjectFilter(updated.name);
+    } catch (e) {
+      reportError("Rename project", e);
+    }
+  }
+
+  async function deleteProjectByName(target) {
+    if (!window.confirm(`Delete project "${target}"? Only works if it has no tasks left.`)) return;
+    try {
+      await api.deleteProject(target);
+      setProjects((prev) => prev.filter((p) => p.name !== target));
+      if (projectFilter === target) setProjectFilter("all");
+    } catch (e) {
+      reportError("Delete project", e);
+    }
+  }
+
   function findCard(id) {
     return cards.find((c) => c.id === id);
   }
@@ -445,6 +473,12 @@ export default function AgentBoard() {
           value={projectFilter}
           onChange={setProjectFilter}
           options={[{ id: "all", label: "All projects" }, ...projectNames.map((p) => ({ id: p, label: p }))]}
+        />
+        <ProjectManager
+          projects={projects}
+          onCreate={createProject}
+          onRename={renameProjectByName}
+          onDelete={deleteProjectByName}
         />
         <FilterSelect
           light
@@ -929,6 +963,179 @@ function WorkspaceSwitcher({ workspace, workspaces, onSwitch, onRename, onDelete
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
           >
             + New workspace
+          </div>
+        </div>,
+        document.body
+      )}
+    </span>
+  );
+}
+
+// Same hover-reveal row-actions pattern as WorkspaceSwitcher — a plain list
+// panel rather than a select, since this manages the set of projects, not a
+// current selection (that's what the "All projects" FilterSelect is for).
+function ProjectManager({ projects, onCreate, onRename, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState(null);
+  const [hoveredRow, setHoveredRow] = useState(null);
+  const [actionsFor, setActionsFor] = useState(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+
+  function openMenu() {
+    const rect = triggerRef.current.getBoundingClientRect();
+    setMenuPos({ top: rect.bottom + 4, left: rect.left });
+    setOpen(true);
+  }
+
+  function closeAll() {
+    setOpen(false);
+    setActionsFor(null);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocMouseDown(e) {
+      if (triggerRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      closeAll();
+    }
+    function onKeyDown(e) {
+      if (e.key === "Escape") closeAll();
+    }
+    function onScroll() {
+      closeAll();
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open]);
+
+  async function createNew() {
+    const name = window.prompt("New project name");
+    if (!name) return;
+    const prefix = window.prompt(`Ticket prefix for "${name}" (e.g. AB)`);
+    if (!prefix) return;
+    try {
+      await onCreate(name, prefix);
+    } catch (e) {
+      window.alert(e.message);
+    }
+  }
+
+  return (
+    <span ref={triggerRef} style={{ display: "inline-block" }}>
+      <button
+        type="button"
+        title="Manage projects"
+        onClick={(e) => { e.stopPropagation(); open ? closeAll() : openMenu(); }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          background: "none",
+          border: "1px solid #E4E6EB",
+          borderRadius: 7,
+          padding: 6,
+          color: "#5B5F69",
+          cursor: "pointer",
+        }}
+      >
+        <Settings size={14} />
+      </button>
+      {open && menuPos && createPortal(
+        <div
+          ref={menuRef}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "fixed",
+            top: menuPos.top,
+            left: menuPos.left,
+            zIndex: 1000,
+            background: "#fff",
+            border: "1px solid #E4E6EB",
+            borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(20,22,30,0.14)",
+            padding: 4,
+            minWidth: 190,
+          }}
+        >
+          {projects.map((p) => (
+            <div
+              key={p.name}
+              onMouseEnter={() => setHoveredRow(p.name)}
+              onMouseLeave={() => setHoveredRow((h) => (h === p.name ? null : h))}
+              style={{
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+                padding: "6px 4px 6px 10px",
+                borderRadius: 5,
+                fontSize: 12.5,
+                color: "#1D2027",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <span className="mono" style={{ color: "#8B8D98", marginRight: 4 }}>{p.prefix}</span>
+              <span style={{ flex: 1 }}>{p.name}</span>
+              {(hoveredRow === p.name || actionsFor === p.name) && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setActionsFor((a) => (a === p.name ? null : p.name)); }}
+                  style={{ background: "none", border: "none", color: "#8B8D98", cursor: "pointer", padding: 2, display: "flex", borderRadius: 4 }}
+                >
+                  <MoreHorizontal size={14} />
+                </button>
+              )}
+              {actionsFor === p.name && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 2px)",
+                    right: 0,
+                    zIndex: 10,
+                    background: "#fff",
+                    border: "1px solid #E4E6EB",
+                    borderRadius: 8,
+                    boxShadow: "0 8px 24px rgba(20,22,30,0.14)",
+                    padding: 4,
+                    minWidth: 110,
+                  }}
+                >
+                  <div
+                    onClick={() => { closeAll(); onRename(p.name); }}
+                    style={{ padding: "6px 10px", borderRadius: 5, fontSize: 12.5, cursor: "pointer" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#F4F5F7")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    Rename
+                  </div>
+                  <div
+                    onClick={() => { closeAll(); onDelete(p.name); }}
+                    style={{ padding: "6px 10px", borderRadius: 5, fontSize: 12.5, cursor: "pointer", color: "#E5484D" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#FDEDEE")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    Delete
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          <div
+            onClick={() => { createNew(); closeAll(); }}
+            style={{ padding: "6px 10px", borderRadius: 5, fontSize: 12.5, color: "#1D2027", cursor: "pointer", whiteSpace: "nowrap" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#F4F5F7")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            + New project
           </div>
         </div>,
         document.body
