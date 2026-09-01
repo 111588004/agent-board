@@ -360,6 +360,7 @@ export default function AgentBoard() {
         .drawer-collapse summary { cursor: pointer; list-style: none; }
         .drawer-collapse summary::-webkit-details-marker { display: none; }
         .detail-value:hover { background: #F4F5F7; }
+        .new-project-prefix::placeholder { color: #C7CBD4; }
       `}</style>
 
       {/* Header */}
@@ -1162,8 +1163,7 @@ function ProjectFilterSelect({ value, projects, onChange, onRequestCreate, onRen
 // separate prompt() step.
 function NewProjectDialog({ onClose, onCreate }) {
   const [name, setName] = useState("");
-  const [prefix, setPrefix] = useState("");
-  const [prefixTouched, setPrefixTouched] = useState(false);
+  const [prefix, setPrefix] = useState(""); // stays empty until the user actually types — the suggestion is a placeholder, not a value
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const nameRef = useRef(null);
@@ -1172,29 +1172,30 @@ function NewProjectDialog({ onClose, onCreate }) {
     nameRef.current?.focus();
   }, []);
 
-  // suggests a prefix from the name's initials (e.g. "Agent Board" -> "AB")
-  // until the user edits the prefix field themselves, then leaves it alone.
-  function handleNameChange(v) {
-    setName(v);
-    if (!prefixTouched) {
-      const initials = v
-        .split(/\s+/)
-        .filter(Boolean)
-        .map((w) => w[0])
-        .join("")
-        .slice(0, 4)
-        .toUpperCase();
-      setPrefix(initials);
-    }
-  }
+  // shown as a placeholder only (see the ::placeholder rule below) — never
+  // written into the field's value, so it can't be mistaken for something
+  // the user already typed. Falls back to this on submit if left blank.
+  // multi-word names use initials ("Design Tools" -> "DT"); a single word
+  // uses its first two letters ("Inbox" -> "IN", not just "I"); a name with
+  // no Latin letters at all (CJK, emoji-only, ...) has no sane initials to
+  // derive, so it's left blank — the user types their own prefix instead of
+  // getting a suggestion that isn't actually a suggestion of anything.
+  const words = name.split(/\s+/).filter((w) => /[A-Za-z]/.test(w));
+  const suggestedPrefix =
+    words.length >= 2
+      ? words.map((w) => w.match(/[A-Za-z]/)[0]).join("").slice(0, 4).toUpperCase()
+      : words.length === 1
+        ? words[0].replace(/[^A-Za-z]/g, "").slice(0, 2).toUpperCase()
+        : "";
 
   async function submit(e) {
     e.preventDefault();
-    if (!name.trim() || !prefix.trim()) return;
+    const finalPrefix = (prefix.trim() || suggestedPrefix).toUpperCase();
+    if (!name.trim() || !finalPrefix) return;
     setSaving(true);
     setError(null);
     try {
-      await onCreate(name.trim(), prefix.trim().toUpperCase());
+      await onCreate(name.trim(), finalPrefix);
       onClose();
     } catch (err) {
       setError(err.message);
@@ -1220,28 +1221,31 @@ function NewProjectDialog({ onClose, onCreate }) {
       >
         <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>New project</div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 96px", gap: 10, marginBottom: error ? 8 : 18 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "96px 1fr", gap: 10, marginBottom: 4 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#8B8D98" }}>Prefix</span>
+            <input
+              className="mono new-project-prefix"
+              value={prefix}
+              onChange={(e) => setPrefix(e.target.value.toUpperCase())}
+              placeholder={suggestedPrefix || "AB"}
+              maxLength={6}
+              style={{ border: "1px solid #E4E6EB", borderRadius: 6, padding: "7px 8px", fontSize: 13, fontFamily: "inherit", textTransform: "uppercase" }}
+            />
+          </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <span style={{ fontSize: 11, fontWeight: 600, color: "#8B8D98" }}>Name</span>
             <input
               ref={nameRef}
               value={name}
-              onChange={(e) => handleNameChange(e.target.value)}
-              placeholder="Agent Board"
+              onChange={(e) => setName(e.target.value)}
+              placeholder="What are you calling this project?"
               style={{ border: "1px solid #E4E6EB", borderRadius: 6, padding: "7px 8px", fontSize: 13, fontFamily: "inherit" }}
             />
           </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "#8B8D98" }}>Prefix</span>
-            <input
-              className="mono"
-              value={prefix}
-              onChange={(e) => { setPrefixTouched(true); setPrefix(e.target.value.toUpperCase()); }}
-              placeholder="AB"
-              maxLength={6}
-              style={{ border: "1px solid #E4E6EB", borderRadius: 6, padding: "7px 8px", fontSize: 13, fontFamily: "inherit", textTransform: "uppercase" }}
-            />
-          </label>
+        </div>
+        <div style={{ fontSize: 11, color: "#B7BAC2", marginBottom: error ? 12 : 18 }}>
+          Shows up in ticket ids, e.g. {(prefix || suggestedPrefix || "AB")}-1 — leave blank to use the suggestion.
         </div>
 
         {error && <div style={{ color: "#E5484D", fontSize: 12, marginBottom: 10 }}>{error}</div>}
@@ -1256,11 +1260,11 @@ function NewProjectDialog({ onClose, onCreate }) {
           </button>
           <button
             type="submit"
-            disabled={!name.trim() || !prefix.trim() || saving}
+            disabled={!name.trim() || !(prefix.trim() || suggestedPrefix) || saving}
             style={{
               background: "#1D2027", color: "#fff", border: "none", borderRadius: 7, padding: "7px 14px",
               fontSize: 12.5, cursor: "pointer", fontFamily: "inherit",
-              opacity: !name.trim() || !prefix.trim() || saving ? 0.5 : 1,
+              opacity: !name.trim() || !(prefix.trim() || suggestedPrefix) || saving ? 0.5 : 1,
             }}
           >
             Create
