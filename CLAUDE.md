@@ -67,6 +67,8 @@ web/
 **Data model** (`tasks` table, columns are camelCase to match the UI's card shape 1:1 — no request/response translation layer):
 `id` (format `{projectPrefix}-{seq}`, e.g. `AB-42`), `seq`, `title`, `project`, `projectPrefix`, `parentId` (subtask → parent task; two-tier only, no Epic/Story), `agent`, `priority` (low/med/high), `status` (backlog/in_progress/review/done), `notes`, `worktree`, `branch`, `link`, `dueDate`, `createdAt`, `updatedAt`. A separate `projects` table holds `name`/`prefix` (prefix is chosen once per project, at creation — never auto-derived, to avoid collisions).
 
+**`agent` means "current/last owner", not "everyone who ever touched this"** — same semantics as a Jira assignee field, deliberately not a participant list. A human-created ticket nobody's picked up yet should have `agent = null`, never a placeholder string like `"human"` — `null` is already the real behavior when the web UI's "+ New task" is used without picking an agent. The full multi-agent handoff trail (who had it, in what order) isn't lost when `agent` gets overwritten — it's captured by the `status`/`agent`/`priority` auto-history log described above, so it's one `notes` read away rather than a separate column/UI element.
+
 **`notes` vs `note` in `PATCH /api/tasks/:id`** — these are deliberately different:
 - `notes` (plural, matches the column) = full overwrite. Used by the UI's free-edit Description box, where you're meant to be able to rewrite the whole thing like a normal text field.
 - `note` (singular verb) = appends one timestamped, agent-tagged line. Used by the CLI/MCP `note` command, so multiple sessions/agents leaving notes over time don't stomp on each other's history.
