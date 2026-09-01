@@ -1,0 +1,17 @@
+{
+  "name": "agent-board",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "agent-board": "./src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "better-sqlite3": "^11",
+    "express": "^4",
+    "zod": "^4.5.4"
+  }
+}

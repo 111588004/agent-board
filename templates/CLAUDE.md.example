@@ -1,0 +1,35 @@
+<!--
+  Copy the "Task board" section below into this project's own CLAUDE.md
+  (or AGENTS.md for non-Claude agents). Replace:
+    - PROJECT_NAME  → this project's name on the board
+    - claude        → whichever agent id this file is for (codex / gemini / pi / ...)
+  The project must already exist on the board (POST /api/projects with a
+  prefix, or ask whoever runs the board to create it) before `create` will
+  work — tickets can't be created for an unknown project.
+
+  Requires `agent-board` running somewhere reachable (npm link'd globally, or
+  `node /path/to/agent-board/src/cli.js` if not linked on this machine — swap
+  every `agent-board` below for that if so).
+-->
+
+## Task board
+
+This project's work is tracked on a local Agent Board, not in your own memory. The project name on the board is `PROJECT_NAME`.
+
+Report your progress by calling the `agent-board` CLI directly via your shell/bash tool:
+
+```bash
+agent-board list --project=PROJECT_NAME
+agent-board create --title="..." --project=PROJECT_NAME --agent=claude --priority=med
+agent-board update <id> --status=in_progress --agent=claude
+agent-board note <id> "short note about what happened" --agent=claude
+```
+
+Always pass `--agent=claude` explicitly — don't omit it even though the flag is technically optional; leaving it off means the board can't tell who left a note or made a change.
+
+**When to call it:**
+- At the start of a coding task: `list` first for an existing open ticket matching the work; if none exists, `create` one and set it `in_progress`.
+- Whenever status meaningfully changes (code is ready for review, you're blocked, you're done).
+- When you hit a blocker or make a non-obvious decision: `note` it.
+
+**Important:** always call `list` fresh when you need the board's current state — never assume it still matches what you saw earlier in the conversation. Someone else (a person, or another agent) may have changed it since.
