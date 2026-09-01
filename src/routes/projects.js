@@ -1,10 +1,9 @@
 import { Router } from "express";
-import { db } from "../db.js";
 
 const router = Router();
 
 router.get("/", (req, res) => {
-  res.json(db.prepare("SELECT * FROM projects ORDER BY createdAt").all());
+  res.json(req.db.prepare("SELECT * FROM projects ORDER BY createdAt").all());
 });
 
 router.post("/", (req, res) => {
@@ -13,7 +12,7 @@ router.post("/", (req, res) => {
     return res.status(400).json({ error: "name and prefix are required" });
   }
   try {
-    db.prepare("INSERT INTO projects (name, prefix, createdAt) VALUES (?, ?, ?)").run(
+    req.db.prepare("INSERT INTO projects (name, prefix, createdAt) VALUES (?, ?, ?)").run(
       name,
       prefix,
       Date.now()
@@ -27,7 +26,7 @@ router.post("/", (req, res) => {
     }
     throw e;
   }
-  res.status(201).json(db.prepare("SELECT * FROM projects WHERE name = ?").get(name));
+  res.status(201).json(req.db.prepare("SELECT * FROM projects WHERE name = ?").get(name));
 });
 
 export default router;

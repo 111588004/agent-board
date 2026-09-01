@@ -5,13 +5,46 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import tasksRouter from "./routes/tasks.js";
 import projectsRouter from "./routes/projects.js";
 import { createMcpServer } from "./mcp/tools.js";
+import { getDb, listWorkspaces, createWorkspace } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(express.json());
-app.use("/api/tasks", tasksRouter);
-app.use("/api/projects", projectsRouter);
+
+app.get("/api/workspaces", (req, res) => {
+  res.json(listWorkspaces());
+});
+app.post("/api/workspaces", (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: "name is required" });
+  try {
+    createWorkspace(name);
+    res.status(201).json({ name });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
+// resolves req.db for every /api/tasks and /api/projects request below —
+// either from an explicit /api/w/:workspace/... path, or (for the
+// unprefixed /api/tasks, /api/projects aliases — kept working so nothing
+// that predates workspaces breaks) the literal "default" workspace.
+function withWorkspace(explicitName) {
+  return (req, res, next) => {
+    try {
+      req.db = getDb(explicitName || req.params.workspace);
+      next();
+    } catch (e) {
+      res.status(e.status || 500).json({ error: e.message });
+    }
+  };
+}
+
+app.use("/api/w/:workspace/tasks", withWorkspace(), tasksRouter);
+app.use("/api/w/:workspace/projects", withWorkspace(), projectsRouter);
+app.use("/api/tasks", withWorkspace("default"), tasksRouter);
+app.use("/api/projects", withWorkspace("default"), projectsRouter);
 
 // MCP — http transport (not stdio), so multiple agent sessions can share
 // this one server instance. Stateless: no session to track between
