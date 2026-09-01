@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, Code2, Link2, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal } from "lucide-react";
+import { DayPicker } from "react-day-picker";
+import "react-day-picker/style.css";
 import * as api from "./api.js";
 
 const COLUMNS = [
@@ -361,6 +363,18 @@ export default function AgentBoard() {
         .drawer-collapse summary::-webkit-details-marker { display: none; }
         .detail-value:hover { background: #F4F5F7; }
         .new-project-prefix::placeholder { color: #C7CBD4; }
+        .rdp-root {
+          --rdp-accent-color: #4C8DFF;
+          --rdp-accent-background-color: #F0F4FF;
+          --rdp-day-width: 32px;
+          --rdp-day-height: 32px;
+          --rdp-day_button-width: 30px;
+          --rdp-day_button-height: 30px;
+          font-family: inherit;
+          font-size: 12.5px;
+          color: #1D2027;
+        }
+        .rdp-weekday { font-size: 11px; color: #8B8D98; }
       `}</style>
 
       {/* Header */}
@@ -1334,6 +1348,112 @@ function BlockSelect({ value, onChange, options, color }) {
   );
 }
 
+// local-date formatting only — toISOString() is UTC and shifts the date by
+// a day near midnight in timezones behind UTC, which would silently save
+// the wrong due date.
+function toISODate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function fromISODate(iso) {
+  if (!iso) return undefined;
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+// custom calendar popover (react-day-picker) instead of the native
+// <input type="date"> — the native picker's language and layout follow the
+// OS/browser locale with no way to override from the page, and it looked
+// out of place next to the rest of this hand-styled UI.
+function DueDateField({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+
+  function openMenu() {
+    const rect = triggerRef.current.getBoundingClientRect();
+    setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setOpen(true);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocMouseDown(e) {
+      if (triggerRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    }
+    function onKeyDown(e) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    function onScroll() {
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open]);
+
+  return (
+    <span ref={triggerRef} style={{ display: "block" }}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); open ? setOpen(false) : openMenu(); }}
+        className="detail-value"
+        style={{ ...detailInputStyle, color: value ? "#1D2027" : "#8B8D98" }}
+      >
+        {value || "No due date"}
+      </button>
+      {open && menuPos && createPortal(
+        <div
+          ref={menuRef}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "fixed",
+            top: menuPos.top,
+            right: menuPos.right,
+            zIndex: 1000,
+            background: "#fff",
+            border: "1px solid #E4E6EB",
+            borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(20,22,30,0.14)",
+            padding: "8px 10px 4px",
+          }}
+        >
+          <DayPicker
+            mode="single"
+            selected={fromISODate(value)}
+            defaultMonth={fromISODate(value) || new Date()}
+            onSelect={(date) => { onChange(date ? toISODate(date) : ""); setOpen(false); }}
+          />
+          {value && (
+            <button
+              type="button"
+              onClick={() => { onChange(""); setOpen(false); }}
+              style={{
+                width: "100%", textAlign: "center", padding: "6px 0 8px", marginTop: -4,
+                border: "none", background: "none", color: "#E5484D", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+              }}
+            >
+              Clear due date
+            </button>
+          )}
+        </div>,
+        document.body
+      )}
+    </span>
+  );
+}
+
 function ListView({ tasks, sortKey, sortDir, onSort, onOpen, projects, onFieldChange, findCard }) {
   return (
     <div style={{ flex: 1, overflow: "auto", padding: "18px 22px" }}>
@@ -1673,13 +1793,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
               </select>
             </DetailRow>
             <DetailRow icon={<CalendarDays size={13} />} label="Due date">
-              <input
-                type="date"
-                value={form.dueDate || ""}
-                onChange={(e) => setAndSave("dueDate", e.target.value)}
-                className="detail-value"
-                style={detailInputStyle}
-              />
+              <DueDateField value={form.dueDate || ""} onChange={(v) => setAndSave("dueDate", v)} />
             </DetailRow>
             <DetailRow icon={<CornerDownRight size={13} />} label="Parent" last>
               <select
