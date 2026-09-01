@@ -590,30 +590,104 @@ function SortHeader({ label, sortKeyName, sortKey, sortDir, onSort, align }) {
   );
 }
 
+// Self-styled listbox: the trigger IS the whole clickable box (no native
+// <select> underneath), so the visible chip and the click target are
+// guaranteed to be the same rectangle, and the open menu matches the app's
+// own styling instead of falling back to the browser's unstyled OS list.
+function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left" }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocMouseDown(e) {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
+    }
+    function onKeyDown(e) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <span ref={rootRef} style={{ position: "relative", display: "inline-block" }}>
+      {renderTrigger({ onClick: (e) => { e.stopPropagation(); setOpen((o) => !o); } })}
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            [menuAlign]: 0,
+            zIndex: 30,
+            background: "#fff",
+            border: "1px solid #E4E6EB",
+            borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(20,22,30,0.14)",
+            padding: 4,
+            minWidth: 130,
+          }}
+        >
+          {options.map((o) => (
+            <div
+              key={o.id}
+              onClick={() => { onChange(o.id); setOpen(false); }}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 5,
+                fontSize: 12.5,
+                fontWeight: o.id === value ? 600 : 400,
+                color: "#1D2027",
+                background: o.id === value ? "#F0F4FF" : "transparent",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(e) => { if (o.id !== value) e.currentTarget.style.background = "#F4F5F7"; }}
+              onMouseLeave={(e) => { if (o.id !== value) e.currentTarget.style.background = "transparent"; }}
+            >
+              {o.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </span>
+  );
+}
+
 function ChipSelect({ value, onChange, options, colorFor }) {
   const color = colorFor(value);
+  const label = options.find((o) => o.id === value)?.label ?? value;
   return (
-    <select
+    <Dropdown
       value={value}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => onChange(e.target.value)}
-      className="mono"
-      style={{
-        appearance: "none",
-        fontSize: 10.5,
-        padding: "2px 6px",
-        borderRadius: 5,
-        background: color ? `${color}1A` : "#F0F1F4",
-        color: color || "#5B5F69",
-        fontWeight: 600,
-        border: color ? `1px solid ${color}33` : "1px solid #E4E6EB",
-        cursor: "pointer",
-      }}
-    >
-      {options.map((o) => (
-        <option key={o.id} value={o.id} style={{ color: "#000" }}>{o.label}</option>
-      ))}
-    </select>
+      options={options}
+      onChange={onChange}
+      renderTrigger={({ onClick }) => (
+        <button
+          type="button"
+          onClick={onClick}
+          className="mono"
+          style={{
+            fontSize: 10.5,
+            padding: "2px 6px",
+            borderRadius: 5,
+            background: color ? `${color}1A` : "#F0F1F4",
+            color: color || "#5B5F69",
+            fontWeight: 600,
+            border: color ? `1px solid ${color}33` : "1px solid #E4E6EB",
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          {label}
+        </button>
+      )}
+    />
   );
 }
 
@@ -621,18 +695,24 @@ function ChipSelect({ value, onChange, options, colorFor }) {
 // dot on the kanban card, never a pill) — the whole cell is the click target,
 // styled as plain text so it doesn't read as a badge that isn't one.
 function BlockSelect({ value, onChange, options, color }) {
+  const label = options.find((o) => o.id === value)?.label ?? value;
   return (
-    <select
+    <Dropdown
       value={value}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => onChange(e.target.value)}
-      className="detail-value"
-      style={{ ...detailInputStyle, textAlign: "left", color: color || "#42454D", fontWeight: 600 }}
-    >
-      {options.map((o) => (
-        <option key={o.id} value={o.id} style={{ color: "#000" }}>{o.label}</option>
-      ))}
-    </select>
+      options={options}
+      onChange={onChange}
+      menuAlign="right"
+      renderTrigger={({ onClick }) => (
+        <button
+          type="button"
+          onClick={onClick}
+          className="detail-value"
+          style={{ ...detailInputStyle, width: "auto", textAlign: "left", color: color || "#42454D", fontWeight: 600 }}
+        >
+          {label}
+        </button>
+      )}
+    />
   );
 }
 
