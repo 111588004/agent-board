@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, Code2, Link2, CalendarDays, Folder, Bot, Flag, CornerDownRight } from "lucide-react";
 import * as api from "./api.js";
 
@@ -594,37 +595,57 @@ function SortHeader({ label, sortKeyName, sortKey, sortDir, onSort, align }) {
 // <select> underneath), so the visible chip and the click target are
 // guaranteed to be the same rectangle, and the open menu matches the app's
 // own styling instead of falling back to the browser's unstyled OS list.
+// The menu is portaled to <body> and positioned via the trigger's
+// getBoundingClientRect() — otherwise an absolutely-positioned menu gets
+// silently clipped by any ancestor with overflow:auto (e.g. the List view's
+// scrollable table wrapper), which is exactly what happened before this.
 function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left" }) {
   const [open, setOpen] = useState(false);
-  const rootRef = useRef(null);
+  const [menuPos, setMenuPos] = useState(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+
+  function openMenu() {
+    const rect = triggerRef.current.getBoundingClientRect();
+    setMenuPos({ top: rect.bottom + 4, left: rect.left, right: window.innerWidth - rect.right });
+    setOpen(true);
+  }
 
   useEffect(() => {
     if (!open) return;
     function onDocMouseDown(e) {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
+      if (triggerRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
     }
     function onKeyDown(e) {
       if (e.key === "Escape") setOpen(false);
     }
+    function onScroll() {
+      setOpen(false);
+    }
     document.addEventListener("mousedown", onDocMouseDown);
     document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("mousedown", onDocMouseDown);
       document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [open]);
 
   return (
-    <span ref={rootRef} style={{ position: "relative", display: "inline-block" }}>
-      {renderTrigger({ onClick: (e) => { e.stopPropagation(); setOpen((o) => !o); } })}
-      {open && (
+    <span ref={triggerRef} style={{ display: "inline-block" }}>
+      {renderTrigger({ onClick: (e) => { e.stopPropagation(); open ? setOpen(false) : openMenu(); } })}
+      {open && menuPos && createPortal(
         <div
+          ref={menuRef}
           onClick={(e) => e.stopPropagation()}
           style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            [menuAlign]: 0,
-            zIndex: 30,
+            position: "fixed",
+            top: menuPos.top,
+            [menuAlign]: menuAlign === "right" ? menuPos.right : menuPos.left,
+            zIndex: 1000,
             background: "#fff",
             border: "1px solid #E4E6EB",
             borderRadius: 8,
@@ -653,7 +674,8 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left" 
               {o.label}
             </div>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </span>
   );
