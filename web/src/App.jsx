@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil } from "lucide-react";
 import * as api from "./api.js";
@@ -1692,6 +1692,18 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
   const [notesDraft, setNotesDraft] = useState(card.notes || "");
   const notesRef = useRef(null);
 
+  // auto-grows with content between 240 and 480px instead of a fixed box
+  // with a manual drag handle — resets to "auto" first so shrinking (e.g.
+  // after deleting a paragraph) is measured correctly, not just growth.
+  // useLayoutEffect (not useEffect) so the height is corrected before paint,
+  // avoiding a one-frame flash at the wrong size when editing starts.
+  useLayoutEffect(() => {
+    const el = notesRef.current;
+    if (!el || !editingNotes) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, 240), 480)}px`;
+  }, [notesDraft, editingNotes]);
+
   const projectNames = projects.map((p) => p.name);
   // two-tier only: a subtask can't itself be a parent, and can't be its own parent
   const parentCandidates = cards.filter(
@@ -1982,11 +1994,10 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                   value={notesDraft}
                   onChange={(e) => setNotesDraft(e.target.value)}
                   placeholder="markdown — blockers, checklist, links…"
-                  rows={5}
                   style={{
-                    ...inputStyle, borderRadius: "0 0 7px 7px", resize: "vertical",
+                    ...inputStyle, borderRadius: "0 0 7px 7px", resize: "none", overflowY: "auto",
                     fontFamily: "'JetBrains Mono', monospace", fontSize: 12,
-                    minHeight: 160, maxHeight: 480,
+                    height: 240, minHeight: 240, maxHeight: 480,
                   }}
                 />
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
