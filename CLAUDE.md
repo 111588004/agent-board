@@ -51,7 +51,7 @@ The web UI needs no env var for this — it always calls `/api/...` relative to 
 
 If `npm link` ever gets run here anyway (by habit, by another agent not reading this) and clobbers the global bin, restore it: `npm install -g @limao.li.design/agent-board`.
 
-**If you're ever unsure which one you're actually talking to** (this repo's dev code, or the published npm copy) — every running server exposes `GET /api/meta` (`{version, source: "dev"|"npm", root, pid}`), printed at startup too, and the web UI shows it as a small DEV/NPM badge in the header. `readlink -f $(which agent-board)` also works: a path under this repo means something clobbered the global bin with `npm link`; a path under `.../node_modules/@limao.li.design/agent-board/...` (not a symlink) means it's correctly the npm copy.
+**If you're ever unsure which one you're actually talking to** (this repo's dev code, or the published npm copy) — every running server exposes `GET /api/meta` (`{version, source: "dev"|"npm", root, pid}`), also printed at startup. No UI badge for this (the dev-vs-global split above should make it moot in practice — see it as a fallback, not something to lean on). `readlink -f $(which agent-board)` also works: a path under this repo means something clobbered the global bin with `npm link`; a path under `.../node_modules/@limao.li.design/agent-board/...` (not a symlink) means it's correctly the npm copy.
 
 There's no test framework — this is a solo local tool. Verify changes manually: `curl` against the REST routes, run the CLI verbs, or click through the UI. See `agent-board-handoff.md` and the implementation plan history for the exact verification commands used when each piece was built.
 
