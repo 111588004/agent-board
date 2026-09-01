@@ -53,6 +53,14 @@ export function createWorkspace(name) {
   return apiRequest("POST", "/api/workspaces", { name });
 }
 
+export function renameWorkspace(oldName, newName) {
+  return apiRequest("PATCH", `/api/workspaces/${encodeURIComponent(oldName)}`, { name: newName });
+}
+
+export function deleteWorkspace(name) {
+  return apiRequest("DELETE", `/api/workspaces/${encodeURIComponent(name)}`);
+}
+
 function workspacePath(workspace) {
   return `/api/w/${encodeURIComponent(resolveWorkspace(workspace))}`;
 }

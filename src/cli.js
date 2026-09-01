@@ -130,7 +130,29 @@ switch (cmd) {
       console.log(`current workspace is now ${name}`);
       break;
     }
-    console.error("usage: agent-board workspace <list|create|use> ...");
+    if (sub === "rename") {
+      const [oldName, newName] = [positional[1], positional[2]];
+      if (!oldName || !newName) {
+        console.error("usage: agent-board workspace rename <old> <new>");
+        process.exit(1);
+      }
+      await run(() => client.renameWorkspace(oldName, newName));
+      if (client.resolveWorkspace() === oldName) client.setCurrentWorkspace(newName);
+      console.log(`renamed workspace ${oldName} to ${newName}`);
+      break;
+    }
+    if (sub === "delete") {
+      const name = positional[1];
+      if (!name) {
+        console.error("usage: agent-board workspace delete <name>");
+        process.exit(1);
+      }
+      await run(() => client.deleteWorkspace(name));
+      if (client.resolveWorkspace() === name) client.setCurrentWorkspace("default");
+      console.log(`deleted workspace ${name}`);
+      break;
+    }
+    console.error("usage: agent-board workspace <list|create|use|rename|delete> ...");
     process.exit(1);
   }
 

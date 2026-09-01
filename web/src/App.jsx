@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, Code2, Link2, CalendarDays, Folder, Bot, Flag, CornerDownRight } from "lucide-react";
+import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, Code2, Link2, CalendarDays, Folder, Bot, Flag, CornerDownRight, Pencil } from "lucide-react";
 import * as api from "./api.js";
 
 const COLUMNS = [
@@ -128,7 +128,7 @@ export default function AgentBoard() {
   async function switchWorkspace(name) {
     if (name === workspace) return;
     if (name === "__new__") {
-      const newName = window.prompt("New workspace name (lowercase letters, digits, hyphens)");
+      const newName = window.prompt("New workspace name");
       if (!newName) return;
       try {
         await api.createWorkspace(newName);
@@ -143,6 +143,33 @@ export default function AgentBoard() {
     setWorkspace(name);
     setProjectFilter("all");
     setAgentFilter("all");
+  }
+
+  async function renameCurrentWorkspace() {
+    const newName = window.prompt(`Rename workspace "${workspace}" to:`, workspace);
+    if (!newName || newName === workspace) return;
+    try {
+      await api.renameWorkspace(workspace, newName);
+      setWorkspaces((prev) => prev.map((w) => (w === workspace ? newName : w)).sort());
+      api.setWorkspace(newName);
+      setWorkspace(newName);
+    } catch (e) {
+      reportError("Rename workspace", e);
+    }
+  }
+
+  async function deleteCurrentWorkspace() {
+    if (!window.confirm(`Delete workspace "${workspace}" and everything on it? This can't be undone.`)) return;
+    try {
+      await api.deleteWorkspace(workspace);
+      setWorkspaces((prev) => prev.filter((w) => w !== workspace));
+      api.setWorkspace("default");
+      setWorkspace("default");
+      setProjectFilter("all");
+      setAgentFilter("all");
+    } catch (e) {
+      reportError("Delete workspace", e);
+    }
   }
 
   const projectNames = useMemo(() => projects.map((p) => p.name).sort(), [projects]);
@@ -328,6 +355,26 @@ export default function AgentBoard() {
           onChange={switchWorkspace}
           options={[...workspaces.map((w) => ({ id: w, label: w })), { id: "__new__", label: "+ New workspace" }]}
         />
+        {workspace !== "default" && (
+          <>
+            <button
+              className="card-btn"
+              onClick={renameCurrentWorkspace}
+              title="Rename workspace"
+              style={{ background: "none", border: "none", color: "#8B8D98", cursor: "pointer", padding: 4, display: "flex" }}
+            >
+              <Pencil size={14} />
+            </button>
+            <button
+              className="card-btn"
+              onClick={deleteCurrentWorkspace}
+              title="Delete workspace"
+              style={{ background: "none", border: "none", color: "#8B8D98", cursor: "pointer", padding: 4, display: "flex" }}
+            >
+              <Trash2 size={14} />
+            </button>
+          </>
+        )}
 
         <div style={{ flex: 1 }} />
 

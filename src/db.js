@@ -29,6 +29,14 @@ function isValidWorkspaceName(name) {
   return !!name && !name.includes("/") && !name.includes("\\") && name !== "." && name !== "..";
 }
 
+function requireValidWorkspaceName(name) {
+  if (!isValidWorkspaceName(name)) {
+    const err = new Error(`invalid workspace name "${name}" — can't be empty, ".", "..", or contain "/"`);
+    err.status = 400;
+    throw err;
+  }
+}
+
 function initSchema(db) {
   // deliberately NOT WAL mode: every commit writes straight into the main
   // .db file (SQLite's default rollback-journal mode), so there's no
@@ -75,11 +83,7 @@ const connections = new Map();
 export function getDb(workspaceName) {
   const name = workspaceName || "default";
   if (connections.has(name)) return connections.get(name);
-  if (!isValidWorkspaceName(name)) {
-    const err = new Error(`invalid workspace name "${name}" — can't be empty, ".", "..", or contain "/"`);
-    err.status = 400;
-    throw err;
-  }
+  requireValidWorkspaceName(name);
   const dir = path.join(workspacesDir, name);
   fs.mkdirSync(dir, { recursive: true });
   const db = new Database(path.join(dir, "tasks.db"));
@@ -99,13 +103,64 @@ export function listWorkspaces() {
 }
 
 export function createWorkspace(name) {
-  if (!isValidWorkspaceName(name)) {
-    const err = new Error(`invalid workspace name "${name}" — can't be empty, ".", "..", or contain "/"`);
+  requireValidWorkspaceName(name);
+  getDb(name); // opens + initializes schema as a side effect
+  return name;
+}
+
+function requireNotDefault(name, action) {
+  if (name === "default") {
+    const err = new Error(`can't ${action} the "default" workspace`);
     err.status = 400;
     throw err;
   }
-  getDb(name); // opens + initializes schema as a side effect
-  return name;
+}
+
+export function deleteWorkspace(name) {
+  requireNotDefault(name, "delete");
+  const dir = path.join(workspacesDir, name);
+  if (!fs.existsSync(dir)) {
+    const err = new Error(`workspace "${name}" doesn't exist`);
+    err.status = 404;
+    throw err;
+  }
+  const conn = connections.get(name);
+  if (conn) {
+    conn.close();
+    connections.delete(name);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+// renameSync on the same filesystem is a single atomic inode update, same
+// durability guarantee as the legacy-tasks.db migration above — no
+// crash-mid-copy window that could lose the workspace's data.
+export function renameWorkspace(oldName, newName) {
+  requireNotDefault(oldName, "rename");
+  requireValidWorkspaceName(newName);
+  if (newName === "default") {
+    const err = new Error(`can't rename to "default" — it's reserved`);
+    err.status = 400;
+    throw err;
+  }
+  const oldDir = path.join(workspacesDir, oldName);
+  const newDir = path.join(workspacesDir, newName);
+  if (!fs.existsSync(oldDir)) {
+    const err = new Error(`workspace "${oldName}" doesn't exist`);
+    err.status = 404;
+    throw err;
+  }
+  if (fs.existsSync(newDir) || connections.has(newName)) {
+    const err = new Error(`workspace "${newName}" already exists`);
+    err.status = 409;
+    throw err;
+  }
+  const conn = connections.get(oldName);
+  if (conn) {
+    conn.close();
+    connections.delete(oldName);
+  }
+  fs.renameSync(oldDir, newDir);
 }
 
 // ponytail: MAX(seq)+1 can reuse a number if the highest-seq row for that

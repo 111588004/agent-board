@@ -66,3 +66,11 @@ export function listWorkspaces() {
 export function createWorkspace(name) {
   return rawRequest("POST", "/api/workspaces", { name });
 }
+
+export function renameWorkspace(oldName, newName) {
+  return rawRequest("PATCH", `/api/workspaces/${encodeURIComponent(oldName)}`, { name: newName });
+}
+
+export function deleteWorkspace(name) {
+  return rawRequest("DELETE", `/api/workspaces/${encodeURIComponent(name)}`);
+}

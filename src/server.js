@@ -5,7 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import tasksRouter from "./routes/tasks.js";
 import projectsRouter from "./routes/projects.js";
 import { createMcpServer } from "./mcp/tools.js";
-import { getDb, listWorkspaces, createWorkspace } from "./db.js";
+import { getDb, listWorkspaces, createWorkspace, deleteWorkspace, renameWorkspace } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -21,6 +21,24 @@ app.post("/api/workspaces", (req, res) => {
   try {
     createWorkspace(name);
     res.status(201).json({ name });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+app.patch("/api/workspaces/:name", (req, res) => {
+  const { name: newName } = req.body;
+  if (!newName) return res.status(400).json({ error: "name is required" });
+  try {
+    renameWorkspace(req.params.name, newName);
+    res.json({ name: newName });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+app.delete("/api/workspaces/:name", (req, res) => {
+  try {
+    deleteWorkspace(req.params.name);
+    res.status(204).end();
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
   }
