@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, Code2, Link2, CalendarDays, Folder, Bot, Flag, CornerDownRight, Pencil } from "lucide-react";
+import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, Code2, Link2, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal } from "lucide-react";
 import * as api from "./api.js";
 
 const COLUMNS = [
@@ -356,24 +356,27 @@ export default function AgentBoard() {
           options={[...workspaces.map((w) => ({ id: w, label: w })), { id: "__new__", label: "+ New workspace" }]}
         />
         {workspace !== "default" && (
-          <>
-            <button
-              className="card-btn"
-              onClick={renameCurrentWorkspace}
-              title="Rename workspace"
-              style={{ background: "none", border: "none", color: "#8B8D98", cursor: "pointer", padding: 4, display: "flex" }}
-            >
-              <Pencil size={14} />
-            </button>
-            <button
-              className="card-btn"
-              onClick={deleteCurrentWorkspace}
-              title="Delete workspace"
-              style={{ background: "none", border: "none", color: "#8B8D98", cursor: "pointer", padding: 4, display: "flex" }}
-            >
-              <Trash2 size={14} />
-            </button>
-          </>
+          <Dropdown
+            value={null}
+            options={[
+              { id: "rename", label: "Rename" },
+              { id: "delete", label: "Delete" },
+            ]}
+            onChange={(action) => {
+              if (action === "rename") renameCurrentWorkspace();
+              else if (action === "delete") deleteCurrentWorkspace();
+            }}
+            renderTrigger={({ onClick }) => (
+              <button
+                className="card-btn"
+                onClick={onClick}
+                title="Workspace actions"
+                style={{ background: "none", border: "none", color: "#8B8D98", cursor: "pointer", padding: 4, display: "flex" }}
+              >
+                <MoreHorizontal size={16} />
+              </button>
+            )}
+          />
         )}
 
         <div style={{ flex: 1 }} />
