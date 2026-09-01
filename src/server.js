@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -8,9 +9,27 @@ import { createMcpServer } from "./mcp/tools.js";
 import { getDb, listWorkspaces, createWorkspace, deleteWorkspace, renameWorkspace } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.join(__dirname, "..");
+
+// answers "which copy of agent-board am I actually talking to" — dev
+// checkout vs. an npm-installed copy — without relying on remembering which
+// port/command you used to start it. npm link vs `npm install -g` silently
+// swap which code the global `agent-board` bin runs (see CLAUDE.md), so the
+// running server has to self-report; there's no other reliable signal.
+const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const meta = {
+  version: pkg.version,
+  source: root.includes("node_modules") ? "npm" : "dev",
+  root,
+  pid: process.pid,
+};
 
 const app = express();
 app.use(express.json());
+
+app.get("/api/meta", (req, res) => {
+  res.json(meta);
+});
 
 app.get("/api/workspaces", (req, res) => {
   res.json(listWorkspaces());
@@ -95,4 +114,7 @@ app.delete("/mcp", (req, res) => {
 app.use(express.static(path.join(__dirname, "../web/dist")));
 
 const PORT = process.env.PORT || 4317;
-app.listen(PORT, () => console.log(`agent-board listening on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`agent-board v${meta.version} (${meta.source}) listening on http://localhost:${PORT}`);
+  console.log(`  root: ${meta.root}`);
+});

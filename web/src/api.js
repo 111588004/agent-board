@@ -59,6 +59,10 @@ export function createProject(name, prefix) {
   return request("POST", "/projects", { name, prefix });
 }
 
+export function getMeta() {
+  return rawRequest("GET", "/api/meta");
+}
+
 export function listWorkspaces() {
   return rawRequest("GET", "/api/workspaces");
 }

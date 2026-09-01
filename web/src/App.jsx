@@ -105,9 +105,11 @@ export default function AgentBoard() {
   const [sortDir, setSortDir] = useState("desc");
   const [workspace, setWorkspace] = useState(api.getWorkspace());
   const [workspaces, setWorkspaces] = useState([]);
+  const [meta, setMeta] = useState(null); // {version, source: "dev"|"npm", root, pid}
 
   useEffect(() => {
     api.listWorkspaces().then(setWorkspaces).catch((e) => reportError("Loading workspaces", e));
+    api.getMeta().then(setMeta).catch(() => {}); // cosmetic only — don't bother the user if it fails
   }, []);
 
   useEffect(() => {
@@ -353,8 +355,25 @@ export default function AgentBoard() {
           className="mono"
           style={{ fontSize: 11, color: "#8B8D98", marginLeft: 2 }}
         >
-          localhost:4317
+          {window.location.host}
         </span>
+        {meta && (
+          <span
+            className="mono"
+            title={`agent-board v${meta.version}\n${meta.root}\npid ${meta.pid}`}
+            style={{
+              fontSize: 10.5,
+              padding: "2px 6px",
+              borderRadius: 5,
+              fontWeight: 700,
+              background: meta.source === "dev" ? "#3DCC7B22" : "#4C8DFF22",
+              color: meta.source === "dev" ? "#3DCC7B" : "#4C8DFF",
+              border: `1px solid ${meta.source === "dev" ? "#3DCC7B33" : "#4C8DFF33"}`,
+            }}
+          >
+            {meta.source === "dev" ? "DEV" : `NPM v${meta.version}`}
+          </span>
+        )}
 
         <WorkspaceSwitcher
           workspace={workspace}
