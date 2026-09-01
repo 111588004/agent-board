@@ -3,3 +3,4 @@ node_modules/
 *.db-wal
 *.db-shm
 .agent-board/
+web/dist/
