@@ -26,9 +26,11 @@ agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=] [--
 agent-board update <id> --status=<status> [--priority=] [--agent=] [--title=] [--worktree=] [--branch=] [--workspace=]
 agent-board note <id> "<text>" [--agent=<name>] [--workspace=]   # appends, never overwrites
 
-agent-board workspace list                # marks the current one with *
-agent-board workspace create <name>       # lowercase letters/digits/hyphens only
-agent-board workspace use <name>          # sets the default for every command below that omits --workspace=
+agent-board workspace list                  # marks the current one with *
+agent-board workspace create <name>         # any name is fine — filesystem-safe Unicode, not just lowercase/digits/hyphens
+agent-board workspace use <name>            # sets the default for every command below that omits --workspace=
+agent-board workspace rename <old> <new>    # updates current-workspace too, if you renamed the one you're on
+agent-board workspace delete <name>         # can't delete "default"; resets current-workspace to "default" if you deleted it
 ```
 
 Any of the four task verbs above requires the server to already be running (`agent-board` with no args, in another terminal) — it does not auto-spawn one, deliberately, to avoid orphaned/duplicate server processes; it fails with a clear connection error instead. This works from any directory — the CLI is a REST client.
@@ -101,5 +103,4 @@ This is the actual point of the tool: a real project adds a short section to its
 - **Registering the MCP server with a real client**: not done. `claude mcp add agent-board --url http://localhost:4317/mcp` (per `agent-board-handoff.md` §6) will do it for Claude Code; the same pattern applies to Codex/Gemini CLI. Not run yet since it's a persistent config change on whichever machine runs it — do it yourself when ready rather than having an agent run it for you.
 - **`agent-board.jsx`** (repo root): the original single-file prototype, now superseded by `web/src/App.jsx`. Left in place rather than deleted so this file's history stays intact; safe to remove once you're confident nothing still references it.
 - **`agent-board open <id>`** (jump to a task's worktree from the CLI): explicitly out of scope per the handoff doc, not started.
-- **Deleting a workspace**: no `DELETE /api/workspaces/:name` route or CLI verb — `rm -rf ~/.agent-board/workspaces/<name>` on disk is the only way for now (then restart the server, since an already-open connection to that workspace stays cached until process exit). Add a real endpoint if manual deletion actually becomes annoying in practice.
-- **MCP tools for listing/creating workspaces**: not built — an agent doesn't need to invent a workspace at runtime, that's a human/CLI decision about which board a project's `CLAUDE.md` points at. The 4 existing MCP tools do accept an optional `workspace` param to *use* one, just not to manage the set of them.
+- **MCP tools for listing/creating/deleting workspaces**: not built — an agent doesn't need to invent or destroy a workspace at runtime, that's a human/CLI decision about which board a project's `CLAUDE.md` points at. The 4 existing MCP tools do accept an optional `workspace` param to *use* one, just not to manage the set of them.
