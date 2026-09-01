@@ -53,19 +53,23 @@ export function createWorkspace(name) {
   return apiRequest("POST", "/api/workspaces", { name });
 }
 
+function workspacePath(workspace) {
+  return `/api/w/${encodeURIComponent(resolveWorkspace(workspace))}`;
+}
+
 export function listTasks({ project, status, parentId, workspace } = {}) {
   const params = new URLSearchParams();
   if (project) params.set("project", project);
   if (status) params.set("status", status);
   if (parentId) params.set("parentId", parentId);
   const qs = params.toString();
-  return apiRequest("GET", `/api/w/${resolveWorkspace(workspace)}/tasks${qs ? `?${qs}` : ""}`);
+  return apiRequest("GET", `${workspacePath(workspace)}/tasks${qs ? `?${qs}` : ""}`);
 }
 
 export function createTask({ workspace, ...task }) {
-  return apiRequest("POST", `/api/w/${resolveWorkspace(workspace)}/tasks`, task);
+  return apiRequest("POST", `${workspacePath(workspace)}/tasks`, task);
 }
 
 export function updateTask(id, { workspace, ...patch } = {}) {
-  return apiRequest("PATCH", `/api/w/${resolveWorkspace(workspace)}/tasks/${id}`, patch);
+  return apiRequest("PATCH", `${workspacePath(workspace)}/tasks/${id}`, patch);
 }

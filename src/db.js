@@ -21,7 +21,13 @@ if (!fs.existsSync(workspacesDir) && fs.existsSync(legacyDbPath)) {
 }
 fs.mkdirSync(workspacesDir, { recursive: true });
 
-const SLUG_RE = /^[a-z0-9-]+$/;
+// filesystem-safe, not ASCII-only — a workspace name becomes a directory
+// name and a URL path segment (percent-encoded by the client), both of
+// which handle Unicode fine. Only reject what would actually break: empty,
+// path separators, and the two directory-traversal specials.
+function isValidWorkspaceName(name) {
+  return !!name && !name.includes("/") && !name.includes("\\") && name !== "." && name !== "..";
+}
 
 function initSchema(db) {
   // deliberately NOT WAL mode: every commit writes straight into the main
@@ -69,8 +75,8 @@ const connections = new Map();
 export function getDb(workspaceName) {
   const name = workspaceName || "default";
   if (connections.has(name)) return connections.get(name);
-  if (!SLUG_RE.test(name)) {
-    const err = new Error(`invalid workspace name "${name}" — use lowercase letters, digits, hyphens only`);
+  if (!isValidWorkspaceName(name)) {
+    const err = new Error(`invalid workspace name "${name}" — can't be empty, ".", "..", or contain "/"`);
     err.status = 400;
     throw err;
   }
@@ -93,8 +99,8 @@ export function listWorkspaces() {
 }
 
 export function createWorkspace(name) {
-  if (!SLUG_RE.test(name)) {
-    const err = new Error(`invalid workspace name "${name}" — use lowercase letters, digits, hyphens only`);
+  if (!isValidWorkspaceName(name)) {
+    const err = new Error(`invalid workspace name "${name}" — can't be empty, ".", "..", or contain "/"`);
     err.status = 400;
     throw err;
   }

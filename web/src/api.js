@@ -27,7 +27,7 @@ async function rawRequest(method, path, body) {
 }
 
 function request(method, path, body) {
-  return rawRequest(method, `/api/w/${getWorkspace()}${path}`, body);
+  return rawRequest(method, `/api/w/${encodeURIComponent(getWorkspace())}${path}`, body);
 }
 
 export function listTasks(filters = {}) {
