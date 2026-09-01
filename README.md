@@ -7,7 +7,7 @@ A single Express + SQLite server is the source of truth. The CLI, an MCP server,
 ## Install
 
 ```bash
-npm install -g agent-board
+npm install -g @limao.li.design/agent-board
 ```
 
 ## Usage

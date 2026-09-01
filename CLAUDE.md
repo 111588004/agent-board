@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A local Jira-style kanban board that tracks task progress across multiple CLI coding agents (Claude Code, Codex CLI, Gemini CLI, Pi Agent, etc.) working across multiple projects/worktrees. Full design rationale and the decisions behind every choice below live in `agent-board-handoff.md` (v2) — read it before changing architecture, not just this file.
 
-The backend (Express + SQLite REST API), frontend (Vite/React, wired to the real API), CLI (`agent-board`'s primary write path), and MCP server are all implemented, `npm link`-packaged, and working — validated end-to-end, including against a real Claude Code agent following a project's `CLAUDE.md` instructions, and against the raw MCP JSON-RPC protocol via `curl`. Not yet done: registering the MCP server with a real Claude Code session (`claude mcp add`, a one-liner — not run yet since it edits global Claude Code config) and a decision on public npm publishing.
+The backend (Express + SQLite REST API), frontend (Vite/React, wired to the real API), CLI (`agent-board`'s primary write path), and MCP server are all implemented, working, and validated end-to-end — including against a real Claude Code agent following a project's `CLAUDE.md` instructions, and against the raw MCP JSON-RPC protocol via `curl`. Published to npm as `@limao.li.design/agent-board` (the unscoped name `agent-board` was rejected by the registry as too similar to an existing unrelated package) and pushed to GitHub at `github.com/111588004/agent-board`. Not yet done: registering the MCP server with a real Claude Code session (`claude mcp add`, a one-liner — not run yet since it edits global Claude Code config).
 
 ## Commands
 
@@ -66,7 +66,7 @@ This is the actual point of the tool: a real project adds a short section to its
 
 ## Known gaps / not yet built
 
-- **Public npm publishing**: not done, undecided per `agent-board-handoff.md` §9. `npm link` already makes `agent-board` a real global command on this machine — that's sufficient for personal use; publishing only matters if this needs to be `npx`-installable on other machines. The name `agent-board` was unclaimed on the registry as of last check.
+- **Public npm publishing**: done. Published as `@limao.li.design/agent-board` (scoped — the unscoped `agent-board` was blocked by the registry's name-similarity check against an unrelated existing package). `npm install -g @limao.li.design/agent-board` gives the same global `agent-board` command as the local `npm link` setup. Publishing used a granular access token with 2FA bypass (7-day expiry) since OTP-based publish is being deprecated by npm; regenerate a token the same way for future version bumps.
 - **Registering the MCP server with a real client**: not done. `claude mcp add agent-board --url http://localhost:4317/mcp` (per `agent-board-handoff.md` §6) will do it for Claude Code; the same pattern applies to Codex/Gemini CLI. Not run yet since it's a persistent config change on whichever machine runs it — do it yourself when ready rather than having an agent run it for you.
 - **`agent-board.jsx`** (repo root): the original single-file prototype, now superseded by `web/src/App.jsx`. Left in place rather than deleted so this file's history stays intact; safe to remove once you're confident nothing still references it.
 - **`agent-board open <id>`** (jump to a task's worktree from the CLI): explicitly out of scope per the handoff doc, not started.
