@@ -12,10 +12,11 @@ The backend (Express + SQLite REST API), frontend (Vite/React, wired to the real
 
 ```bash
 npm install                # backend deps (express, better-sqlite3)
-npm link                   # makes the global `agent-board` command point at THIS dev directory
 
-agent-board                 # bare command, no args → starts the REST API + static server on :4317
-                             # (equivalent: node src/server.js / node src/cli.js with no args)
+npm start                   # runs THIS checkout — no args, starts the REST API + static server on :4317
+                             # (equivalent: node src/server.js / node src/cli.js with no args, from this directory)
+
+agent-board                 # the GLOBAL command — always the published npm package, never this checkout (see below)
 
 cd web && npm install      # frontend deps (first time only)
 cd web && npm run dev      # Vite dev server on :5173, proxies /api to :4317
@@ -46,11 +47,11 @@ AGENT_BOARD_URL=http://localhost:4318 agent-board list               # CLI talki
 
 The web UI needs no env var for this — it always calls `/api/...` relative to whatever origin served it, so it automatically follows the port of whichever server you opened it from.
 
-**`npm link` vs. `npm install -g @limao.li.design/agent-board`** — both register a global `agent-board` bin with the same name, so whichever ran most recently wins and silently replaces the other; there's no warning when this happens. This matters because they point at different code:
-- `npm link` (run from this dev directory) → the global `agent-board` command runs *this* checkout live, no rebuild/republish needed — use this while making changes here.
-- `npm install -g @limao.li.design/agent-board` → the global command runs whatever was last published to npm, frozen until the next `npm publish` + reinstall — use this to verify what a real end user actually gets.
+**The global `agent-board` command is always the published npm package — never `npm link` this checkout.** `npm link` and `npm install -g @limao.li.design/agent-board` fight over the same global bin (whichever ran most recently silently wins, no warning), which was a recurring source of confusion before this rule: you'd run a command expecting dev behavior and silently get frozen npm code, or vice versa. The fix is to never let them compete — this repo is only ever run explicitly (`npm start`, or `node src/server.js` / `node src/cli.js ...`), from inside this directory. Every other project on the machine, and every other agent, always gets the real npm-published behavior through the plain `agent-board` command, with zero ambiguity about which code is running.
 
-Check which one is currently active: `readlink -f $(which agent-board)` — a path under this repo means dev/linked, a path under `.../node_modules/@limao.li.design/agent-board/...` means the published npm copy. Switch back to dev with `npm link` (from this directory) at any time.
+If `npm link` ever gets run here anyway (by habit, by another agent not reading this) and clobbers the global bin, restore it: `npm install -g @limao.li.design/agent-board`.
+
+**If you're ever unsure which one you're actually talking to** (this repo's dev code, or the published npm copy) — every running server exposes `GET /api/meta` (`{version, source: "dev"|"npm", root, pid}`), printed at startup too, and the web UI shows it as a small DEV/NPM badge in the header. `readlink -f $(which agent-board)` also works: a path under this repo means something clobbered the global bin with `npm link`; a path under `.../node_modules/@limao.li.design/agent-board/...` (not a symlink) means it's correctly the npm copy.
 
 There's no test framework — this is a solo local tool. Verify changes manually: `curl` against the REST routes, run the CLI verbs, or click through the UI. See `agent-board-handoff.md` and the implementation plan history for the exact verification commands used when each piece was built.
 
@@ -99,7 +100,7 @@ This is the actual point of the tool: a real project adds a short section to its
 
 ## Known gaps / not yet built
 
-- **Public npm publishing**: done. Published as `@limao.li.design/agent-board` (scoped — the unscoped `agent-board` was blocked by the registry's name-similarity check against an unrelated existing package). `npm install -g @limao.li.design/agent-board` gives the same global `agent-board` command as the local `npm link` setup. Publishing used a granular access token with 2FA bypass (7-day expiry) since OTP-based publish is being deprecated by npm; regenerate a token the same way for future version bumps.
+- **Public npm publishing**: done. Published as `@limao.li.design/agent-board` (scoped — the unscoped `agent-board` was blocked by the registry's name-similarity check against an unrelated existing package). `npm install -g @limao.li.design/agent-board` is how the global `agent-board` command should always be kept current — see the `npm link` warning above for why `npm link` shouldn't be used to do this instead. Publishing uses a granular access token with 2FA bypass (7-day expiry) since OTP-based publish is being deprecated by npm; regenerate a token the same way for future version bumps (`npmjs.com` → Access Tokens → Generate New Token → Granular Access Token → check "Bypass two-factor authentication").
 - **Registering the MCP server with a real client**: not done. `claude mcp add agent-board --url http://localhost:4317/mcp` (per `agent-board-handoff.md` §6) will do it for Claude Code; the same pattern applies to Codex/Gemini CLI. Not run yet since it's a persistent config change on whichever machine runs it — do it yourself when ready rather than having an agent run it for you.
 - **`agent-board.jsx`** (repo root): the original single-file prototype, now superseded by `web/src/App.jsx`. Left in place rather than deleted so this file's history stays intact; safe to remove once you're confident nothing still references it.
 - **`agent-board open <id>`** (jump to a task's worktree from the CLI): explicitly out of scope per the handoff doc, not started.
