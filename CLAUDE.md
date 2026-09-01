@@ -50,7 +50,7 @@ There's no test framework — this is a solo local tool. Verify changes manually
 
 ```
 src/
-  db.js            SQLite (WAL mode, ~/.agent-board/tasks.db), schema + ticket-id generation
+  db.js            SQLite (rollback-journal mode — see below, ~/.agent-board/tasks.db), schema + ticket-id generation
   routes/tasks.js   GET/POST /api/tasks, PATCH/DELETE /api/tasks/:id
   routes/projects.js GET/POST /api/projects
   client.js         shared REST client — fetch wrappers used by BOTH cli.js and mcp/tools.js
@@ -74,6 +74,8 @@ web/
 This split exists because the original design doc only specified one `notes` column with append semantics for the CLI use case; the UI's Description editor (added later, styled after Jira's field) needs full-rewrite semantics on the same column. Don't collapse these back into one behavior without re-solving that conflict.
 
 **Ticket IDs are generated inside a `better-sqlite3` transaction** (`createTask` in `db.js`) — `SELECT MAX(seq)+1` and the `INSERT` happen atomically on the single connection, so concurrent requests can't collide on the same id.
+
+**SQLite journal mode: deliberately NOT WAL**, despite `agent-board-handoff.md` originally specifying WAL mode. WAL leaves recently-committed writes sitting only in a separate `-wal` file until a checkpoint merges them into the main `.db` file — if the process dies before that checkpoint (crash, `kill -9`), that data is gone even though the app already told the caller it was saved. This actually happened once and lost a session's worth of board data. WAL's usual benefit (readers don't block on writers) doesn't buy anything here since every write already funnels through one single-threaded Express process — there's never a second concurrent writer for WAL to help with. Plain rollback-journal mode (SQLite's default) commits straight into the main file on every transaction, so there's no partially-committed state a crash can lose. Don't reintroduce WAL mode without solving the checkpoint-durability problem first.
 
 ## Using agent-board to track work in *other* projects
 

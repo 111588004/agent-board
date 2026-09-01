@@ -7,11 +7,12 @@ const dir = process.env.AGENT_BOARD_DIR || path.join(os.homedir(), ".agent-board
 fs.mkdirSync(dir, { recursive: true });
 
 export const db = new Database(path.join(dir, "tasks.db"));
-db.pragma("journal_mode = WAL");
-// checkpoint (flush WAL into the main .db file) every ~100 pages instead of
-// SQLite's default ~1000 — shrinks how much recent data lives only in the
-// WAL and would be at risk if the process is ever killed uncleanly.
-db.pragma("wal_autocheckpoint = 100");
+// deliberately NOT WAL mode: every commit writes straight into the main .db
+// file (SQLite's default rollback-journal mode), so there's no WAL-only
+// window where a crash loses "committed" data. WAL's benefit — writers not
+// blocking readers — doesn't apply here anyway: every write goes through
+// this one Express process, so there's never more than one writer at a
+// time regardless of journal mode.
 
 // Column names are camelCase to match the frontend's card shape directly —
 // no request/response translation layer needed between API and UI.

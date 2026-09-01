@@ -5,7 +5,6 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import tasksRouter from "./routes/tasks.js";
 import projectsRouter from "./routes/projects.js";
 import { createMcpServer } from "./mcp/tools.js";
-import { db } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -45,17 +44,4 @@ app.delete("/mcp", (req, res) => {
 app.use(express.static(path.join(__dirname, "../web/dist")));
 
 const PORT = process.env.PORT || 4317;
-const server = app.listen(PORT, () => console.log(`agent-board listening on http://localhost:${PORT}`));
-
-// a clean shutdown (Ctrl+C, `kill`) flushes the WAL into the main .db file
-// instead of leaving recent writes recoverable only via WAL replay — a crash
-// or `kill -9` still can't be caught, but this closes that window for the
-// common case.
-function shutdown() {
-  server.close(() => {
-    db.pragma("wal_checkpoint(TRUNCATE)");
-    process.exit(0);
-  });
-}
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+app.listen(PORT, () => console.log(`agent-board listening on http://localhost:${PORT}`));
