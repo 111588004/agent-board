@@ -103,8 +103,15 @@ export default function AgentBoard() {
   const [view, setView] = useState("board"); // "board" | "list"
   const [sortKey, setSortKey] = useState("updatedAt");
   const [sortDir, setSortDir] = useState("desc");
+  const [workspace, setWorkspace] = useState(api.getWorkspace());
+  const [workspaces, setWorkspaces] = useState([]);
 
   useEffect(() => {
+    api.listWorkspaces().then(setWorkspaces).catch((e) => reportError("Loading workspaces", e));
+  }, []);
+
+  useEffect(() => {
+    setLoaded(false);
     (async () => {
       try {
         const [projectRows, taskRows] = await Promise.all([api.listProjects(), api.listTasks()]);
@@ -116,7 +123,27 @@ export default function AgentBoard() {
         setLoaded(true);
       }
     })();
-  }, []);
+  }, [workspace]);
+
+  async function switchWorkspace(name) {
+    if (name === workspace) return;
+    if (name === "__new__") {
+      const newName = window.prompt("New workspace name (lowercase letters, digits, hyphens)");
+      if (!newName) return;
+      try {
+        await api.createWorkspace(newName);
+        setWorkspaces((prev) => Array.from(new Set([...prev, newName])).sort());
+      } catch (e) {
+        reportError("Create workspace", e);
+        return;
+      }
+      name = newName;
+    }
+    api.setWorkspace(name);
+    setWorkspace(name);
+    setProjectFilter("all");
+    setAgentFilter("all");
+  }
 
   const projectNames = useMemo(() => projects.map((p) => p.name).sort(), [projects]);
 
@@ -294,6 +321,13 @@ export default function AgentBoard() {
         >
           localhost:4317
         </span>
+
+        <FilterSelect
+          icon={<Folder size={13} />}
+          value={workspace}
+          onChange={switchWorkspace}
+          options={[...workspaces.map((w) => ({ id: w, label: w })), { id: "__new__", label: "+ New workspace" }]}
+        />
 
         <div style={{ flex: 1 }} />
 

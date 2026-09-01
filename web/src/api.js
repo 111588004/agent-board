@@ -1,7 +1,21 @@
-const BASE = "/api";
+const WORKSPACE_KEY = "agent-board.workspace";
 
-async function request(method, path, body) {
-  const res = await fetch(`${BASE}${path}`, {
+// URL query param wins (so a workspace link is shareable), then whatever
+// was last picked in this browser, then "default".
+export function getWorkspace() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("workspace") || localStorage.getItem(WORKSPACE_KEY) || "default";
+}
+
+export function setWorkspace(name) {
+  localStorage.setItem(WORKSPACE_KEY, name);
+  const url = new URL(window.location.href);
+  url.searchParams.set("workspace", name);
+  window.history.replaceState({}, "", url);
+}
+
+async function rawRequest(method, path, body) {
+  const res = await fetch(path, {
     method,
     headers: body ? { "content-type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
@@ -10,6 +24,10 @@ async function request(method, path, body) {
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) throw new Error((data && data.error) || res.statusText);
   return data;
+}
+
+function request(method, path, body) {
+  return rawRequest(method, `/api/w/${getWorkspace()}${path}`, body);
 }
 
 export function listTasks(filters = {}) {
@@ -39,4 +57,12 @@ export function listProjects() {
 
 export function createProject(name, prefix) {
   return request("POST", "/projects", { name, prefix });
+}
+
+export function listWorkspaces() {
+  return rawRequest("GET", "/api/workspaces");
+}
+
+export function createWorkspace(name) {
+  return rawRequest("POST", "/api/workspaces", { name });
 }
