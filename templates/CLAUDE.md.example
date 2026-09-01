@@ -27,6 +27,8 @@ agent-board note <id> "short note about what happened" --agent=claude
 
 Always pass `--agent=claude` explicitly — don't omit it even though the flag is technically optional; leaving it off means the board can't tell who left a note or made a change.
 
+If this project's board isn't the default one (ask whoever set up the board if unsure), add `--workspace=<name>` to every command above, e.g. `agent-board list --project=PROJECT_NAME --workspace=<name>`.
+
 **When to call it:**
 - At the start of a coding task: `list` first for an existing open ticket matching the work; if none exists, `create` one and set it `in_progress`.
 - Whenever status meaningfully changes (code is ready for review, you're blocked, you're done).
