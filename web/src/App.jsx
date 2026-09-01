@@ -811,39 +811,36 @@ function ListView({ tasks, sortKey, sortDir, onSort, onOpen, projects, onFieldCh
 }
 
 function FilterSelect({ value, onChange, options, icon, light }) {
+  const label = options.find((o) => o.id === value)?.label ?? value;
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        background: light ? "#fff" : "#22262F",
-        border: light ? "1px solid #E4E6EB" : "none",
-        borderRadius: 7,
-        padding: "6px 10px",
-      }}
-    >
-      {icon}
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-          background: "transparent",
-          color: light ? "#42454D" : "#D7D9DE",
-          border: "none",
-          fontSize: 12.5,
-          cursor: "pointer",
-          appearance: "none",
-        }}
-      >
-        {options.map((o) => (
-          <option key={o.id} value={o.id} style={{ color: "#000" }}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <ChevronDown size={12} color="#8B8D98" />
-    </div>
+    <Dropdown
+      value={value}
+      options={options}
+      onChange={onChange}
+      renderTrigger={({ onClick }) => (
+        <button
+          type="button"
+          onClick={onClick}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: light ? "#fff" : "#22262F",
+            border: light ? "1px solid #E4E6EB" : "none",
+            borderRadius: 7,
+            padding: "6px 10px",
+            color: light ? "#42454D" : "#D7D9DE",
+            fontSize: 12.5,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          {icon}
+          {label}
+          <ChevronDown size={12} color="#8B8D98" />
+        </button>
+      )}
+    />
   );
 }
 
