@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, Code2, Link2, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal } from "lucide-react";
+import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal } from "lucide-react";
 import * as api from "./api.js";
 
 const COLUMNS = [
@@ -42,8 +42,9 @@ function statusMeta(id) {
 }
 
 // ponytail: regex-based, handles the subset of markdown notes actually need
-// (bold, code, links, bullets, checkboxes). Swap for a real parser if notes
-// start using tables/headings/nesting.
+// (bold, code, links, bare-URL autolink, images, headings, bulleted/numbered
+// lists, checkboxes). Swap for a real parser if notes start using
+// tables/nesting.
 function renderMarkdown(src) {
   if (!src) return "";
   const esc = (s) =>
@@ -52,30 +53,52 @@ function renderMarkdown(src) {
     esc(line)
       .replace(/`([^`]+)`/g, "<code>$1</code>")
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+      // images before links — "![alt](url)" would otherwise also match the
+      // link pattern below and leave a stray "!" in front of the <a>
+      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;border-radius:6px;margin:4px 0;display:block;" />')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+      // autolink bare URLs — skipped right after href="/src=" so a URL that
+      // just became part of a link/image above doesn't get wrapped again
+      .replace(/(?<!href=")(?<!src=")(https?:\/\/[^\s<>"]+)/g, '<a href="$1" target="_blank" rel="noreferrer">$1</a>');
 
   const blocks = [];
-  let list = null;
+  let list = null; // { type: "ul" | "ol", items: [] }
+  function flushList() {
+    if (!list) return;
+    const tag = list.type;
+    blocks.push(`<${tag} style="margin:4px 0 10px;padding-left:18px">${list.items.join("")}</${tag}>`);
+    list = null;
+  }
   for (const raw of src.split("\n")) {
     const line = raw.trim();
+    const heading = line.match(/^(#{1,3})\s+(.*)/);
+    if (heading) {
+      flushList();
+      const level = heading[1].length;
+      const size = { 1: 17, 2: 15, 3: 13.5 }[level];
+      blocks.push(`<div style="font-size:${size}px;font-weight:700;margin:${level === 1 ? "10px" : "8px"} 0 4px">${inline(heading[2])}</div>`);
+      continue;
+    }
     const check = line.match(/^-\s\[([ x])\]\s(.*)/i);
     const bullet = line.match(/^[-*]\s(.*)/);
-    if (check || bullet) {
-      if (!list) list = [];
-      list.push(
+    const numbered = line.match(/^\d+[.)]\s(.*)/);
+    if (check || bullet || numbered) {
+      const type = numbered ? "ol" : "ul";
+      if (!list || list.type !== type) {
+        flushList();
+        list = { type, items: [] };
+      }
+      list.items.push(
         check
           ? `<li style="list-style:none;margin-left:-18px"><input type="checkbox" disabled ${check[1].toLowerCase() === "x" ? "checked" : ""} style="margin-right:6px" />${inline(check[2])}</li>`
-          : `<li>${inline(bullet[1])}</li>`
+          : `<li>${inline((bullet || numbered)[1])}</li>`
       );
       continue;
     }
-    if (list) {
-      blocks.push(`<ul style="margin:4px 0 10px;padding-left:18px">${list.join("")}</ul>`);
-      list = null;
-    }
+    flushList();
     blocks.push(line ? `<p style="margin:0 0 8px">${inline(line)}</p>` : "");
   }
-  if (list) blocks.push(`<ul style="margin:4px 0 10px;padding-left:18px">${list.join("")}</ul>`);
+  flushList();
   return blocks.join("");
 }
 
@@ -1732,23 +1755,41 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
     });
   }
 
-  function applyList() {
+  function applyLinePrefix(prefix) {
     const el = notesRef.current;
     if (!el) return;
     const { selectionStart: s, value } = el;
     const lineStart = value.lastIndexOf("\n", s - 1) + 1;
-    const next = value.slice(0, lineStart) + "- " + value.slice(lineStart);
+    const next = value.slice(0, lineStart) + prefix + value.slice(lineStart);
     setNotesDraft(next);
     requestAnimationFrame(() => {
       el.focus();
-      el.setSelectionRange(s + 2, s + 2);
+      el.setSelectionRange(s + prefix.length, s + prefix.length);
     });
+  }
+
+  function applyList() {
+    applyLinePrefix("- ");
+  }
+
+  function applyOrderedList() {
+    applyLinePrefix("1. ");
+  }
+
+  function applyHeading(level) {
+    applyLinePrefix(`${"#".repeat(level)} `);
   }
 
   function applyLink() {
     const url = window.prompt("Link URL");
     if (!url) return;
     applyMd("[", `](${url})`, "text");
+  }
+
+  function applyImage() {
+    const url = window.prompt("Image URL");
+    if (!url) return;
+    applyMd("![", `](${url})`, "alt text");
   }
 
   function saveNotes() {
@@ -1919,10 +1960,18 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                     border: "1px solid #E4E6EB", borderBottom: "none", borderRadius: "7px 7px 0 0",
                   }}
                 >
+                  <ToolbarBtn title="Heading 1" onClick={() => applyHeading(1)}><Heading1 size={13} /></ToolbarBtn>
+                  <ToolbarBtn title="Heading 2" onClick={() => applyHeading(2)}><Heading2 size={13} /></ToolbarBtn>
+                  <ToolbarBtn title="Heading 3" onClick={() => applyHeading(3)}><Heading3 size={13} /></ToolbarBtn>
+                  <div style={{ width: 1, background: "#E4E6EB", margin: "2px 2px" }} />
                   <ToolbarBtn title="Bold" onClick={() => applyMd("**")}><Bold size={13} /></ToolbarBtn>
                   <ToolbarBtn title="Code" onClick={() => applyMd("`")}><Code2 size={13} /></ToolbarBtn>
+                  <div style={{ width: 1, background: "#E4E6EB", margin: "2px 2px" }} />
                   <ToolbarBtn title="Bullet list" onClick={applyList}><List size={13} /></ToolbarBtn>
+                  <ToolbarBtn title="Numbered list" onClick={applyOrderedList}><ListOrdered size={13} /></ToolbarBtn>
+                  <div style={{ width: 1, background: "#E4E6EB", margin: "2px 2px" }} />
                   <ToolbarBtn title="Link" onClick={applyLink}><Link2 size={13} /></ToolbarBtn>
+                  <ToolbarBtn title="Image" onClick={applyImage}><Image size={13} /></ToolbarBtn>
                 </div>
                 <textarea
                   ref={notesRef}
