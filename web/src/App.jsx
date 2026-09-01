@@ -145,28 +145,35 @@ export default function AgentBoard() {
     setAgentFilter("all");
   }
 
-  async function renameCurrentWorkspace() {
-    const newName = window.prompt(`Rename workspace "${workspace}" to:`, workspace);
-    if (!newName || newName === workspace) return;
+  // target defaults to the currently-open workspace, but the hover "..." in
+  // the switcher's own list can rename/delete a workspace without first
+  // switching into it.
+  async function renameWorkspaceByName(target) {
+    const newName = window.prompt(`Rename workspace "${target}" to:`, target);
+    if (!newName || newName === target) return;
     try {
-      await api.renameWorkspace(workspace, newName);
-      setWorkspaces((prev) => prev.map((w) => (w === workspace ? newName : w)).sort());
-      api.setWorkspace(newName);
-      setWorkspace(newName);
+      await api.renameWorkspace(target, newName);
+      setWorkspaces((prev) => prev.map((w) => (w === target ? newName : w)).sort());
+      if (target === workspace) {
+        api.setWorkspace(newName);
+        setWorkspace(newName);
+      }
     } catch (e) {
       reportError("Rename workspace", e);
     }
   }
 
-  async function deleteCurrentWorkspace() {
-    if (!window.confirm(`Delete workspace "${workspace}" and everything on it? This can't be undone.`)) return;
+  async function deleteWorkspaceByName(target) {
+    if (!window.confirm(`Delete workspace "${target}" and everything on it? This can't be undone.`)) return;
     try {
-      await api.deleteWorkspace(workspace);
-      setWorkspaces((prev) => prev.filter((w) => w !== workspace));
-      api.setWorkspace("default");
-      setWorkspace("default");
-      setProjectFilter("all");
-      setAgentFilter("all");
+      await api.deleteWorkspace(target);
+      setWorkspaces((prev) => prev.filter((w) => w !== target));
+      if (target === workspace) {
+        api.setWorkspace("default");
+        setWorkspace("default");
+        setProjectFilter("all");
+        setAgentFilter("all");
+      }
     } catch (e) {
       reportError("Delete workspace", e);
     }
@@ -349,35 +356,13 @@ export default function AgentBoard() {
           localhost:4317
         </span>
 
-        <FilterSelect
-          icon={<Folder size={13} />}
-          value={workspace}
-          onChange={switchWorkspace}
-          options={[...workspaces.map((w) => ({ id: w, label: w })), { id: "__new__", label: "+ New workspace" }]}
+        <WorkspaceSwitcher
+          workspace={workspace}
+          workspaces={workspaces}
+          onSwitch={switchWorkspace}
+          onRename={renameWorkspaceByName}
+          onDelete={deleteWorkspaceByName}
         />
-        {workspace !== "default" && (
-          <Dropdown
-            value={null}
-            options={[
-              { id: "rename", label: "Rename" },
-              { id: "delete", label: "Delete" },
-            ]}
-            onChange={(action) => {
-              if (action === "rename") renameCurrentWorkspace();
-              else if (action === "delete") deleteCurrentWorkspace();
-            }}
-            renderTrigger={({ onClick }) => (
-              <button
-                className="card-btn"
-                onClick={onClick}
-                title="Workspace actions"
-                style={{ background: "none", border: "none", color: "#8B8D98", cursor: "pointer", padding: 4, display: "flex" }}
-              >
-                <MoreHorizontal size={16} />
-              </button>
-            )}
-          />
-        )}
 
         <div style={{ flex: 1 }} />
 
@@ -758,6 +743,175 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left" 
               {o.label}
             </div>
           ))}
+        </div>,
+        document.body
+      )}
+    </span>
+  );
+}
+
+// Bespoke rather than built on Dropdown: each row needs its own hover-reveal
+// "..." (rename/delete for that specific workspace, not necessarily the
+// active one) — a per-row nested menu that the generic Dropdown's flat
+// options list has no notion of.
+function WorkspaceSwitcher({ workspace, workspaces, onSwitch, onRename, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState(null);
+  const [hoveredRow, setHoveredRow] = useState(null);
+  const [actionsFor, setActionsFor] = useState(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+
+  function openMenu() {
+    const rect = triggerRef.current.getBoundingClientRect();
+    setMenuPos({ top: rect.bottom + 4, left: rect.left });
+    setOpen(true);
+  }
+
+  function closeAll() {
+    setOpen(false);
+    setActionsFor(null);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocMouseDown(e) {
+      if (triggerRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      closeAll();
+    }
+    function onKeyDown(e) {
+      if (e.key === "Escape") closeAll();
+    }
+    function onScroll() {
+      closeAll();
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open]);
+
+  return (
+    <span ref={triggerRef} style={{ display: "inline-block" }}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); open ? closeAll() : openMenu(); }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: "#22262F",
+          border: "none",
+          borderRadius: 7,
+          padding: "6px 10px",
+          color: "#D7D9DE",
+          fontSize: 12.5,
+          cursor: "pointer",
+          fontFamily: "inherit",
+        }}
+      >
+        <Folder size={13} />
+        {workspace}
+        <ChevronDown size={12} color="#8B8D98" />
+      </button>
+      {open && menuPos && createPortal(
+        <div
+          ref={menuRef}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "fixed",
+            top: menuPos.top,
+            left: menuPos.left,
+            zIndex: 1000,
+            background: "#fff",
+            border: "1px solid #E4E6EB",
+            borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(20,22,30,0.14)",
+            padding: 4,
+            minWidth: 170,
+          }}
+        >
+          {workspaces.map((w) => (
+            <div
+              key={w}
+              onMouseEnter={() => setHoveredRow(w)}
+              onMouseLeave={() => setHoveredRow((h) => (h === w ? null : h))}
+              onClick={() => { onSwitch(w); closeAll(); }}
+              style={{
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+                padding: "6px 4px 6px 10px",
+                borderRadius: 5,
+                fontSize: 12.5,
+                fontWeight: w === workspace ? 600 : 400,
+                color: "#1D2027",
+                background: w === workspace ? "#F0F4FF" : "transparent",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <span>{w}</span>
+              {w !== "default" && (hoveredRow === w || actionsFor === w) && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setActionsFor((a) => (a === w ? null : w)); }}
+                  style={{ background: "none", border: "none", color: "#8B8D98", cursor: "pointer", padding: 2, display: "flex", borderRadius: 4 }}
+                >
+                  <MoreHorizontal size={14} />
+                </button>
+              )}
+              {actionsFor === w && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 2px)",
+                    right: 0,
+                    zIndex: 10,
+                    background: "#fff",
+                    border: "1px solid #E4E6EB",
+                    borderRadius: 8,
+                    boxShadow: "0 8px 24px rgba(20,22,30,0.14)",
+                    padding: 4,
+                    minWidth: 110,
+                  }}
+                >
+                  <div
+                    onClick={() => { closeAll(); onRename(w); }}
+                    style={{ padding: "6px 10px", borderRadius: 5, fontSize: 12.5, cursor: "pointer" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#F4F5F7")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    Rename
+                  </div>
+                  <div
+                    onClick={() => { closeAll(); onDelete(w); }}
+                    style={{ padding: "6px 10px", borderRadius: 5, fontSize: 12.5, cursor: "pointer", color: "#E5484D" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#FDEDEE")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    Delete
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          <div
+            onClick={() => { onSwitch("__new__"); closeAll(); }}
+            style={{ padding: "6px 10px", borderRadius: 5, fontSize: 12.5, color: "#1D2027", cursor: "pointer", whiteSpace: "nowrap" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#F4F5F7")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            + New workspace
+          </div>
         </div>,
         document.body
       )}
