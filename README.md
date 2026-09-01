@@ -23,13 +23,21 @@ This serves the REST API and web UI at `http://localhost:4317`.
 From any other terminal, on any project:
 
 ```bash
-agent-board list [--project=] [--status=] [--parent=]
-agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=] [--priority=] [--status=]
-agent-board update <id> --status=<status> [--priority=] [--agent=] [--title=] [--worktree=] [--branch=]
-agent-board note <id> "<text>" [--agent=<name>]
+agent-board list [--project=] [--status=] [--parent=] [--workspace=]
+agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=] [--priority=] [--status=] [--workspace=]
+agent-board update <id> --status=<status> [--priority=] [--agent=] [--title=] [--worktree=] [--branch=] [--workspace=]
+agent-board note <id> "<text>" [--agent=<name>] [--workspace=]
+
+agent-board workspace list                # marks the current one with *
+agent-board workspace create <name>
+agent-board workspace use <name>          # sets the default for every command above that omits --workspace=
+agent-board workspace rename <old> <new>
+agent-board workspace delete <name>
 ```
 
 The CLI is a REST client — it talks to the server above, it does not touch the database directly, and it requires the server to already be running.
+
+**Workspaces** are fully isolated boards (own projects, own tasks, own SQLite file) for separating contexts — e.g. personal projects vs. a client's. Everything defaults to a single `"default"` workspace if you never touch this; it's opt-in.
 
 ## MCP
 
@@ -45,14 +53,24 @@ Add a short section to that project's own `CLAUDE.md` (or equivalent agent-instr
 
 ## Data
 
-The database lives at `~/.agent-board/tasks.db` (SQLite, WAL mode) — not project-cwd-relative, so the board is shared across every project/worktree on the machine regardless of where `agent-board` is invoked from.
+Each workspace's database lives at `~/.agent-board/workspaces/<name>/tasks.db` — not project-cwd-relative, so a board is shared across every project/worktree on the machine regardless of where `agent-board` is invoked from.
 
 ## Development
 
 ```bash
-npm install                # backend deps
-cd web && npm install && npm run build   # builds the web UI into web/dist, served by the server
+git clone https://github.com/111588004/agent-board.git
+cd agent-board
+npm install
+cd web && npm install && npm run build && cd ..   # builds the web UI into web/dist, served by the server
+
+npm start          # runs THIS checkout on :4317 — node src/server.js
 ```
+
+**Do not `npm link` this repo.** The global `agent-board` command is meant to always be the published npm package — every other project on your machine, and every agent working in them, relies on that being predictable. `npm link` and the real install fight over the same global bin (whichever ran most recently silently wins), which is exactly the kind of ambiguity that makes "is this pointed at my dev changes or the real thing" impossible to answer with confidence. Run this checkout explicitly instead (`npm start`, or `node src/server.js` / `node src/cli.js ...` from inside the repo) — it never touches the global command.
+
+**Pointing an agent at your dev checkout instead of the published version** (e.g. to test a change before publishing): start this checkout with `npm start` in one terminal (it takes over `:4317`, same as the real thing — stop any other `agent-board` instance first, or run it on a different port with `PORT=4321 npm start`). Then in the target project's `CLAUDE.md`/`AGENTS.md`, prefix every `agent-board` command with `AGENT_BOARD_URL=http://localhost:<port>` so the agent's calls land on your dev server instead of the real one — e.g. `AGENT_BOARD_URL=http://localhost:4321 agent-board list --project=...`. Revert that once you're done, or the agent stays pointed at a server that isn't running.
+
+If you're ever unsure which one a running server actually is, `curl localhost:<port>/api/meta` reports `{version, source: "dev"|"npm", root, pid}` — also printed at startup.
 
 See `CLAUDE.md` for architecture details.
 
