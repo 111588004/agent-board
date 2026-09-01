@@ -1986,6 +1986,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                   style={{
                     ...inputStyle, borderRadius: "0 0 7px 7px", resize: "vertical",
                     fontFamily: "'JetBrains Mono', monospace", fontSize: 12,
+                    minHeight: 160, maxHeight: 480,
                   }}
                 />
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
