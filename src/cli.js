@@ -47,13 +47,17 @@ function printTasks(tasks) {
 
 switch (cmd) {
   case "list": {
-    printTasks(await run(() => client.listTasks({ project: flags.project, status: flags.status, parentId: flags.parent })));
+    printTasks(
+      await run(() =>
+        client.listTasks({ project: flags.project, status: flags.status, parentId: flags.parent, workspace: flags.workspace })
+      )
+    );
     break;
   }
 
   case "create": {
     if (!flags.title || !flags.project) {
-      console.error('usage: agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=<name>] [--priority=<low|med|high>] [--status=<status>]');
+      console.error('usage: agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=<name>] [--priority=<low|med|high>] [--status=<status>] [--workspace=<name>]');
       process.exit(1);
     }
     const task = await run(() =>
@@ -64,6 +68,7 @@ switch (cmd) {
         agent: flags.agent,
         priority: flags.priority,
         status: flags.status,
+        workspace: flags.workspace,
       })
     );
     console.log(`created ${task.id}`);
@@ -73,10 +78,10 @@ switch (cmd) {
   case "update": {
     const id = positional[0];
     if (!id) {
-      console.error("usage: agent-board update <id> --status=<status> [--priority=] [--agent=] [--title=] [--worktree=] [--branch=]");
+      console.error("usage: agent-board update <id> --status=<status> [--priority=] [--agent=] [--title=] [--worktree=] [--branch=] [--workspace=<name>]");
       process.exit(1);
     }
-    const body = {};
+    const body = { workspace: flags.workspace };
     for (const key of ["status", "priority", "agent", "title", "worktree", "branch"]) {
       if (flags[key] !== undefined) body[key] = flags[key];
     }
@@ -89,15 +94,47 @@ switch (cmd) {
     const id = positional[0];
     const text = positional[1];
     if (!id || !text) {
-      console.error('usage: agent-board note <id> "<text>" [--agent=<name>]');
+      console.error('usage: agent-board note <id> "<text>" [--agent=<name>] [--workspace=<name>]');
       process.exit(1);
     }
-    const task = await run(() => client.updateTask(id, { note: text, agent: flags.agent }));
+    const task = await run(() => client.updateTask(id, { note: text, agent: flags.agent, workspace: flags.workspace }));
     console.log(`noted ${task.id}`);
     break;
   }
 
+  case "workspace": {
+    const sub = positional[0];
+    if (sub === "list") {
+      const names = await run(() => client.listWorkspaces());
+      const current = client.resolveWorkspace();
+      for (const name of names) console.log(name === current ? `* ${name}` : `  ${name}`);
+      break;
+    }
+    if (sub === "create") {
+      const name = positional[1];
+      if (!name) {
+        console.error("usage: agent-board workspace create <name>");
+        process.exit(1);
+      }
+      await run(() => client.createWorkspace(name));
+      console.log(`created workspace ${name}`);
+      break;
+    }
+    if (sub === "use") {
+      const name = positional[1];
+      if (!name) {
+        console.error("usage: agent-board workspace use <name>");
+        process.exit(1);
+      }
+      client.setCurrentWorkspace(name);
+      console.log(`current workspace is now ${name}`);
+      break;
+    }
+    console.error("usage: agent-board workspace <list|create|use> ...");
+    process.exit(1);
+  }
+
   default:
-    console.error("usage: agent-board <list|create|update|note> ...");
+    console.error("usage: agent-board <list|create|update|note|workspace> ...");
     process.exit(1);
 }
