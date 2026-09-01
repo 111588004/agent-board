@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const dir = path.join(os.homedir(), ".agent-board");
+const dir = process.env.AGENT_BOARD_DIR || path.join(os.homedir(), ".agent-board");
 fs.mkdirSync(dir, { recursive: true });
 
 export const db = new Database(path.join(dir, "tasks.db"));

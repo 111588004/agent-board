@@ -43,5 +43,5 @@ app.delete("/mcp", (req, res) => {
 // serves the built web UI (npm run build in web/) — 404s harmlessly until built
 app.use(express.static(path.join(__dirname, "../web/dist")));
 
-const PORT = 4317;
+const PORT = process.env.PORT || 4317;
 app.listen(PORT, () => console.log(`agent-board listening on http://localhost:${PORT}`));

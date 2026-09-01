@@ -29,6 +29,15 @@ agent-board note <id> "<text>" [--agent=<name>]   # appends, never overwrites
 
 Any of the four verbs above requires the server to already be running (`agent-board` with no args, in another terminal) — it does not auto-spawn one, deliberately, to avoid orphaned/duplicate server processes; it fails with a clear connection error instead. This works from any directory — the CLI is a REST client, and the DB it talks to lives at a fixed path (`~/.agent-board/tasks.db`), not project-cwd-relative.
 
+**Running a second, isolated server** (e.g. to test changes without touching your real board): both the port and the DB location are overridable via env vars, read by `server.js`/`db.js` (server-side) and `client.js` (CLI/MCP), so a test instance never collides with the real one:
+
+```bash
+AGENT_BOARD_DIR=/tmp/agent-board-test PORT=4318 agent-board          # test server, separate DB + port
+AGENT_BOARD_URL=http://localhost:4318 agent-board list               # CLI talking to that test server
+```
+
+The web UI needs no env var — it always calls `/api/...` relative to whatever origin served it, so it automatically follows the port of whichever server you opened it from.
+
 There's no test framework — this is a solo local tool. Verify changes manually: `curl` against the REST routes, run the CLI verbs, or click through the UI. See `agent-board-handoff.md` and the implementation plan history for the exact verification commands used when each piece was built.
 
 ## Architecture

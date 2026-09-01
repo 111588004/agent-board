@@ -1,6 +1,6 @@
 // shared REST client — used by both cli.js and mcp/tools.js so the fetch
 // logic (and the "how do I talk to the API" contract) lives in one place.
-const BASE = "http://localhost:4317";
+const BASE = process.env.AGENT_BOARD_URL || "http://localhost:4317";
 
 export async function apiRequest(method, path, body) {
   const res = await fetch(`${BASE}${path}`, {
