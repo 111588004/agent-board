@@ -1,8 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, Code2, Link2, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal } from "lucide-react";
-import { DayPicker } from "react-day-picker";
-import "react-day-picker/style.css";
+import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, Code2, Link2, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal } from "lucide-react";
 import * as api from "./api.js";
 
 const COLUMNS = [
@@ -363,18 +361,7 @@ export default function AgentBoard() {
         .drawer-collapse summary::-webkit-details-marker { display: none; }
         .detail-value:hover { background: #F4F5F7; }
         .new-project-prefix::placeholder { color: #C7CBD4; }
-        .rdp-root {
-          --rdp-accent-color: #4C8DFF;
-          --rdp-accent-background-color: #F0F4FF;
-          --rdp-day-width: 32px;
-          --rdp-day-height: 32px;
-          --rdp-day_button-width: 30px;
-          --rdp-day_button-height: 30px;
-          font-family: inherit;
-          font-size: 12.5px;
-          color: #1D2027;
-        }
-        .rdp-weekday { font-size: 11px; color: #8B8D98; }
+        .cal-day:not(:disabled):not(.cal-day--selected):hover { background: #F4F5F7; }
       `}</style>
 
       {/* Header */}
@@ -1368,15 +1355,80 @@ function fromISODate(iso) {
 // <input type="date"> — the native picker's language and layout follow the
 // OS/browser locale with no way to override from the page, and it looked
 // out of place next to the rest of this hand-styled UI.
+const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+// single-month grid — no range selection, no multi-month, so this is
+// plain enough to hand-roll rather than reach for a dependency; keeps the
+// app's zero-external-UI-library rule intact and matches its own palette
+// exactly instead of overriding a library's CSS variables.
+function CalendarGrid({ viewMonth, selectedISO, onSelect }) {
+  const year = viewMonth.getFullYear();
+  const month = viewMonth.getMonth();
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const numDays = new Date(year, month + 1, 0).getDate();
+  const todayISO = toISODate(new Date());
+
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let d = 1; d <= numDays; d++) cells.push(d);
+
+  return (
+    <div style={{ width: 232 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 4 }}>
+        {WEEKDAY_LABELS.map((w) => (
+          <div key={w} style={{ fontSize: 10.5, fontWeight: 600, color: "#8B8D98", textAlign: "center", padding: "2px 0" }}>
+            {w}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+        {cells.map((d, i) => {
+          if (d === null) return <div key={i} />;
+          const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+          const isSelected = iso === selectedISO;
+          const isToday = iso === todayISO;
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onSelect(iso)}
+              className={`mono cal-day${isSelected ? " cal-day--selected" : ""}`}
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: "50%",
+                border: isToday && !isSelected ? "1px solid #4C8DFF" : "1px solid transparent",
+                background: isSelected ? "#4C8DFF" : "transparent",
+                color: isSelected ? "#fff" : "#1D2027",
+                fontSize: 12,
+                fontWeight: isToday || isSelected ? 700 : 400,
+                cursor: "pointer",
+              }}
+            >
+              {d}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function DueDateField({ value, onChange }) {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
+  const [viewMonth, setViewMonth] = useState(() => fromISODate(value) || new Date());
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
 
   function openMenu() {
     const rect = triggerRef.current.getBoundingClientRect();
     setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setViewMonth(fromISODate(value) || new Date());
     setOpen(true);
   }
 
@@ -1426,22 +1478,41 @@ function DueDateField({ value, onChange }) {
             border: "1px solid #E4E6EB",
             borderRadius: 8,
             boxShadow: "0 8px 24px rgba(20,22,30,0.14)",
-            padding: "8px 10px 4px",
+            padding: "10px 12px",
           }}
         >
-          <DayPicker
-            mode="single"
-            selected={fromISODate(value)}
-            defaultMonth={fromISODate(value) || new Date()}
-            onSelect={(date) => { onChange(date ? toISODate(date) : ""); setOpen(false); }}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <button
+              type="button"
+              onClick={() => setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+              style={{ background: "none", border: "none", color: "#5B5F69", cursor: "pointer", display: "flex", padding: 2, borderRadius: 4 }}
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>
+              {MONTH_NAMES[viewMonth.getMonth()]} {viewMonth.getFullYear()}
+            </span>
+            <button
+              type="button"
+              onClick={() => setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+              style={{ background: "none", border: "none", color: "#5B5F69", cursor: "pointer", display: "flex", padding: 2, borderRadius: 4 }}
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+          <CalendarGrid
+            viewMonth={viewMonth}
+            selectedISO={value || null}
+            onSelect={(iso) => { onChange(iso); setOpen(false); }}
           />
           {value && (
             <button
               type="button"
               onClick={() => { onChange(""); setOpen(false); }}
               style={{
-                width: "100%", textAlign: "center", padding: "6px 0 8px", marginTop: -4,
-                border: "none", background: "none", color: "#E5484D", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+                width: "100%", textAlign: "center", padding: "8px 0 2px", marginTop: 4,
+                border: "none", borderTop: "1px solid #F0F1F4", background: "none", color: "#E5484D",
+                fontSize: 12, cursor: "pointer", fontFamily: "inherit",
               }}
             >
               Clear due date
