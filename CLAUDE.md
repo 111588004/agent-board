@@ -12,7 +12,7 @@ The backend (Express + SQLite REST API), frontend (Vite/React, wired to the real
 
 ```bash
 npm install                # backend deps (express, better-sqlite3)
-npm link                   # one-time: makes the `agent-board` command global (already done in dev)
+npm link                   # makes the global `agent-board` command point at THIS dev directory
 
 agent-board                 # bare command, no args → starts the REST API + static server on :4317
                              # (equivalent: node src/server.js / node src/cli.js with no args)
@@ -37,6 +37,12 @@ AGENT_BOARD_URL=http://localhost:4318 agent-board list               # CLI talki
 ```
 
 The web UI needs no env var — it always calls `/api/...` relative to whatever origin served it, so it automatically follows the port of whichever server you opened it from.
+
+**`npm link` vs. `npm install -g @limao.li.design/agent-board`** — both register a global `agent-board` bin with the same name, so whichever ran most recently wins and silently replaces the other; there's no warning when this happens. This matters because they point at different code:
+- `npm link` (run from this dev directory) → the global `agent-board` command runs *this* checkout live, no rebuild/republish needed — use this while making changes here.
+- `npm install -g @limao.li.design/agent-board` → the global command runs whatever was last published to npm, frozen until the next `npm publish` + reinstall — use this to verify what a real end user actually gets.
+
+Check which one is currently active: `readlink -f $(which agent-board)` — a path under this repo means dev/linked, a path under `.../node_modules/@limao.li.design/agent-board/...` means the published npm copy. Switch back to dev with `npm link` (from this directory) at any time.
 
 There's no test framework — this is a solo local tool. Verify changes manually: `curl` against the REST routes, run the CLI verbs, or click through the UI. See `agent-board-handoff.md` and the implementation plan history for the exact verification commands used when each piece was built.
 
