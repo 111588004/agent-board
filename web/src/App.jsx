@@ -893,7 +893,14 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
   }
 
   function blurSave() {
-    if (card.id) onSave(form);
+    if (!card.id) return;
+    if (
+      form.title === card.title &&
+      (form.worktree || "") === (card.worktree || "") &&
+      (form.branch || "") === (card.branch || "") &&
+      (form.link || "") === (card.link || "")
+    ) return;
+    onSave(form);
   }
 
   function closeAndSave() {
