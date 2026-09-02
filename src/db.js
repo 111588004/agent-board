@@ -2,8 +2,15 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const baseDir = process.env.AGENT_BOARD_DIR || path.join(os.homedir(), ".agent-board");
+// same "am I a dev checkout or the npm-installed copy" check server.js uses
+// to auto-pick a port — applied here so dev and npm also default to
+// separate DB roots without anyone having to remember AGENT_BOARD_DIR. An
+// explicit AGENT_BOARD_DIR always wins over either default.
+const isDevCheckout = !path.join(path.dirname(fileURLToPath(import.meta.url)), "..").includes("node_modules");
+const defaultBaseDir = path.join(os.homedir(), isDevCheckout ? ".agent-board-dev" : ".agent-board");
+const baseDir = process.env.AGENT_BOARD_DIR || defaultBaseDir;
 const workspacesDir = path.join(baseDir, "workspaces");
 fs.mkdirSync(baseDir, { recursive: true });
 
