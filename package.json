@@ -1,6 +1,6 @@
 {
   "name": "@limao.li.design/agent-board",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "A local, Jira-style kanban board for tracking task progress across multiple CLI coding agents and projects — Express + SQLite REST API, CLI, web UI, and MCP server.",
   "type": "module",
   "license": "MIT",
