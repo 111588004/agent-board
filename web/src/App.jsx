@@ -653,7 +653,9 @@ export default function AgentBoard() {
                     </div>
                   </div>
                 ))}
+              </div>
 
+              <div style={{ flexShrink: 0, padding: "8px" }}>
                 <button
                   onClick={() => openNew(col.id)}
                   className="card-btn"
