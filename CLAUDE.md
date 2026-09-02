@@ -24,7 +24,7 @@ cd web && npm run build    # production build → web/dist, served by the server
 
 agent-board list [--project=] [--status=] [--parent=] [--workspace=]
 agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]
-agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--workspace=]
+agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--notes="..."] [--workspace=]
 agent-board note <id> "<text>" [--agent=<name>] [--workspace=]   # appends, never overwrites
 
 agent-board workspace list                  # marks the current one with *

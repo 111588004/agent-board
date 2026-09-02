@@ -86,12 +86,12 @@ switch (cmd) {
     const id = positional[0];
     if (!id) {
       console.error(
-        "usage: agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=<name>] [--title=] [--worktree=] [--branch=] [--link=<url>] [--due-date=<YYYY-MM-DD>] [--workspace=<name>]"
+        "usage: agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=<name>] [--title=] [--worktree=] [--branch=] [--link=<url>] [--due-date=<YYYY-MM-DD>] [--notes=\"...\"] [--workspace=<name>]"
       );
       process.exit(1);
     }
     const body = { workspace: flags.workspace };
-    for (const key of ["status", "priority", "agent", "title", "worktree", "branch", "link"]) {
+    for (const key of ["status", "priority", "agent", "title", "worktree", "branch", "link", "notes"]) {
       if (flags[key] !== undefined) body[key] = flags[key];
     }
     if (flags["due-date"] !== undefined) body.dueDate = flags["due-date"];

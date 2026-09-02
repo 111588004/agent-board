@@ -72,7 +72,7 @@ export function createMcpServer() {
   server.registerTool(
     "update_task",
     {
-      description: "Update one or more fields on an existing task. Only the fields you pass are changed — omit the rest. Use add_task_note for appending a note instead of overwriting the description.",
+      description: "Update one or more fields on an existing task. Only the fields you pass are changed — omit the rest. Passing notes overwrites the whole description; use add_task_note to append instead.",
       inputSchema: {
         taskId: z.string(),
         status: z.enum(STATUS).optional(),
@@ -83,13 +83,14 @@ export function createMcpServer() {
         branch: z.string().optional().describe("Git branch name"),
         link: z.string().optional().describe("Repo / PR / issue URL"),
         dueDate: z.string().optional().describe("ISO date, e.g. 2026-03-05"),
+        notes: z.string().optional().describe("Full description overwrite, markdown — headings, bold, `code`, bullet/numbered lists, [links](url), ![images](url) all render"),
         workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
-    async ({ taskId, status, priority, agent, title, worktree, branch, link, dueDate, workspace }) => {
+    async ({ taskId, status, priority, agent, title, worktree, branch, link, dueDate, notes, workspace }) => {
       try {
         return json(
-          await client.updateTask(taskId, { status, priority, agent, title, worktree, branch, link, dueDate, workspace })
+          await client.updateTask(taskId, { status, priority, agent, title, worktree, branch, link, dueDate, notes, workspace })
         );
       } catch (e) {
         return toolError(e);
