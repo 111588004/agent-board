@@ -58,7 +58,7 @@ switch (cmd) {
   case "create": {
     if (!flags.title || !flags.project) {
       console.error(
-        'usage: agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=<name>] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=<path>] [--branch=<name>] [--link=<url>] [--notes="..."] [--workspace=<name>]'
+        'usage: agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=<name>] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=<path>] [--branch=<name>] [--link=<url>] [--notes="..."] [--workspace=<name>]\n  (--notes sets the Description field)'
       );
       process.exit(1);
     }
@@ -86,7 +86,7 @@ switch (cmd) {
     const id = positional[0];
     if (!id) {
       console.error(
-        "usage: agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=<name>] [--title=] [--worktree=] [--branch=] [--link=<url>] [--due-date=<YYYY-MM-DD>] [--notes=\"...\"] [--workspace=<name>]"
+        "usage: agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=<name>] [--title=] [--worktree=] [--branch=] [--link=<url>] [--due-date=<YYYY-MM-DD>] [--notes=\"...\"] [--workspace=<name>]\n  (--notes overwrites the Description field)"
       );
       process.exit(1);
     }
