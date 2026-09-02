@@ -95,8 +95,80 @@ export function getDb(workspaceName) {
   fs.mkdirSync(dir, { recursive: true });
   const db = new Database(path.join(dir, "tasks.db"));
   initSchema(db);
+  if (name === "default") seedOnboarding(db);
   connections.set(name, db);
   return db;
+}
+
+// first-run experience: an empty "default" workspace gets a starter project
+// so a brand-new install has something to look at instead of a blank board.
+// Checked on every startup (not just once at file-creation) — if someone
+// deletes every project, the next startup treats that the same as a fresh
+// install and seeds again; that's intentional, not a bug. Kept forever
+// unless the user deletes it themselves (no auto-cleanup — see CLAUDE.md).
+function seedOnboarding(db) {
+  const { count } = db.prepare("SELECT COUNT(*) AS count FROM projects").get();
+  if (count > 0) return;
+
+  const now = Date.now();
+  db.prepare("INSERT INTO projects (name, prefix, createdAt) VALUES (?, ?, ?)").run("Agent Board", "AB", now);
+
+  const project = "Agent Board";
+  const projectPrefix = "AB";
+  createTask(db, {
+    title: "Start here — how Agent Board works",
+    project,
+    projectPrefix,
+    parentId: null,
+    agent: null,
+    priority: "med",
+    status: "backlog",
+    notes:
+      "This board is a REST API underneath — the CLI, MCP server, and this web UI are all just clients of it, so anything one of them changes shows up everywhere else immediately.\n\n" +
+      "A few commands to try from a terminal:\n\n" +
+      "- `agent-board list` — see every task\n" +
+      "- `agent-board update AB-1 --status=in_progress` — move a task (swap `AB-1` for a real id)\n" +
+      "- `agent-board note AB-1 \"tried X, blocked on Y\"` — append a timestamped note without overwriting this description\n\n" +
+      "This description field supports markdown — `code`, **bold**, lists, [links](https://github.com/111588004/agent-board), even images.\n\n" +
+      "When you're ready, create your own project: `agent-board project create <name> --prefix=<prefix>`.",
+    worktree: null,
+    branch: null,
+    link: "https://github.com/111588004/agent-board",
+    dueDate: null,
+  });
+  createTask(db, {
+    title: "Try picking up this ticket",
+    project,
+    projectPrefix,
+    parentId: null,
+    agent: "claude",
+    priority: "med",
+    status: "in_progress",
+    notes:
+      "[example] An agent left this mid-task, the way a real handoff looks.\n\n" +
+      "Take it from here — run `agent-board update AB-2 --status=review --agent=you` (swap `AB-2` for this ticket's real id), or just add a note. " +
+      "No sync step, no re-explaining context to a tool — the next reader (human or agent) just reads the updated ticket.",
+    worktree: null,
+    branch: null,
+    link: null,
+    dueDate: null,
+  });
+  createTask(db, {
+    title: "Not every task has to ship code",
+    project,
+    projectPrefix,
+    parentId: null,
+    agent: null,
+    priority: "low",
+    status: "backlog",
+    notes:
+      "e.g. \"confirm launch copy with design\" — no repo, no PR, nothing to deliver except a decision. " +
+      "Agent Board tracks progress, not just commits; delete this ticket (or the whole \"Agent Board\" project) whenever you're ready to make room for your own.",
+    worktree: null,
+    branch: null,
+    link: null,
+    dueDate: null,
+  });
 }
 
 export function listWorkspaces() {

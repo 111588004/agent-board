@@ -18,7 +18,7 @@ Start the server (foreground, keep it running in its own terminal):
 agent-board
 ```
 
-This serves the REST API and web UI at `http://localhost:4317`.
+This serves the REST API and web UI at `http://localhost:4317`. First run seeds a starter "Agent Board" project with 3 example tickets, so there's something to click around before you create your own project — delete it whenever you're ready (`agent-board project delete "Agent Board"`).
 
 From any other terminal, on any project:
 
