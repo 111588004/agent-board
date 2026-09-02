@@ -24,8 +24,8 @@ From any other terminal, on any project:
 
 ```bash
 agent-board list [--project=] [--status=] [--parent=] [--workspace=]
-agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]
-agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--notes="..."] [--workspace=]
+agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes sets the Description field
+agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--notes="..."] [--workspace=]   # --notes overwrites the Description field
 agent-board delete <id> [--workspace=]
 agent-board note <id> "<text>" [--agent=<name>] [--workspace=]
 
