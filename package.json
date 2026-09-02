@@ -1,6 +1,6 @@
 {
   "name": "@limao.li.design/agent-board",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "A local, Jira-style kanban board for tracking task progress across multiple CLI coding agents and projects — Express + SQLite REST API, CLI, web UI, and MCP server.",
   "type": "module",
   "license": "MIT",
@@ -8,8 +8,19 @@
     "type": "git",
     "url": "git+https://github.com/111588004/agent-board.git"
   },
-  "keywords": ["kanban", "cli", "mcp", "claude-code", "agent", "task-board"],
-  "files": ["src", "templates", "web/dist"],
+  "keywords": [
+    "kanban",
+    "cli",
+    "mcp",
+    "claude-code",
+    "agent",
+    "task-board"
+  ],
+  "files": [
+    "src",
+    "templates",
+    "web/dist"
+  ],
   "engines": {
     "node": ">=18"
   },
