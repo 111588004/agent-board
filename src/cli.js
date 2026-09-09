@@ -17,7 +17,7 @@ if (cmd === undefined) {
 const flags = {};
 const positional = [];
 for (const arg of rest) {
-  const m = arg.match(/^--([^=]+)=(.*)$/);
+  const m = arg.match(/^--([^=]+)=(.*)$/s);
   if (m) flags[m[1]] = m[2];
   else positional.push(arg);
 }
