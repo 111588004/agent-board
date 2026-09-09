@@ -395,6 +395,12 @@ export default function AgentBoard() {
         .notes-edit-btn { opacity: 0; transition: opacity .1s ease; }
         .notes-view:hover .notes-edit-btn, .notes-view:focus-within .notes-edit-btn { opacity: 1; }
         .notes-view:hover { background: #FAFAFB; }
+        .drawer-resize-handle::after {
+          content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px;
+          transform: translateX(-50%); background: transparent; transition: background .12s ease;
+        }
+        .drawer-resize-handle:hover::after { background: #C7CBD4; }
+        .drawer-resize-handle.resizing::after { background: #4C8DFF; }
       `}</style>
 
       {/* Header */}
@@ -1688,11 +1694,50 @@ function FilterSelect({ value, onChange, options, icon, light }) {
   );
 }
 
+const DRAWER_MIN_WIDTH = 360;
+// cap resize at 80% of viewport rather than snapping to fullscreen —
+// wider than that starts to feel like a second board, not a detail panel.
+const DRAWER_MAX_WIDTH_RATIO = 0.8;
+const DRAWER_WIDTH_KEY = "ab-drawer-width";
+
 function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreateProject, onOpenSubtask }) {
   const [form, setForm] = useState(card);
   const [editingNotes, setEditingNotes] = useState(!card.notes || !card.notes.trim());
   const [notesDraft, setNotesDraft] = useState(card.notes || "");
   const notesRef = useRef(null);
+  const [drawerWidth, setDrawerWidth] = useState(
+    () => Number(localStorage.getItem(DRAWER_WIDTH_KEY)) || 460
+  );
+  const [resizing, setResizing] = useState(false);
+
+  // dragging the left-edge handle resizes the drawer; width is clamped live
+  // and only persisted on mouseup so we're not hitting localStorage per-frame
+  function startResize(e) {
+    e.preventDefault();
+    setResizing(true);
+    // body.style.cursor alone loses to any element under the pointer that sets
+    // its own cursor (links, buttons, inputs) — the resize overlay below wins
+    // the hit-test everywhere so the cursor can't flip mid-drag. userSelect
+    // still needs setting here so fast drags don't select text underneath it.
+    document.body.style.userSelect = "none";
+    function onMove(ev) {
+      const w = window.innerWidth - ev.clientX;
+      const max = window.innerWidth * DRAWER_MAX_WIDTH_RATIO;
+      setDrawerWidth(Math.min(Math.max(w, DRAWER_MIN_WIDTH), max));
+    }
+    function onUp() {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      setResizing(false);
+      setDrawerWidth((w) => {
+        localStorage.setItem(DRAWER_WIDTH_KEY, String(w));
+        return w;
+      });
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
 
   // auto-grows with content between 240 and 480px instead of a fixed box
   // with a manual drag handle — resets to "auto" first so shrinking (e.g.
@@ -1832,6 +1877,12 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
       {/* click-outside catcher — no dim, board stays fully visible like Jira's split detail view */}
       <div onClick={closeAndSave} style={{ position: "absolute", inset: 0 }} />
 
+      {/* while resizing, this wins the hit-test over the whole viewport so the
+          cursor can't flip to a link/button/input's own cursor mid-drag */}
+      {resizing && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, cursor: "col-resize" }} />
+      )}
+
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -1839,7 +1890,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
           top: 0,
           right: 0,
           height: "100%",
-          width: 460,
+          width: drawerWidth,
           maxWidth: "92vw",
           background: "#fff",
           boxShadow: "-8px 0 32px rgba(9,10,12,0.18)",
@@ -1848,6 +1899,15 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
           flexDirection: "column",
         }}
       >
+        <div
+          className={`drawer-resize-handle${resizing ? " resizing" : ""}`}
+          onMouseDown={startResize}
+          title="Drag to resize"
+          style={{
+            position: "absolute", top: 0, bottom: 0, left: -4, width: 8,
+            cursor: "col-resize", zIndex: 1,
+          }}
+        />
         <div
           style={{
             display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -2038,7 +2098,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                   <Pencil size={12} />
                 </button>
                 <div
-                  style={{ fontSize: 12.5, lineHeight: 1.5, color: "#31343B" }}
+                  style={{ fontSize: 12.5, lineHeight: 1.5, color: "#31343B", overflowWrap: "anywhere" }}
                   dangerouslySetInnerHTML={{ __html: renderMarkdown(form.notes) }}
                 />
               </div>
