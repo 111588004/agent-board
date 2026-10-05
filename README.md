@@ -4,6 +4,18 @@ A local, Jira-style kanban board for tracking task progress across multiple CLI 
 
 A single Express + SQLite server is the source of truth. The CLI, an MCP server, and a web UI are all just clients of its REST API — this is what makes it safe for several agent sessions to read/write the board concurrently.
 
+## Try it (no install)
+
+```bash
+npx @limao.li.design/agent-board
+```
+
+That downloads the package and starts the server on `http://localhost:4317`, with a starter project already on the board. Open that URL and click around.
+
+The first run has to download the package, and npm prints nothing while it does — give it up to a minute. You may see a deprecation warning from one of its dependencies; it's harmless. Later runs start in a second or two. Your data lives in `~/.agent-board` either way, so nothing is lost if you install it afterwards.
+
+`npx` is for trying it. For daily use, install it (below) so agents can call the short `agent-board` command instead of a full `npx ...` line each time.
+
 ## Install
 
 ```bash
