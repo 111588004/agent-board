@@ -221,7 +221,14 @@ switch (cmd) {
     process.exit(1);
   }
 
+  // stdio MCP — stdout belongs to JSON-RPC from here on, so nothing above
+  // may print. The stdin listener keeps the process alive.
+  case "mcp": {
+    await import("./mcp/stdio.js");
+    break;
+  }
+
   default:
-    console.error("usage: agent-board <list|create|update|delete|note|workspace|project> ...");
+    console.error("usage: agent-board <list|create|update|delete|note|workspace|project|mcp> ...");
     process.exit(1);
 }

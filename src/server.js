@@ -120,4 +120,11 @@ const PORT = process.env.PORT || (meta.source === "dev" ? 4316 : 4317);
 app.listen(PORT, () => {
   console.log(`agent-board v${meta.version} (${meta.source}) listening on http://localhost:${PORT}`);
   console.log(`  root: ${meta.root}`);
+}).on("error", (e) => {
+  // the port doubles as the "only one server" mutex (see mcp/stdio.js) —
+  // losing it is an expected outcome, not a crash. getDb is lazy, so no DB
+  // has been opened yet.
+  if (e.code !== "EADDRINUSE") throw e;
+  console.error(`agent-board: port ${PORT} is already in use — another server is probably running there`);
+  process.exit(1);
 });

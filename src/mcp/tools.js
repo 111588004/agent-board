@@ -16,10 +16,21 @@ function toolError(e) {
 
 // a fresh McpServer per HTTP request (see server.js — stateless transport
 // mode), so this is a plain factory rather than a module-level singleton.
-export function createMcpServer() {
-  const server = new McpServer({ name: "agent-board", version: "0.1.0" });
+// `notice` (stdio mode only — see mcp/stdio.js) is prepended to the first
+// tool result, the one place the user reliably sees it; HTTP passes nothing.
+export function createMcpServer({ instructions, notice } = {}) {
+  const server = new McpServer({ name: "agent-board", version: "0.1.0" }, { instructions });
+  const tool = (name, def, handler) =>
+    server.registerTool(name, def, async (args) => {
+      const result = await handler(args);
+      if (notice) {
+        result.content.unshift({ type: "text", text: notice });
+        notice = undefined;
+      }
+      return result;
+    });
 
-  server.registerTool(
+  tool(
     "list_tasks",
     {
       description: "List tasks on the board. Always call this fresh before acting — the board can change between turns.",
@@ -39,7 +50,7 @@ export function createMcpServer() {
     }
   );
 
-  server.registerTool(
+  tool(
     "create_task",
     {
       description: "Create a new task on the board (or a subtask, if parentId is given). The project must already exist.",
@@ -69,7 +80,7 @@ export function createMcpServer() {
     }
   );
 
-  server.registerTool(
+  tool(
     "update_task",
     {
       description: "Update one or more fields on an existing task. Only the fields you pass are changed — omit the rest. Passing notes overwrites the whole description; use add_task_note to append instead.",
@@ -98,7 +109,7 @@ export function createMcpServer() {
     }
   );
 
-  server.registerTool(
+  tool(
     "add_task_note",
     {
       description: "Append a timestamped note to a task (a blocker, a PR link, a decision) — never overwrites existing notes.",
@@ -118,7 +129,7 @@ export function createMcpServer() {
     }
   );
 
-  server.registerTool(
+  tool(
     "delete_task",
     {
       description: "Permanently delete a task. This can't be undone — prefer moving it to \"done\" via update_task unless it genuinely shouldn't exist (e.g. created by mistake).",
@@ -137,7 +148,7 @@ export function createMcpServer() {
     }
   );
 
-  server.registerTool(
+  tool(
     "list_projects",
     {
       description: "List projects on the board, with their ticket-id prefixes.",
@@ -154,7 +165,7 @@ export function createMcpServer() {
     }
   );
 
-  server.registerTool(
+  tool(
     "create_project",
     {
       description: "Create a new project. Required before tasks can be created for it.",
@@ -173,7 +184,7 @@ export function createMcpServer() {
     }
   );
 
-  server.registerTool(
+  tool(
     "rename_project",
     {
       description: "Rename a project and/or change its ticket-id prefix. Existing tasks are updated to match.",
@@ -193,7 +204,7 @@ export function createMcpServer() {
     }
   );
 
-  server.registerTool(
+  tool(
     "delete_project",
     {
       description: "Delete a project. Fails if it still has tasks — move or delete those first.",
