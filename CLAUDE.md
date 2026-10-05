@@ -37,9 +37,19 @@ agent-board project list                                                       #
 agent-board project create <name> --prefix=<prefix> [--workspace=]             # must exist before tasks can target it
 agent-board project rename <current-name> [--name=] [--prefix=] [--workspace=] # cascades to every task's project/projectPrefix
 agent-board project delete <name> [--workspace=]                              # refuses if the project still has tasks
+
+agent-board mcp             # MCP over stdio (npx -y @limao.li.design/agent-board mcp) — auto-starts the server if needed, see below
+```
+
+**Testing `mcp` from this checkout: always set `AGENT_BOARD_URL` (and `AGENT_BOARD_DIR`).** Without a URL, `node src/cli.js mcp` targets the npm port 4317 — so from a dev checkout it refuses to auto-start (stderr warning) rather than squat 4317 with dev code and block the real global server. With one, it auto-starts this checkout's server on that port:
+
+```bash
+AGENT_BOARD_URL=http://localhost:4330 AGENT_BOARD_DIR=/tmp/ab-mcp-test node src/cli.js mcp   # kill the spawned server (pid is in the first tool result) when done
 ```
 
 Any of the four task verbs above requires the server to already be running (`agent-board` with no args, in another terminal) — it does not auto-spawn one, deliberately, to avoid orphaned/duplicate server processes; it fails with a clear connection error instead. This works from any directory — the CLI is a REST client.
+
+**`agent-board mcp` is the one exception to "never auto-spawn".** An MCP client launches it with no terminal for the user to start a server in first, so if `/api/meta` doesn't answer at a localhost URL it spawns `server.js` detached (explicit `PORT`, output appended to `<DB root>/server.log`) and waits up to 5s for it. Why that's safe here when it isn't for the task verbs: the port is the mutex — if two sessions race, the loser's server hits `EADDRINUSE` and exits (`server.js` handles that cleanly) before `getDb` ever opens a file, so there can't be a duplicate writer; and the server it starts is the same one the user would have run anyway, not an orphan nobody knows about — the session whose child actually won (`meta.pid === child.pid`) prepends a notice with the pid, log path and `kill <pid>` to its first tool result (plus MCP `instructions`). Detached, not in-process, so the server outlives the session that started it and stays shared. Non-localhost URLs never auto-start.
 
 **Workspaces** are fully isolated boards (own projects + tasks, own SQLite file) — for separating contexts like personal vs. a client's work, not for multi-user/team access. Every task verb resolves which workspace to hit in this order: explicit `--workspace=name` > `AGENT_BOARD_WORKSPACE` env var > `~/.agent-board/current-workspace` (written by `workspace use`) > `"default"`. A fresh install with zero workspace commands ever run just uses `"default"` transparently — workspaces are opt-in, nothing breaks if you never think about them. The web UI has its own switcher in the header (persists to `localStorage`, also readable/shareable via `?workspace=<name>` in the URL) — it's independent of the CLI's `current-workspace` file, so the browser and your terminal can be pointed at different workspaces at the same time.
 
@@ -74,6 +84,8 @@ src/
   routes/projects.js GET/POST /projects — same req.db pattern
   client.js         shared REST client — fetch wrappers used by BOTH cli.js and mcp/tools.js
   cli.js            list/create/update/delete/note/workspace — a REST client, not a DB client
+  mcp/stdio.js      `agent-board mcp`: probe/auto-start the server, then createMcpServer() over
+                    StdioServerTransport — stdout is JSON-RPC only, never imports db.js
   mcp/tools.js      9 MCP tools (list_tasks/create_task/update_task/delete_task/add_task_note,
                     list_projects/create_project/rename_project/delete_project) — also just REST clients
   server.js         Express wiring: workspace-resolving middleware + REST routes + POST /mcp
@@ -112,7 +124,7 @@ This is the actual point of the tool: a real project adds a short section to its
 
 - **Future work ideas tracked as tickets, not here**: see `AB-5` (right-click a task card to send it to a specific CLI agent's terminal) and `AB-6` (Description drawer comment that dispatches to an agent) on this project's own board (`agent-board list --project=agent-board`). Design questions live in each ticket's notes — check there before starting either.
 - **Public npm publishing**: done. Published as `@limao.li.design/agent-board` (scoped — the unscoped `agent-board` was blocked by the registry's name-similarity check against an unrelated existing package). `npm install -g @limao.li.design/agent-board` is how the global `agent-board` command should always be kept current — see the `npm link` warning above for why `npm link` shouldn't be used to do this instead. Publishing uses a granular access token with 2FA bypass (7-day expiry) since OTP-based publish is being deprecated by npm; regenerate a token the same way for future version bumps (`npmjs.com` → Access Tokens → Generate New Token → Granular Access Token → check "Bypass two-factor authentication").
-- **Registering the MCP server with a real client**: not done. `claude mcp add --transport http agent-board http://localhost:4317/mcp` (per `agent-board-handoff.md` §6) will do it for Claude Code; the same pattern applies to Codex/Gemini CLI. Not run yet since it's a persistent config change on whichever machine runs it — do it yourself when ready rather than having an agent run it for you.
+- **Registering the MCP server with a real client**: not done. Preferred: `claude mcp add agent-board -s user -- npx -y @limao.li.design/agent-board mcp` (stdio; Claude desktop app / Codex snippets in README). HTTP alternative: `claude mcp add --transport http agent-board http://localhost:4317/mcp`. The stdio path is verified only with hand-written JSON-RPC, not yet with a real client or via `npx` from a published/packed tarball. Not run yet since it's a persistent config change on whichever machine runs it — do it yourself when ready rather than having an agent run it for you.
 - **`agent-board.jsx`** (repo root): the original single-file prototype, now superseded by `web/src/App.jsx`. Left in place rather than deleted so this file's history stays intact; safe to remove once you're confident nothing still references it.
 - **`agent-board open <id>`** (jump to a task's worktree from the CLI): explicitly out of scope per the handoff doc, not started.
 - **MCP tools for listing/creating/deleting workspaces**: not built — an agent doesn't need to invent or destroy a workspace at runtime, that's a human/CLI decision about which board a project's `CLAUDE.md` points at. The 5 task MCP tools do accept an optional `workspace` param to *use* one, just not to manage the set of them.

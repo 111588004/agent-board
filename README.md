@@ -39,15 +39,48 @@ agent-board project list
 agent-board project create <name> --prefix=<prefix> [--workspace=]
 agent-board project rename <current-name> [--name=] [--prefix=] [--workspace=]
 agent-board project delete <name> [--workspace=]           # refuses if the project still has tasks
+agent-board mcp                                            # MCP over stdio — see MCP below
 ```
 
-The CLI is a REST client — it talks to the server above, it does not touch the database directly, and it requires the server to already be running.
+The CLI is a REST client — it talks to the server above, it does not touch the database directly, and it requires the server to already be running (the one exception is `agent-board mcp`, below).
 
 **Workspaces** are fully isolated boards (own projects, own tasks, own SQLite file) for separating contexts — e.g. personal projects vs. a client's. Everything defaults to a single `"default"` workspace if you never touch this; it's opt-in.
 
 ## MCP
 
-An MCP server is exposed over HTTP at `POST http://localhost:4317/mcp` (stateless `StreamableHTTPServerTransport`), with 9 tools: `list_tasks`, `create_task`, `update_task`, `delete_task`, `add_task_note`, `list_projects`, `create_project`, `rename_project`, `delete_project`. Register it with an MCP-capable client, e.g.:
+9 tools: `list_tasks`, `create_task`, `update_task`, `delete_task`, `add_task_note`, `list_projects`, `create_project`, `rename_project`, `delete_project`.
+
+**stdio (recommended)** — `agent-board mcp` speaks MCP over stdin/stdout, so a client can launch it with no global install:
+
+```bash
+npx -y @limao.li.design/agent-board mcp
+```
+
+It's still just a client of the REST server (default `http://localhost:4317`, or `AGENT_BOARD_URL`). If nothing is listening there and the URL is localhost, it starts the server in the background (detached, log at `~/.agent-board/server.log`) and says so — with the pid and how to stop it — at the top of the first tool result. That server keeps running after the MCP session ends, so the web UI, CLI and other agents share it. If two sessions race to start it, only one wins the port; the other connects to the winner.
+
+Claude Code:
+
+```bash
+claude mcp add agent-board -s user -- npx -y @limao.li.design/agent-board mcp
+```
+
+Claude desktop app (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{ "mcpServers": { "agent-board": { "command": "npx", "args": ["-y", "@limao.li.design/agent-board", "mcp"] } } }
+```
+
+Codex (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.agent-board]
+command = "npx"
+args = ["-y", "@limao.li.design/agent-board", "mcp"]
+```
+
+Not yet verified against the real clients: the desktop app launched from the GUI may not find an nvm-installed `npx` on its PATH (use the absolute path if so); Codex's startup timeout and whether its sandbox allows localhost; and the first `npx -y` run (download + `better-sqlite3` install) may be slow enough to hit a client's startup timeout.
+
+**HTTP** — the running server also exposes MCP at `POST http://localhost:4317/mcp` (stateless `StreamableHTTPServerTransport`), for clients that prefer a URL. This one never auto-starts anything:
 
 ```bash
 claude mcp add --transport http agent-board http://localhost:4317/mcp
