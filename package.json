@@ -22,7 +22,7 @@
     "web/dist"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "bin": {
     "agent-board": "src/cli.js"
@@ -32,7 +32,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "better-sqlite3": "^11",
+    "better-sqlite3": "^12.11.1",
     "express": "^4",
     "zod": "^4.5.4"
   }

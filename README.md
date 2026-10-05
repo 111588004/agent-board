@@ -50,7 +50,7 @@ The CLI is a REST client — it talks to the server above, it does not touch the
 An MCP server is exposed over HTTP at `POST http://localhost:4317/mcp` (stateless `StreamableHTTPServerTransport`), with 9 tools: `list_tasks`, `create_task`, `update_task`, `delete_task`, `add_task_note`, `list_projects`, `create_project`, `rename_project`, `delete_project`. Register it with an MCP-capable client, e.g.:
 
 ```bash
-claude mcp add agent-board --url http://localhost:4317/mcp
+claude mcp add --transport http agent-board http://localhost:4317/mcp
 ```
 
 ## Tracking work in another project
