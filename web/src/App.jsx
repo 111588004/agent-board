@@ -113,6 +113,8 @@ function timeAgo(ts) {
   return `${d}d ago`;
 }
 
+const POLL_MS = 3000; // live-update interval, see the polling effect in AgentBoard
+
 function reportError(action, err) {
   console.error(action, err);
   window.alert(`${action} failed: ${err.message}`);
@@ -140,19 +142,68 @@ export default function AgentBoard() {
     api.getMeta().then(setMeta).catch(() => {}); // cosmetic only — don't bother the user if it fails
   }, []);
 
+  // refs so the polling loop below reads the latest values without
+  // restarting its timer on every render
+  const cardsRef = useRef(cards);
+  cardsRef.current = cards;
+  const dragIdRef = useRef(dragId);
+  dragIdRef.current = dragId;
+
+  // initial load + live updates: re-fetch every POLL_MS so changes agents
+  // make via the CLI/MCP show up without a manual refresh. TaskDrawer and
+  // the dialogs edit their own local copy (form/notesDraft state), so
+  // replacing `cards` here never clobbers half-typed input.
   useEffect(() => {
+    let cancelled = false; // a response for a workspace we've since left must not land
+    let timer = null;
+    let inFlight = false;
+    let first = true;
     setLoaded(false);
-    (async () => {
+
+    async function poll() {
+      clearTimeout(timer);
+      if (inFlight) return;
+      inFlight = true;
+      const before = cardsRef.current;
       try {
         const [projectRows, taskRows] = await Promise.all([api.listProjects(), api.listTasks()]);
-        setProjects(projectRows);
-        setCards(taskRows);
+        if (cancelled) return;
+        // skip this round if a local edit landed while we were fetching (its
+        // response may be newer than ours) or a card is mid-drag (re-rendering
+        // the column would cancel the drag) — the next tick catches up
+        if (first || (cardsRef.current === before && !dragIdRef.current)) {
+          // unchanged data keeps the old array, so nothing re-renders or jumps
+          setCards((prev) => (JSON.stringify(prev) === JSON.stringify(taskRows) ? prev : taskRows));
+          setProjects((prev) => (JSON.stringify(prev) === JSON.stringify(projectRows) ? prev : projectRows));
+        }
       } catch (e) {
-        reportError("Loading board", e);
+        if (cancelled) return;
+        // only the first load alerts; a later failure is usually the server
+        // restarting, so stay quiet and let the next tick reconnect
+        if (first) reportError("Loading board", e);
       } finally {
-        setLoaded(true);
+        inFlight = false;
+        if (!cancelled) {
+          if (first) setLoaded(true);
+          first = false;
+          if (document.visibilityState === "visible") timer = setTimeout(poll, POLL_MS);
+        }
       }
-    })();
+    }
+
+    // paused while the tab is hidden; fetch right away when it comes back
+    function onVisibility() {
+      if (document.visibilityState === "visible") poll();
+      else clearTimeout(timer);
+    }
+
+    poll();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [workspace]);
 
   async function switchWorkspace(name) {
@@ -1766,7 +1817,9 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
   function setAndSave(k, v) {
     setForm((f) => {
       const next = { ...f, [k]: v };
-      if (card.id) onSave(next);
+      // send only the changed field — the rest of `form` can be stale now
+      // that the board live-updates, and must not revert an agent's edits
+      if (card.id) onSave({ id: card.id, [k]: v });
       return next;
     });
   }
@@ -1779,7 +1832,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
       (form.branch || "") === (card.branch || "") &&
       (form.link || "") === (card.link || "")
     ) return;
-    onSave(form);
+    onSave({ id: card.id, title: form.title, worktree: form.worktree, branch: form.branch, link: form.link });
   }
 
   function closeAndSave() {
