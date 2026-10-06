@@ -2,7 +2,7 @@
 
 Reports a Claude Code session's progress to [Agent Board](../../README.md) without anyone typing `agent-board update`. It is a convenience layer, not a dependency: the CLI and MCP server work the same without it, and with the Agent Board server stopped the mod stays silent.
 
-Early-access API: needs Claude Code 2.1.287+ per the official article. Developed against 2.1.285, which loaded it fine.
+Early-access API. The official article says mods are on by default from Claude Code 2.1.287. Before that (checked on 2.1.285) function hooks are off unless you set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, and without it this mod simply does nothing. Check `claude --version` and update if it is older than 2.1.287.
 
 ## What it does
 
@@ -47,7 +47,7 @@ Every REST call has a 1.5 s limit (0.6 s at session end), errors are swallowed, 
 - **Hanging server**: `$.http.fetch` cannot be cancelled. A server that accepts the connection and never answers costs one 1.5 s wait, then the backoff skips the rest. In `claude -p` the process then waited about 30 s for the dead request before exiting (measured). A server that is simply not running fails instantly and costs nothing.
 - `worktree` must be an absolute path (`~` is not expanded).
 - After `/clear` there is no new `session.start`; the card stays bound by id.
-- In `-p` mode function hooks are sometimes refused unless `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` is set (it loaded without it on the first run, then was refused on identical later runs; `claude plugin test` behaved the same way).
+- On Claude Code older than 2.1.287, hooks (and `claude plugin test`) need `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`; without it the build reports "hooks modules are not turned on in this build yet (early access)". One earlier run appeared to load the mod without the variable and then refuse identical later runs; that was not reproduced, so don't rely on it.
 
 ## Development
 
