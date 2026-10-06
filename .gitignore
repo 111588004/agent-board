@@ -4,3 +4,6 @@ node_modules/
 *.db-shm
 .agent-board/
 web/dist/
+
+# private working notes (research, decisions) — keep local
+study/
