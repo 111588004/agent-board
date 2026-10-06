@@ -11,6 +11,8 @@ describe('session.start: claiming (D15)', () => {
     expect(w.cards[0]).toMatchObject({ agent: 'claude', status: 'in_progress', branch: 'feat/x' })
     expect(w.cards[1]).toMatchObject({ agent: null, status: 'backlog' })
     expect(w.toasts[0]).toContain('P-1')
+    expect(w.toastMs[0]).toBe(10_000) // long enough to read
+    expect(w.pinned).toEqual(['Agent Board: P-1']) // stays under the prompt
   })
 
   test('a unique branch match is claimed', async ($, on) => {
@@ -187,6 +189,34 @@ describe('session.end (D14)', () => {
   })
 })
 
+describe('the line under the prompt', () => {
+  test('nothing is pinned when no card is bound', async ($, on) => {
+    const w = world(on, { cards: [card('P-1', { worktree: '/other' })] })
+    await $.session.start(w.start)
+    expect(w.pinned).toEqual([])
+  })
+
+  test('a second session.start (hot reload) pins the line again without claiming again', async ($, on) => {
+    const w = world(on, { cards: [card('P-1', { worktree: '/work/x' })] })
+    await $.session.start(w.start)
+    const claims = w.mutations().length
+    await $.session.start(w.start)
+    expect(w.mutations()).toHaveLength(claims)
+    expect(w.pinned).toEqual(['Agent Board: P-1', 'Agent Board: P-1'])
+  })
+
+  test('/board-sync link and new pin the card; off clears the line', async ($, on) => {
+    const w = world(on, { cards: [card('P-1', { worktree: '/elsewhere' })] })
+    await $.session.start(w.start)
+    await sync($, 'link P-1')
+    expect(w.pinned.at(-1)).toBe('Agent Board: P-1')
+    await sync($, 'new "Another card"')
+    expect(w.pinned.at(-1)).toBe('Agent Board: P-2')
+    await sync($, 'off')
+    expect(w.pinned.at(-1)).toBeUndefined()
+  })
+})
+
 describe('switch (D3)', () => {
   test('enabled=false: no network, no writes, not even a probe', { options: { enabled: false } }, async ($, on) => {
     const w = world(on, { cards: [card('P-1', { worktree: '/work/x' })] })
@@ -196,6 +226,7 @@ describe('switch (D3)', () => {
     await w.settle()
     expect(w.requests).toEqual([])
     expect(w.toasts).toEqual([])
+    expect(w.pinned).toEqual([])
   })
 
   test('/board-sync off stops reporting; on resumes and claims', async ($, on) => {

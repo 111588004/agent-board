@@ -8,7 +8,7 @@ Early-access API. The official article says mods are on by default from Claude C
 
 | When | What |
 |---|---|
-| Session start | Looks for **exactly one** open card whose `worktree` is the session's directory (or a parent of it) or whose `branch` is the current branch (`main`/`master` never match). One hit: claims it (`agent=claude`, `status=in_progress`). Zero or several hits, or a card held by another agent: only a toast, nothing is created or written. |
+| Session start | Looks for **exactly one** open card whose `worktree` is the session's directory (or a parent of it) or whose `branch` is the current branch (`main`/`master` never match). One hit: claims it (`agent=claude`, `status=in_progress`), shows a 10-second toast and pins `Agent Board: <ID>` on the line under the prompt, where it stays until you run `/board-sync off`. Zero or several hits, or a card held by another agent: only a toast, nothing is created or written, and no line is pinned. |
 | Each turn | One note per main-agent turn: first line of the answer (max 120 chars) plus `(edited N files, M Bash)`. Subagent turns, aborted and failed turns are skipped. Lines mentioning token/secret/password/api key are dropped. |
 | Session end | If the card is still `in_progress`, moves it to `review`. Never `done`. Not on `/clear` or resume. |
 

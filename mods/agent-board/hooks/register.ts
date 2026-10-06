@@ -42,8 +42,17 @@ async function where($: any): Promise<Here> {
   return { cwd, toplevel, branch }
 }
 
+// A toast is easy to miss (the default is 4s), so give the person time to read it.
+const TOAST_MS = 10_000
+
 function toast($: any, text: string) {
-  try { $.ui.toast(text) } catch {}
+  try { $.ui.toast(text, { timeoutMs: TOAST_MS }) } catch {}
+}
+
+// The line under the prompt that stays until replaced: which card this session reports to.
+// Undefined clears it.
+function pin($: any, cardId?: string) {
+  try { $.ui.status(cardId ? `Agent Board: ${cardId}` : undefined) } catch {}
 }
 
 // Claiming changes who owns a card (D15), so it only runs for a unique match
@@ -54,12 +63,14 @@ async function claim($: any, deps: Deps, card: Card, here: Here) {
   })
   if (!row) return false
   await $.state.set(BINDING, { sessionId: await $.session.id(), cardId: card.id })
+  pin($, card.id)
   return true
 }
 
 async function autoBind($: any, deps: Deps) {
   const sessionId = await $.session.id()
-  if ((await $.state.get(BINDING)).value?.sessionId === sessionId) return // hot reload re-ran session.start
+  const bound = (await $.state.get(BINDING)).value
+  if (bound?.sessionId === sessionId) return pin($, bound.cardId) // hot reload re-ran session.start: show the line again
   const cards: Card[] | null = await call(deps, 'GET', '/tasks')
   if (!cards) return // server down: stay silent
   const here = await where($)
@@ -99,7 +110,7 @@ async function boardSync($: any, options: PluginOptions, args: string): Promise<
   const sub = args.trim().split(/\s+/)[0] ?? ''
   const arg = args.trim().slice(sub.length).trim()
   const { isOn, deps } = await settings($, options)
-  if (sub === 'off') { await $.store.set('override', 'off'); return 'Agent Board reporting: off' }
+  if (sub === 'off') { await $.store.set('override', 'off'); pin($); return 'Agent Board reporting: off' }
   if (sub === 'on') {
     await $.store.set('override', 'on')
     await autoBind($, (await settings($, options)).deps).catch(() => {})
@@ -130,6 +141,7 @@ async function boardSync($: any, options: PluginOptions, args: string): Promise<
     })
     if (!card) return 'Could not create the card'
     await $.state.set(BINDING, { sessionId: await $.session.id(), cardId: card.id })
+    pin($, card.id)
     return `Created ${card.id}`
   }
   return 'Usage: /board-sync on | off | status | link <ID> | new "title"'

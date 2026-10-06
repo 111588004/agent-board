@@ -17,6 +17,8 @@ export function world(on: On, opts: { cards?: Card[]; env?: Record<string, strin
     mode: 'ok' as Mode,
     requests: [] as { method: string; url: string; body: any }[],
     toasts: [] as string[],
+    toastMs: [] as (number | undefined)[],
+    pinned: [] as (string | undefined)[],
     messages: [] as any[],
     clock: mock.clock(on, { now: 1_000_000 }),
     cwd: opts.cwd ?? '/work/x',
@@ -38,7 +40,8 @@ export function world(on: On, opts: { cards?: Card[]; env?: Record<string, strin
   on('session.id', () => ({ value: 's1' }))
   on('session.cwd', () => ({ value: w.cwd }))
   on('session.messages', () => ({ value: w.messages as any }))
-  on('ui.toast', (_$, e) => { w.toasts.push(e.text); return { value: undefined as any } })
+  on('ui.toast', (_$, e) => { w.toasts.push(e.text); w.toastMs.push(e.timeoutMs); return { value: undefined as any } })
+  on('ui.status', (_$, e) => { w.pinned.push(e.text); return { value: undefined as any } })
   on('process.run', (_$, e) => ({
     value: { exitCode: 0, stdout: `${e.argv[1] === 'rev-parse' ? w.cwd : w.branch}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   }))
