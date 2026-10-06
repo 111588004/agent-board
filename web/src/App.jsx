@@ -206,6 +206,26 @@ export default function AgentBoard() {
     };
   }, [workspace]);
 
+  // Deep link: `?task=SB-1` opens that card's detail once the first load is in, and the
+  // address bar follows whichever card is open, so the URL can be copied or sent as it is
+  // (the mod and the CLI print these links). `?workspace=` keeps selecting the board.
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (!loaded || deepLinked.current) return;
+    deepLinked.current = true;
+    const id = new URLSearchParams(window.location.search).get("task");
+    const card = id && cards.find((c) => c.id === id);
+    if (card) setModalCard(card);
+  }, [loaded, cards]);
+
+  useEffect(() => {
+    if (!deepLinked.current) return; // don't wipe ?task= before it has been read
+    const url = new URL(window.location.href);
+    if (modalCard?.id) url.searchParams.set("task", modalCard.id);
+    else url.searchParams.delete("task");
+    window.history.replaceState(null, "", url);
+  }, [modalCard?.id]);
+
   async function switchWorkspace(name) {
     if (name === workspace) return;
     if (name === "__new__") {
