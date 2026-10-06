@@ -240,7 +240,9 @@ describe('switch (D3)', () => {
     expect(w.requests).toHaveLength(before)
     expect(w.cards[0]!.status).toBe('in_progress')
     await sync($, 'on')
-    expect((await sync($, 'status')).text).toContain('on')
+    const status = (await sync($, 'status')).text
+    expect(status).toContain('on')
+    expect(status).toContain('server: http://localhost:4317\n') // the page you can open, not the /api root
   })
 })
 

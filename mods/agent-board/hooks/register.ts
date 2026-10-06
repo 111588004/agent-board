@@ -119,7 +119,7 @@ async function boardSync($: any, options: PluginOptions, args: string): Promise<
   if (sub === 'status') {
     const binding = (await $.state.get(BINDING)).value
     const health = await deps.getHealth()
-    return `Agent Board reporting: ${isOn ? 'on' : 'off'}\nserver: ${deps.base}${health.fails ? ' (unreachable, backing off)' : ''}\ncard: ${binding?.cardId ?? 'none'}`
+    return `Agent Board reporting: ${isOn ? 'on' : 'off'}\nserver: ${new URL(deps.base).origin}${health.fails ? ' (unreachable, backing off)' : ''}\ncard: ${binding?.cardId ?? 'none'}`
   }
   if (sub === 'link' && arg) {
     const cards: Card[] | null = await call(deps, 'GET', '/tasks')
