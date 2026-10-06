@@ -5,10 +5,10 @@ import { card, sync, world } from './world'
 const END = (reason: string) => ({ reason, sessionId: 's1', resume: { id: 's1' } }) as any
 
 describe('session.start: claiming (D15)', () => {
-  test('a unique worktree match is claimed and moved to in_progress', async ($, on) => {
+  test('a unique worktree match is claimed: owner set, status left alone (D19)', async ($, on) => {
     const w = world(on, { cards: [card('P-1', { worktree: '/work/x' }), card('P-2', { worktree: '/work/y' })] })
     await $.session.start(w.start)
-    expect(w.cards[0]).toMatchObject({ agent: 'claude', status: 'in_progress', branch: 'feat/x' })
+    expect(w.cards[0]).toMatchObject({ agent: 'claude', status: 'backlog', branch: 'feat/x' })
     expect(w.cards[1]).toMatchObject({ agent: null, status: 'backlog' })
     expect(w.toasts[0]).toContain('P-1')
     expect(w.toastMs[0]).toBe(10_000) // long enough to read
@@ -59,7 +59,7 @@ describe('session.start: claiming (D15)', () => {
     const w = world(on, { cards: [card('P-1')] })
     await $.session.start(w.start)
     expect(await sync($, 'link P-1')).toEqual({ text: 'Linked to P-1' })
-    expect(w.cards[0]).toMatchObject({ worktree: '/work/x', branch: 'feat/x', agent: 'claude', status: 'in_progress' })
+    expect(w.cards[0]).toMatchObject({ worktree: '/work/x', branch: 'feat/x', agent: 'claude', status: 'backlog' })
     expect(await sync($, 'new "Do the thing"')).toEqual({ text: 'Created P-2' })
     expect(w.cards[1]).toMatchObject({ title: 'Do the thing', project: 'Proj', status: 'in_progress' })
   })
@@ -169,7 +169,7 @@ describe('session.end (D18)', () => {
   test('only leaves a note: status and owner stay as they were', async ($, on) => {
     const w = await claimed($, on)
     await $.session.end(END('prompt_input_exit'))
-    expect(w.cards[0]).toMatchObject({ status: 'in_progress', agent: 'claude' })
+    expect(w.cards[0]).toMatchObject({ status: 'backlog', agent: 'claude' })
     expect(w.notes('P-1').map((r) => r.body.note)).toContain('claude session ended')
     expect(w.mutations().map((r) => r.body.status)).not.toContain('review')
   })
@@ -255,7 +255,7 @@ describe('switch (D3)', () => {
     await $.session.end(END('other'))
     await w.settle()
     expect(w.requests).toHaveLength(before)
-    expect(w.cards[0]!.status).toBe('in_progress')
+    expect(w.cards[0]!.status).toBe('backlog')
     await sync($, 'on')
     const status = (await sync($, 'status')).text
     expect(status).toContain('on')

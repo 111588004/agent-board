@@ -8,7 +8,7 @@ Early-access API. The official article says mods are on by default from Claude C
 
 | When | What |
 |---|---|
-| Session start | Looks for **exactly one** open card whose `worktree` is the session's directory (or a parent of it) or whose `branch` is the current branch (`main`/`master` never match). One hit: claims it (`agent=claude`, `status=in_progress`), shows a 10-second toast and pins `Agent Board: <ID>` on the line under the prompt, where it stays until you run `/board-sync off`. Zero or several hits, or a card held by another agent: only a toast, nothing is created or written, and no line is pinned. |
+| Session start | Looks for **exactly one** open card whose `worktree` is the session's directory (or a parent of it) or whose `branch` is the current branch (`main`/`master` never match). One hit: claims it (sets `agent=claude` and the worktree/branch; the status is left alone, because opening a session isn't the same as the work having started), shows a 10-second toast and pins `Agent Board: <ID>` on the line under the prompt, where it stays until you run `/board-sync off`. Zero or several hits, or a card held by another agent: only a toast, nothing is created or written, and no line is pinned. |
 | Each turn | One note per main-agent turn: first line of the answer (max 120 chars) plus `(edited N files, M Bash)`. Subagent turns, aborted and failed turns are skipped. Lines mentioning token/secret/password/api key are dropped. |
 | Session end | Adds one line to the card's history (`claude session ended`). Does **not** change the status or the owner: closing a session doesn't mean the work is done or ready for review, and nobody should be asked to review unfinished work. Not on `/clear` or resume. |
 

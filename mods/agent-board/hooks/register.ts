@@ -56,10 +56,11 @@ function pin($: any, cardId?: string) {
 }
 
 // Claiming changes who owns a card (D15), so it only runs for a unique match
-// or a person's explicit `link`.
+// or a person's explicit `link`. D19: it sets the owner and nothing else: opening a session
+// is not the same as the work having started, so the status is left to whoever really moves it.
 async function claim($: any, deps: Deps, card: Card, here: Here) {
   const row = await call(deps, 'PATCH', `/tasks/${card.id}`, {
-    agent: 'claude', status: 'in_progress', worktree: here.cwd, ...(here.branch ? { branch: here.branch } : {}),
+    agent: 'claude', worktree: here.cwd, ...(here.branch ? { branch: here.branch } : {}),
   })
   if (!row) return false
   await $.state.set(BINDING, { sessionId: await $.session.id(), cardId: card.id })
