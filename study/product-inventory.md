@@ -201,3 +201,17 @@
 - **D17** 修法（使用者同意）：(1) toast 停留改為 10 秒（`timeoutMs`）；(2) 認領 / `/board-sync link` / `new` 之後用 `$.ui.status` 把 `Agent Board: <卡片 ID>` 固定在輸入框下方，`/board-sync off` 清除；熱重載重跑 `session.start` 時重新釘上。沒有綁定卡片、或 `enabled=false` 時不釘。
 - 這是 AB-13 的小修補，不需要等 AB-15。AB-15 之後只在「想看更多資訊」時才做。
 - 驗證：`claude plugin validate --strict` 通過，單元測試 24 → 27 項全過（2.1.288 引擎，不設旗標）。**尚未在互動式畫面確認**，等使用者重測。
+
+### 重測結果（2026-10-06）
+- 通過：認領、常駐狀態列、每輪一條 note（`… (edited 1 file)`）、`/board-sync` 用法說明、`/board-sync off`（狀態列隨之消失）。
+- **發現並修正**：`/board-sync status` 的 `server:` 印的是 API 根（`http://localhost:4352/api`），使用者打開得到 `Cannot GET /api`。改為顯示 origin。有測試，且還原修正後該測試會失敗（已驗證）。
+- 外觀問題（交給設計研究處理）：引擎會在每則外掛輸出前加 `agent-board:`，我們又寫了 `Agent Board`，造成重複；狀態列前有引擎加的橘黃 ▲。
+- 未驗證：`/exit` 後卡片是否自動推到 review（互動式）、全新資料夾第一次 session 為何沒認領。
+
+### D18（2026-10-06）session 結束只留紀錄，不改狀態（取代 D14）
+- 使用者互動試用回報：關掉 session 後卡片變 review，「沒有做完，硬被放到 review，是要給誰 review？」並選擇方案 B。
+- **D18**：session 結束時**只在卡片歷史加一行**（`claude session ended`），**不改 status，也不改 agent**。`/clear` 與 resume 不算結束。D14（最多推到 review）作廢。
+- 實作細節：結束那條紀錄**不帶 `agent`**，因為 REST 把 body 的 `agent` 同時當成「設定負責人」與「作者標籤」，帶了會在期間被他人接手時把卡搶回 claude。（每輪 note 仍帶 `agent: claude`，視為「正在這張卡上工作的人」，這是否合理待檢討。）
+- 取捨：卡片會一直掛著 agent 名字，別的 agent 看到會跳「被 claude 持有」，需要 `/board-sync link` 接手。
+- 29 項測試通過；還原「不帶 agent」的對照會使測試失敗（已驗證）。
+- **尚未處理**：session **開始**就自動把卡標成 in_progress，同樣有「只是開來問個問題也被認領」的問題。

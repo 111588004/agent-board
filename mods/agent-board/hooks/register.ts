@@ -7,8 +7,8 @@ const BINDING = { plugin: 'agent-board', key: 'binding' } as const
 const NOTED = { plugin: 'agent-board', key: 'lastNotedTurnId' } as const
 const HEALTH = { plugin: 'agent-board', key: 'health' } as const
 
-// D14: only these end reasons mean "the person is done for now".
-const REVIEW_REASONS = ['prompt_input_exit', 'other', 'logout']
+// D18: only these end reasons are a real ending (/clear and resume keep going).
+const END_REASONS = ['prompt_input_exit', 'other', 'logout']
 
 // Helpers are top-level functions because `claude plugin validate` only follows
 // `$` into functions declared at the top of the file.
@@ -94,16 +94,17 @@ async function reportTurn($: any, options: PluginOptions, turnId: string, answer
   if (note) await call(deps, 'PATCH', `/tasks/${binding.cardId}`, { note, agent: 'claude' })
 }
 
-async function toReview($: any, options: PluginOptions, remainingMs: number) {
+// D18: ending a session says nothing about the work being finished, so it only leaves a line in
+// the card's history. Status and owner stay as they were, and `agent` is left out of the request
+// on purpose: the REST API reads it as "set the owner", which would take a card back from
+// whoever picked it up in the meantime.
+async function noteEnd($: any, options: PluginOptions, remainingMs: number) {
   const { isOn, deps } = await settings($, options)
   const binding = (await $.state.get(BINDING)).value
   if (!isOn || !binding) return
-  // The whole session.end chain gets ~1.5s: two calls, each capped well below that.
-  const ms = Math.max(200, Math.min(600, Math.floor((remainingMs - 300) / 2)))
-  const live: Card[] | null = await call(deps, 'GET', '/tasks?status=in_progress', undefined, ms)
-  if (live?.some((c) => c.id === binding.cardId)) {
-    await call(deps, 'PATCH', `/tasks/${binding.cardId}`, { status: 'review', agent: 'claude' }, ms)
-  }
+  // The whole session.end chain gets ~1.5s: one call, capped below that.
+  const ms = Math.max(200, Math.min(900, remainingMs - 300))
+  await call(deps, 'PATCH', `/tasks/${binding.cardId}`, { note: 'claude session ended' }, ms)
 }
 
 async function boardSync($: any, options: PluginOptions, args: string): Promise<string> {
@@ -170,7 +171,7 @@ export const register: Register = (on, options) => {
 
   on('session.end', async ($, e, next) => {
     try {
-      if (REVIEW_REASONS.includes(e.reason)) await toReview($, options, next.budget.remainingMs)
+      if (END_REASONS.includes(e.reason)) await noteEnd($, options, next.budget.remainingMs)
     } catch {}
     return next(e)
   })

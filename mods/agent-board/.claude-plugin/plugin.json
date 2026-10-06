@@ -1,7 +1,7 @@
 {
   "name": "agent-board",
   "version": "0.1.0",
-  "description": "Agent Board progress reporting: claims the card that matches this worktree/branch, writes one note per turn, and moves it to review when the session ends. Silent when the server is not running.",
+  "description": "Agent Board progress reporting: claims the card that matches this worktree/branch, writes one note per turn, and notes when the session ends (status and owner are left alone). Silent when the server is not running.",
   "author": { "name": "limao" },
   "types": "./types/index.d.ts",
   "userConfig": {

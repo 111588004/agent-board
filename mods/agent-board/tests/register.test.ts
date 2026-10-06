@@ -159,33 +159,50 @@ describe('server trouble (D3)', () => {
   })
 })
 
-describe('session.end (D14)', () => {
-  const claimed = async ($: any, on: any, status = 'backlog') => {
-    const w = world(on, { cards: [card('P-1', { worktree: '/work/x', status })] })
+describe('session.end (D18)', () => {
+  const claimed = async ($: any, on: any, over: object = {}) => {
+    const w = world(on, { cards: [card('P-1', { worktree: '/work/x', ...over })] })
     await $.session.start(w.start)
     return w
   }
 
-  test('pushes an in_progress card to review, never to done', async ($, on) => {
+  test('only leaves a note: status and owner stay as they were', async ($, on) => {
     const w = await claimed($, on)
     await $.session.end(END('prompt_input_exit'))
-    expect(w.cards[0]!.status).toBe('review')
-    expect(w.mutations().map((r) => r.body.status)).not.toContain('done')
+    expect(w.cards[0]).toMatchObject({ status: 'in_progress', agent: 'claude' })
+    expect(w.notes('P-1').map((r) => r.body.note)).toContain('claude session ended')
+    expect(w.mutations().map((r) => r.body.status)).not.toContain('review')
   })
 
-  test('clear and resume do not push', async ($, on) => {
+  test('the end note does not carry `agent`, so it cannot take a card back', async ($, on) => {
     const w = await claimed($, on)
+    w.cards[0]!.agent = 'codex' // someone picked it up during the session
+    await $.session.end(END('other'))
+    const last = w.mutations().at(-1)!
+    expect(last.body).toEqual({ note: 'claude session ended' })
+    expect(w.cards[0]!.agent).toBe('codex')
+  })
+
+  test('clear and resume are not an ending', async ($, on) => {
+    const w = await claimed($, on)
+    const before = w.mutations().length
     await $.session.end(END('clear'))
     await $.session.end(END('resume'))
-    expect(w.cards[0]!.status).toBe('in_progress')
+    expect(w.mutations()).toHaveLength(before)
   })
 
-  test('a card the person already moved is left alone', async ($, on) => {
+  test('a card the person already moved to done keeps its status', async ($, on) => {
     const w = await claimed($, on)
     w.cards[0]!.status = 'done'
     await $.session.end(END('other'))
     expect(w.cards[0]!.status).toBe('done')
-    expect(w.mutations()).toHaveLength(1) // only the claim
+  })
+
+  test('a session with no card writes nothing', async ($, on) => {
+    const w = world(on, { cards: [] })
+    await $.session.start(w.start)
+    await $.session.end(END('other'))
+    expect(w.mutations()).toEqual([])
   })
 })
 
