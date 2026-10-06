@@ -88,9 +88,10 @@ Codex (`~/.codex/config.toml`):
 [mcp_servers.agent-board]
 command = "npx"
 args = ["-y", "@limao.li.design/agent-board", "mcp"]
+startup_timeout_sec = 60   # the very first run downloads the package (~20s); Codex's default is shorter
 ```
 
-Not yet verified against the real clients: the desktop app launched from the GUI may not find an nvm-installed `npx` on its PATH (use the absolute path if so); Codex's startup timeout and whether its sandbox allows localhost; and the first `npx -y` run (download + `better-sqlite3` install) may be slow enough to hit a client's startup timeout.
+Verified with real clients (2026-10-06, 0.4.0): Claude Code and Codex CLI both list and call the tools over stdio, and only the first call carries the "auto-started" notice. Not verified: the Claude desktop app (launched from the GUI it may not find an nvm-installed `npx` on its PATH — use the absolute path if so); Gemini CLI (couldn't be tested, it stopped at its own sign-in/project setup); and a Codex cold start with an empty npm cache, which is why the timeout above is raised.
 
 **HTTP** — the running server also exposes MCP at `POST http://localhost:4317/mcp` (stateless `StreamableHTTPServerTransport`), for clients that prefer a URL. This one never auto-starts anything:
 
