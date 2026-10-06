@@ -1,0 +1,37 @@
+{
+  "name": "agent-board",
+  "version": "0.1.0",
+  "description": "Agent Board progress reporting: claims the card that matches this worktree/branch, writes one note per turn, and moves it to review when the session ends. Silent when the server is not running.",
+  "author": { "name": "limao" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "description": "Report progress to Agent Board (/board-sync on|off overrides this)",
+      "required": false,
+      "default": true
+    },
+    "agentBoardUrl": {
+      "type": "string",
+      "title": "Server URL",
+      "description": "Leave empty to use AGENT_BOARD_URL, then http://localhost:4317",
+      "required": false,
+      "default": ""
+    },
+    "workspace": {
+      "type": "string",
+      "title": "Workspace",
+      "description": "Empty = the server's default workspace",
+      "required": false,
+      "default": ""
+    },
+    "project": {
+      "type": "string",
+      "title": "Project for /board-sync new",
+      "description": "Board project new cards go to; empty = the only project, if there is exactly one",
+      "required": false,
+      "default": ""
+    }
+  }
+}

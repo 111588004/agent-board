@@ -1,0 +1,12 @@
+{
+  "name": "agent-board-mods",
+  "owner": { "name": "limao" },
+  "description": "Claude Code mods for Agent Board",
+  "plugins": [
+    {
+      "name": "agent-board",
+      "source": "./mods/agent-board",
+      "description": "Agent Board progress reporting for Claude Code: claims the matching card, one note per turn, review on exit."
+    }
+  ]
+}
