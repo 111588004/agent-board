@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { card, sync, world } from './world'
+import { width } from '../hooks/band'
+import { band, bandTarget, card, sync, world } from './world'
 
 const END = (reason: string) => ({ reason, sessionId: 's1', resume: { id: 's1' } }) as any
 
@@ -12,7 +13,9 @@ describe('session.start: claiming (D15)', () => {
     expect(w.cards[1]).toMatchObject({ agent: null, status: 'backlog' })
     expect(w.toasts[0]).toContain('P-1')
     expect(w.toastMs[0]).toBe(10_000) // long enough to read
-    expect(w.pinned).toEqual(['Agent Board: P-1']) // stays under the prompt
+    expect(w.statusCalls).toEqual([]) // D20: nothing goes through $.ui.status any more
+    const ui = await $.ui.mount(bandTarget())
+    expect((await band(ui)).text).toContain('P-1') // the line above the prompt shows the card
   })
 
   test('a unique branch match is claimed', async ($, on) => {
@@ -27,25 +30,25 @@ describe('session.start: claiming (D15)', () => {
     expect(w.mutations()).toEqual([])
   })
 
-  test('zero matches: toast only, nothing written, no card created', async ($, on) => {
+  test('zero matches: the band says so, nothing written, no card created', async ($, on) => {
     const w = world(on, { cards: [card('P-1', { worktree: '/other' })] })
     await $.session.start(w.start)
     expect(w.mutations()).toEqual([])
-    expect(w.toasts[0]).toContain('no card matches')
+    expect((await band(await $.ui.mount(bandTarget()))).text).toContain('no card for this branch')
   })
 
-  test('several matches: toast lists them, nothing written', async ($, on) => {
+  test('several matches: the band lists them, nothing written', async ($, on) => {
     const w = world(on, { cards: [card('P-1', { worktree: '/work/x' }), card('P-2', { branch: 'feat/x' })] })
     await $.session.start(w.start)
     expect(w.mutations()).toEqual([])
-    expect(w.toasts[0]).toContain('P-1, P-2')
+    expect((await band(await $.ui.mount(bandTarget()))).text).toContain('2 cards match: P-1 P-2')
   })
 
   test('a card another agent holds is not taken', async ($, on) => {
     const w = world(on, { cards: [card('P-1', { worktree: '/work/x', agent: 'codex', status: 'in_progress' })] })
     await $.session.start(w.start)
     expect(w.mutations()).toEqual([])
-    expect(w.toasts[0]).toContain('codex')
+    expect((await band(await $.ui.mount(bandTarget()))).text).toContain('P-1 is held by codex')
   })
 
   test('a second session.start (hot reload) does not claim again', async ($, on) => {
@@ -132,7 +135,7 @@ describe('server trouble (D3)', () => {
     await sync($, 'link P-1')
     await $.session.end(END('other'))
     expect(w.requests, 'no more traffic while backing off').toHaveLength(1)
-    expect((await sync($, 'status')).text).toContain('backing off')
+    expect((await sync($, 'status')).text).toContain('offline, retrying')
 
     w.mode = 'ok'
     await w.clock.advance(20_000)
@@ -155,7 +158,7 @@ describe('server trouble (D3)', () => {
     const w = world(on, { cards: [card('P-1', { worktree: '/work/x' })] })
     await $.session.start(w.start)
     expect(await sync($, 'link NOPE-9')).toEqual({ text: 'No card NOPE-9' })
-    expect((await sync($, 'status')).text).not.toContain('backing off')
+    expect((await sync($, 'status')).text).not.toContain('offline')
   })
 })
 
@@ -206,34 +209,6 @@ describe('session.end (D18)', () => {
   })
 })
 
-describe('the line under the prompt', () => {
-  test('nothing is pinned when no card is bound', async ($, on) => {
-    const w = world(on, { cards: [card('P-1', { worktree: '/other' })] })
-    await $.session.start(w.start)
-    expect(w.pinned).toEqual([])
-  })
-
-  test('a second session.start (hot reload) pins the line again without claiming again', async ($, on) => {
-    const w = world(on, { cards: [card('P-1', { worktree: '/work/x' })] })
-    await $.session.start(w.start)
-    const claims = w.mutations().length
-    await $.session.start(w.start)
-    expect(w.mutations()).toHaveLength(claims)
-    expect(w.pinned).toEqual(['Agent Board: P-1', 'Agent Board: P-1'])
-  })
-
-  test('/board-sync link and new pin the card; off clears the line', async ($, on) => {
-    const w = world(on, { cards: [card('P-1', { worktree: '/elsewhere' })] })
-    await $.session.start(w.start)
-    await sync($, 'link P-1')
-    expect(w.pinned.at(-1)).toBe('Agent Board: P-1')
-    await sync($, 'new "Another card"')
-    expect(w.pinned.at(-1)).toBe('Agent Board: P-2')
-    await sync($, 'off')
-    expect(w.pinned.at(-1)).toBeUndefined()
-  })
-})
-
 describe('switch (D3)', () => {
   test('enabled=false: no network, no writes, not even a probe', { options: { enabled: false } }, async ($, on) => {
     const w = world(on, { cards: [card('P-1', { worktree: '/work/x' })] })
@@ -243,7 +218,8 @@ describe('switch (D3)', () => {
     await w.settle()
     expect(w.requests).toEqual([])
     expect(w.toasts).toEqual([])
-    expect(w.pinned).toEqual([])
+    expect(w.statusCalls).toEqual([])
+    expect(await band(await $.ui.mount(bandTarget()))).toMatchObject({ text: '' }) // no band either
   })
 
   test('/board-sync off stops reporting; on resumes and claims', async ($, on) => {
@@ -258,8 +234,8 @@ describe('switch (D3)', () => {
     expect(w.cards[0]!.status).toBe('backlog')
     await sync($, 'on')
     const status = (await sync($, 'status')).text
-    expect(status).toContain('on')
-    expect(status).toContain('server: http://localhost:4317\n') // the page you can open, not the /api root
+    expect(status).toContain('● reporting on')
+    expect(status).toMatch(/server {5}http:\/\/localhost:4317 {3}● up/) // the page you can open, not the /api root
   })
 })
 

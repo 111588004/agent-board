@@ -1,1 +1,1 @@
-{ "description": "Agent Board progress reporting", "modules": ["./register.ts"] }
+{ "description": "Agent Board progress reporting", "modules": ["./register.tsx"] }

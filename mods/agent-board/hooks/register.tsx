@@ -1,11 +1,14 @@
 import type { PluginOptions, Register } from 'claude-code'
 
+import type { BandState } from '../types'
+import { bandLayout, statusText, toBandCard, type Seg } from './band'
 import { baseUrl, call, type Deps } from './board'
 import { pickCard, summarize, type Card } from './pick-card'
 
 const BINDING = { plugin: 'agent-board', key: 'binding' } as const
 const NOTED = { plugin: 'agent-board', key: 'lastNotedTurnId' } as const
 const HEALTH = { plugin: 'agent-board', key: 'health' } as const
+const BAND = { plugin: 'agent-board', key: 'band' } as const
 
 // D18: only these end reasons are a real ending (/clear and resume keep going).
 const END_REASONS = ['prompt_input_exit', 'other', 'logout']
@@ -49,10 +52,21 @@ function toast($: any, text: string) {
   try { $.ui.toast(text, { timeoutMs: TOAST_MS }) } catch {}
 }
 
-// The line under the prompt that stays until replaced: which card this session reports to.
-// Undefined clears it.
-function pin($: any, cardId?: string) {
-  try { $.ui.status(cardId ? `Agent Board: ${cardId}` : undefined) } catch {}
+// D20: the line above the prompt (ui.render AbovePrompt, see bandView) draws from this state, and a
+// state change redraws it. It replaces `$.ui.status`, whose fixed "⚠ <plugin>:" style cannot be changed.
+// Where nothing draws that band (not terminal/desktop, e.g. a vscode or mobile-only session) the
+// three "nothing was claimed" states fall back to the toast they used to be.
+async function drawsBand($: any): Promise<boolean> {
+  try { return (await $.session.surfaces()).some((s: string) => s === 'terminal' || s === 'desktop') } catch { return true }
+}
+
+async function say($: any, state: BandState, fallbackToast: string) {
+  await $.state.set(BAND, state)
+  if (!(await drawsBand($))) toast($, fallbackToast)
+}
+
+async function remember($: any, row: Card) {
+  await $.state.set(BAND, { kind: 'linked', card: toBandCard(row) })
 }
 
 // Claiming changes who owns a card (D15), so it only runs for a unique match
@@ -64,22 +78,32 @@ async function claim($: any, deps: Deps, card: Card, here: Here) {
   })
   if (!row) return false
   await $.state.set(BINDING, { sessionId: await $.session.id(), cardId: card.id })
-  pin($, card.id)
+  await remember($, row)
   return true
 }
 
 async function autoBind($: any, deps: Deps) {
   const sessionId = await $.session.id()
   const bound = (await $.state.get(BINDING)).value
-  if (bound?.sessionId === sessionId) return pin($, bound.cardId) // hot reload re-ran session.start: show the line again
+  if (bound?.sessionId === sessionId) {
+    // Hot reload re-ran session.start, or /board-sync on after off: the line needs a card to draw again.
+    if ((await $.state.get(BAND)).value) return
+    const row = (await call(deps, 'GET', '/tasks') as Card[] | null)?.find((c) => c.id === bound.cardId)
+    return row ? remember($, row) : undefined
+  }
   const cards: Card[] | null = await call(deps, 'GET', '/tasks')
   if (!cards) return // server down: stay silent
   const here = await where($)
   const hit = pickCard(cards, here)
-  if (hit.kind === 'none') return toast($, 'Agent Board: no card matches this worktree/branch. /board-sync link <ID> or /board-sync new "title"')
-  if (hit.kind === 'many') return toast($, `Agent Board: ${hit.cards.map((c) => c.id).join(', ')} all match. /board-sync link <ID> to pick one`)
+  if (hit.kind === 'none') return say($, { kind: 'none' }, 'Agent Board: no card matches this worktree/branch. /board-sync link <ID> or /board-sync new "title"')
+  if (hit.kind === 'many') {
+    const ids = hit.cards.map((c) => c.id)
+    return say($, { kind: 'many', ids }, `Agent Board: ${ids.join(', ')} all match. /board-sync link <ID> to pick one`)
+  }
   const { card } = hit
-  if (card.agent && card.agent !== 'claude') return toast($, `Agent Board: ${card.id} is held by ${card.agent}. /board-sync link ${card.id} to take it`)
+  if (card.agent && card.agent !== 'claude') {
+    return say($, { kind: 'held', id: card.id, agent: card.agent }, `Agent Board: ${card.id} is held by ${card.agent}. /board-sync link ${card.id} to take it`)
+  }
   if (await claim($, deps, card, here)) toast($, `Agent Board: working on ${card.id}`)
 }
 
@@ -92,7 +116,12 @@ async function reportTurn($: any, options: PluginOptions, turnId: string, answer
   const turnStart = messages.findLastIndex((m: any) => m.role === 'user' && m.text !== '')
   const uses = messages.slice(turnStart + 1).flatMap((m: any) => m.toolUses)
   const note = summarize(answer, uses)
-  if (note) await call(deps, 'PATCH', `/tasks/${binding.cardId}`, { note, agent: 'claude' })
+  // The PATCH answer is the card as it is now (status may have been moved in the Web UI), so each
+  // turn refreshes the band's snapshot; with no note to send, a list read does the same.
+  const row: Card | null | undefined = note
+    ? await call(deps, 'PATCH', `/tasks/${binding.cardId}`, { note, agent: 'claude' })
+    : (await call(deps, 'GET', '/tasks') as Card[] | null)?.find((c) => c.id === binding.cardId)
+  if (row) await remember($, row)
 }
 
 // D18: ending a session says nothing about the work being finished, so it only leaves a line in
@@ -112,7 +141,7 @@ async function boardSync($: any, options: PluginOptions, args: string): Promise<
   const sub = args.trim().split(/\s+/)[0] ?? ''
   const arg = args.trim().slice(sub.length).trim()
   const { isOn, deps } = await settings($, options)
-  if (sub === 'off') { await $.store.set('override', 'off'); pin($); return 'Agent Board reporting: off' }
+  if (sub === 'off') { await $.store.set('override', 'off'); await $.state.set(BAND, null); return 'Agent Board reporting: off' }
   if (sub === 'on') {
     await $.store.set('override', 'on')
     await autoBind($, (await settings($, options)).deps).catch(() => {})
@@ -121,7 +150,11 @@ async function boardSync($: any, options: PluginOptions, args: string): Promise<
   if (sub === 'status') {
     const binding = (await $.state.get(BINDING)).value
     const health = await deps.getHealth()
-    return `Agent Board reporting: ${isOn ? 'on' : 'off'}\nserver: ${new URL(deps.base).origin}${health.fails ? ' (unreachable, backing off)' : ''}\ncard: ${binding?.cardId ?? 'none'}`
+    const retryInS = health.fails ? Math.max(0, Math.ceil((health.until - (await deps.now())) / 1000)) : null
+    return statusText({
+      isOn, server: new URL(deps.base).origin, workspace: String(options.workspace ?? '') || 'default',
+      retryInS, bound: binding?.cardId ?? null, state: (await $.state.get(BAND)).value ?? null,
+    })
   }
   if (sub === 'link' && arg) {
     const cards: Card[] | null = await call(deps, 'GET', '/tasks')
@@ -143,10 +176,34 @@ async function boardSync($: any, options: PluginOptions, args: string): Promise<
     })
     if (!card) return 'Could not create the card'
     await $.state.set(BINDING, { sessionId: await $.session.id(), cardId: card.id })
-    pin($, card.id)
+    await remember($, card)
     return `Created ${card.id}`
   }
   return 'Usage: /board-sync on | off | status | link <ID> | new "title"'
+}
+
+// D20: the always-on line. Everything it shows comes from $.state (written by the hooks above), never
+// from a request made while drawing. Helpers live at the top level because `claude plugin validate`
+// only follows `$` into top-level functions.
+function bandText(seg: Seg) {
+  return { ...(seg.color && { color: seg.color }), ...(seg.bold && { bold: true }), ...(seg.dim && { dimColor: true }) }
+}
+
+async function bandView($: any, e: any, next: any) {
+  if (e.props.hasSurvey) return next(e) // a survey owns the band: yield
+  const state: BandState | null = (await $.state.get(BAND)).value ?? null
+  const health = (await $.state.get(HEALTH)).value ?? { fails: 0, until: 0 }
+  const layout = bandLayout(state, health.fails > 0, e.props.bodyColumns)
+  if (!layout) return next(e)
+  const { Box, Text } = $.ui.resolve(e)
+  const draw = (seg: Seg) => <Text {...bandText(seg)}>{seg.text}</Text>
+  return (
+    <Box>
+      {layout.left.map(draw)}
+      {layout.tail.map(draw)}
+      {layout.right.map(draw)}
+    </Box>
+  )
 }
 
 export const register: Register = (on, options) => {
@@ -175,6 +232,10 @@ export const register: Register = (on, options) => {
       if (END_REASONS.includes(e.reason)) await noteEnd($, options, next.budget.remainingMs)
     } catch {}
     return next(e)
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    try { return await bandView($, e, next) } catch { return next(e) }
   })
 
   on('command.run', { command: 'board-sync' }, async ($, e) => {
