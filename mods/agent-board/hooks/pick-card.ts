@@ -5,6 +5,8 @@ export type Card = {
   agent: string | null
   worktree: string | null
   branch: string | null
+  priority?: string | null
+  notes?: string | null
 }
 
 export type Where = { cwd: string; toplevel?: string | null; branch?: string | null }
