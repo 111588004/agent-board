@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assertions on one tmux capture of the Agent Board band.
 usage: band_check.py <kind> <cols> [--clean] < capture.txt
-kind: linked | none | many | held | off | offline | noband
+kind: linked | none | many | held | off | offline | noband | welcome
 --clean: the capture holds no /board-sync output, so the old status-line style must be absent screen-wide.
 Prints PASS/FAIL per assertion (and the screen on any FAIL); exit 1 on any FAIL."""
 import re, sys
@@ -80,6 +80,10 @@ else:
         has('⊘', '⊘')
         has('held by codex', 'held by codex', 40)
         has('id', r'[A-Z]+-\d+', rx=True)
+    elif kind == 'welcome':
+        has('✓', '✓')
+        has('connected', 'Agent Board connected')
+        has('board URL', 'http://localhost:', 90)
     elif kind == 'offline':
         has('✗', '✗')
         has('offline', 'offline')

@@ -370,10 +370,10 @@ function bandText(seg: Seg) {
 
 async function bandView($: any, e: any, next: any) {
   if (e.props.hasSurvey) return next(e) // a survey owns the band: yield
-  const welcome = (await $.state.get(WELCOME)).value ?? null
+  const greeting = (await $.state.get(WELCOME)).value ?? null
   const state: BandState | null = (await $.state.get(BAND)).value ?? null
   const health = (await $.state.get(HEALTH)).value ?? { fails: 0, until: 0 }
-  const layout = welcome ? welcomeLayout(welcome, e.props.bodyColumns) : bandLayout(state, health.fails > 0, e.props.bodyColumns)
+  const layout = greeting ? welcomeLayout(greeting, e.props.bodyColumns) : bandLayout(state, health.fails > 0, e.props.bodyColumns)
   if (!layout) return next(e)
   const { Box, Text, Link } = $.ui.resolve(e)
   const draw = (seg: Seg) => {

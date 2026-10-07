@@ -20,9 +20,19 @@ lsof -iTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1 && { echo "port $PORT is busy"; ex
 
 DB="$(mktemp -d)"; SRV=""; FAILED=0; TOTAL=0
 URL="http://localhost:$PORT"
+# The mod's $.store is the user's real one (~/.claude/plugins/store/agent-board_inline-*.json): the run
+# edits its one-time `welcome` key, so it is backed up here and put back (or removed again) on exit.
+STORE_GLOB="$HOME/.claude/plugins/store/agent-board_inline-"
+STORE="$(ls "$STORE_GLOB"*.json 2>/dev/null | head -1)"
+[ -n "$STORE" ] && cp "$STORE" "$DB/store.bak"
+store_set() { # store_set <jq filter>: rewrite the store file (only once it exists)
+  local f; f="$(ls "$STORE_GLOB"*.json 2>/dev/null | head -1)"; [ -n "$f" ] || return 0
+  jq "$1" "$f" >"$DB/store.tmp" && mv "$DB/store.tmp" "$f"
+}
 cleanup() {
   tmux -L $SOCK kill-server 2>/dev/null
   if [ -n "$SRV" ]; then kill $SRV 2>/dev/null; sleep 0.5; kill -9 $SRV 2>/dev/null; fi
+  if [ -n "$STORE" ]; then cp "$DB/store.bak" "$STORE"; else rm -f "$STORE_GLOB"*.json; fi
   rm -rf "$DB"
   if lsof -iTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then echo "WARNING: port $PORT still held"; FAILED=1; else echo "port $PORT released"; fi
 }
@@ -44,7 +54,7 @@ resize() { tmux -L $SOCK resize-window -t qa -x "$1" -y 36; sleep 1.5; }
 launch() { # launch <1: wait for the band | 0: wait a fixed time, no band expected>
   tmux -L $SOCK kill-server 2>/dev/null
   local settings=""; [ -n "${THEME:-}" ] && settings="--settings '{\"theme\":\"$THEME\"}'"
-  tmux -L $SOCK new-session -d -s qa -x 200 -y 36 "cd '$TRIAL_REPO' && env AGENT_BOARD_URL=$URL DISABLE_AUTOUPDATER=1 ${ENGINE_ENV:-} '$CLAUDE_BIN' --plugin-dir '$MOD' --strict-mcp-config $settings"
+  tmux -L $SOCK new-session -d -s qa -x 200 -y 36 "cd '$TRIAL_REPO' && env AGENT_BOARD_URL=$URL AGENT_BOARD_DIR='$DB' DISABLE_AUTOUPDATER=1 ${ENGINE_ENV:-} '$CLAUDE_BIN' --plugin-dir '$MOD' --strict-mcp-config $settings"
   for i in $(seq 60); do cap | grep -q '❯' && break; sleep 0.5; done
   if [ "$1" = 1 ]; then for i in $(seq 40); do cap | grep -q '^▌' && break; sleep 0.5; done; else sleep 10; fi
   sleep 1
@@ -61,8 +71,20 @@ grep_screen() { # grep_screen <name> <regex>: the regex must be on the screen
   if cap | grep -Eq "$2"; then echo "  ok $1"; else echo "  FAIL $1 (no match for /$2/)"; echo '--- screen ---'; cap; echo '--------------'; FAILED=$((FAILED+1)); fi
 }
 
-start_server
 echo "engine: $("$CLAUDE_BIN" --version 2>&1 | head -1)  ${ENGINE_ENV:-}  theme=${THEME:-default}"
+
+echo "== 0 first session ever: server down (how to start it), then up (web tour), each once"
+store_set 'del(.welcome)'
+if [ -n "$STORE" ]; then
+  launch 0; grep_screen "offline welcome" "^▌ ○ Agent Board is not running .*npx @limao.li.design/agent-board"
+  launch 0; TOTAL=$((TOTAL+1)); if cap | grep -q '^▌'; then echo "  FAIL offline welcome shown twice"; FAILED=$((FAILED+1)); else echo "  ok offline welcome only once"; fi
+  start_server
+  launch 1; grep_screen "connected welcome" "^▌ ✓ Agent Board connected · first time\? take the tour  → $URL/"
+  verify welcome 200 --clean
+else
+  echo "  (no store file yet: the first launch below creates it; welcome not checked)"
+  start_server
+fi
 
 echo "== 1 linked, English title"; wipe
 ID=$(mk "Fix login redirect loop on mobile Safari" '{"branch":"feat/try-mod","status":"in_progress","priority":"high"}')
@@ -89,8 +111,15 @@ launch 1; widths none
 resize 120; send "/board-sync status"; grep_screen "status explains none" "no open card matches"
 echo "== 7 several cards (two with the same branch)"
 A=$(mk "first card" '{"branch":"feat/try-mod"}'); B=$(mk "second card" '{"branch":"feat/try-mod"}')
+echo 'off' >"$DB/ask"   # agent-board config ask off: no dialog, the band lists them
 launch 1; widths many
 resize 120; send "/board-sync status"; grep_screen "status lists both ids" "cards match: $A $B"
+echo "== 7b several cards, asking on: a dialog at start; Esc binds nothing"
+rm -f "$DB/ask"
+launch 0; grep_screen "dialog asks which card" "cards match this branch. Which one"; grep_screen "dialog offers None of these" "None of these"
+tmux -L $SOCK send-keys -t qa Escape; sleep 2; verify many 200
+api GET /tasks | jq -e '[.[] | select(.branch=="feat/try-mod" and .agent != null)] | length == 0' >/dev/null \
+  && { TOTAL=$((TOTAL+1)); echo "  ok nothing claimed"; } || { TOTAL=$((TOTAL+1)); FAILED=$((FAILED+1)); echo "  FAIL a card was claimed"; }
 echo "== 8 held by codex"
 wipe; mk "held card" '{"branch":"feat/try-mod","agent":"codex","status":"in_progress"}' >/dev/null
 launch 1; widths held
