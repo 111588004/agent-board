@@ -8,7 +8,6 @@ const BASE = process.env.AGENT_BOARD_URL || "http://localhost:4317";
 
 const baseDir = process.env.AGENT_BOARD_DIR || path.join(os.homedir(), ".agent-board");
 const currentWorkspaceFile = path.join(baseDir, "current-workspace");
-const askFile = path.join(baseDir, "ask");
 
 // resolution order: explicit --workspace= flag > AGENT_BOARD_WORKSPACE env
 // var (mirrors AGENT_BOARD_URL, for scripting/CI) > ~/.agent-board/current-workspace
@@ -28,21 +27,6 @@ export function resolveWorkspace(explicit) {
 export function setCurrentWorkspace(name) {
   fs.mkdirSync(baseDir, { recursive: true });
   fs.writeFileSync(currentWorkspaceFile, `${name}\n`);
-}
-
-// global "ask the user" switch (agent-board config ask on|off), default on.
-// Off: a needs_input answer from the server is shown as a plain error instead.
-export function askEnabled() {
-  try {
-    return fs.readFileSync(askFile, "utf8").trim() !== "off";
-  } catch {
-    return true;
-  }
-}
-
-export function setAsk(on) {
-  fs.mkdirSync(baseDir, { recursive: true });
-  fs.writeFileSync(askFile, `${on ? "on" : "off"}\n`);
 }
 
 export async function apiRequest(method, path, body) {
@@ -71,6 +55,19 @@ export function errorWithHint(e, surface) {
   return surface === "cli"
     ? `${e.message} New project: agent-board project create "${name}" --prefix=<PREFIX>`
     : `${e.message} New project: use the create_project tool (name, prefix).`;
+}
+
+// global settings (every workspace) live on the server: ask = on | new | off
+export function getConfig() {
+  return apiRequest("GET", "/api/config");
+}
+
+export function setConfig(patch) {
+  return apiRequest("PUT", "/api/config", patch);
+}
+
+export function forgetAlias(alias, { workspace } = {}) {
+  return apiRequest("DELETE", `${workspacePath(workspace)}/projects/aliases/${encodeURIComponent(alias)}`);
 }
 
 export function listWorkspaces() {

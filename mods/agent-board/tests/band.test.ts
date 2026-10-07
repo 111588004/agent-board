@@ -74,7 +74,7 @@ describe('band: states, symbols and theme keys (D20)', () => {
   })
 
   const cases = [
-      { cards: [card('P-1', { worktree: '/other' })], text: '▌ ? no card for this branch  → /board-sync new "title" | link <ID>' },
+      { cards: [card('P-1', { worktree: '/other' })], text: '▌ ? no card for this branch  → /board-sync new to open one | link <ID>' },
       { cards: [card('P-1', { worktree: '/work/x' }), card('P-2', { branch: 'feat/x' }), card('P-3', { branch: 'feat/x' }), card('P-4', { branch: 'feat/x' }), card('P-5', { branch: 'feat/x' })], text: '▌ ≡ 5 cards match: P-1 P-2 P-3 +2  → /board-sync link <ID>' },
       { cards: [card('P-1', { worktree: '/work/x', agent: 'codex' })], text: '▌ ⊘ P-1 is held by codex  → /board-sync link P-1 to take over' },
   ]
@@ -338,7 +338,8 @@ describe('/board-sync status layout', () => {
       '             Fix login redirect loop on mobile Safari',
       '  owner      claude  ⎇ feat/x',
       '  last note  14:02  Fixed the bug.',
-      '  commands   on | off | link <ID> | new "title"',
+      '  open       http://localhost:4317/?task=P-1',
+      '  commands   open | on | off | link <ID> | new ["title"]',
     ])
   })
 
@@ -347,7 +348,9 @@ describe('/board-sync status layout', () => {
     await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work/x' })
     expect(lines((await sync($, 'status')).text).slice(3)).toEqual([
       '  card       none  ? no open card matches this worktree or branch',
-      '  next       /board-sync link <ID>  or  /board-sync new "title"',
+      '  next       /board-sync new  or  /board-sync link <ID>',
+      '  open       http://localhost:4317/',
+      '  commands   open | on | off | link <ID> | new ["title"]',
     ])
   })
 
@@ -375,7 +378,7 @@ describe('/board-sync status layout', () => {
     await bound($, on)
     await sync($, 'off')
     const text = (await sync($, 'status')).text
-    expect(lines(text)[0]).toBe('Agent Board  ○ reporting off')
+    expect(lines(text)[0]).toBe('Agent Board  ○ reporting off (this session)')
     expect(text).toContain('card       P-1  (bound, not reporting)')
     expect(text).toContain('next       /board-sync on')
     expect(text).not.toContain('● up')

@@ -1,6 +1,7 @@
 export type Card = {
   id: string
   title: string
+  project?: string
   status: string
   agent: string | null
   worktree: string | null

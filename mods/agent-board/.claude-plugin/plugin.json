@@ -2,7 +2,9 @@
   "name": "agent-board",
   "version": "0.1.0",
   "description": "Agent Board progress reporting: claims the card that matches this worktree/branch, writes one note per turn, and notes when the session ends (status and owner are left alone). Silent when the server is not running.",
-  "author": { "name": "limao" },
+  "author": {
+    "name": "limao"
+  },
   "types": "./types/index.d.ts",
   "userConfig": {
     "enabled": {
@@ -29,9 +31,21 @@
     "project": {
       "type": "string",
       "title": "Project for /board-sync new",
-      "description": "Board project new cards go to; empty = the only project, if there is exactly one",
+      "description": "Board project new cards go to; empty = the project this repo was linked to, or one named like the repo (else /board-sync asks)",
       "required": false,
       "default": ""
+    },
+    "offScope": {
+      "type": "string",
+      "title": "/board-sync off scope",
+      "description": "How far /board-sync off reaches: session = this session only (back on next time), project = this repo, global = everywhere until /board-sync on",
+      "required": false,
+      "default": "session",
+      "options": [
+        "session",
+        "project",
+        "global"
+      ]
     }
   }
 }

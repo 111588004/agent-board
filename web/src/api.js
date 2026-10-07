@@ -4,11 +4,13 @@ const WORKSPACE_KEY = "agent-board.workspace";
 // was last picked in this browser, then "default".
 export function getWorkspace() {
   const params = new URLSearchParams(window.location.search);
-  return params.get("workspace") || localStorage.getItem(WORKSPACE_KEY) || "default";
+  let saved = null;
+  try { saved = localStorage.getItem(WORKSPACE_KEY); } catch {} // blocked storage: just don't remember
+  return params.get("workspace") || saved || "default";
 }
 
 export function setWorkspace(name) {
-  localStorage.setItem(WORKSPACE_KEY, name);
+  try { localStorage.setItem(WORKSPACE_KEY, name); } catch {}
   const url = new URL(window.location.href);
   url.searchParams.set("workspace", name);
   window.history.replaceState({}, "", url);

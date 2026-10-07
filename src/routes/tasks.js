@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createTask, appendNote, insertProject } from "../db.js";
+import { createTask, appendNote, insertProject, getConfig } from "../db.js";
 import { normalizeEnum, needsInput, resolveProject } from "../normalize.js";
 
 const router = Router();
@@ -9,7 +9,7 @@ router.get("/", (req, res) => {
   const clauses = [];
   const params = [];
   if (project) {
-    const r = resolveProject(req.db, project);
+    const r = resolveProject(req.db, project, { ask: getConfig().ask });
     if (r.body) return res.status(r.status).json(r.body);
     clauses.push("project = ?"); params.push(r.project.name);
   }
@@ -24,23 +24,30 @@ router.get("/", (req, res) => {
 });
 
 router.post("/", (req, res) => {
-  const { title, project, parentId, agent, priority, status, notes, worktree, branch, link, dueDate } = req.body;
+  const { project, parentId, agent, priority, status, notes, worktree, branch, link, dueDate, rememberAs } = req.body;
+  let { title } = req.body;
   if (!project) return res.status(400).json({ error: "project is required" });
+  const { ask } = getConfig();
   // newProjectPrefix: the user picked "new project" from a needs_input option
   const newPrefix = typeof req.body.newProjectPrefix === "string" ? req.body.newProjectPrefix.trim() : "";
-  const resolved = resolveProject(req.db, project, { offerNew: !newPrefix });
+  const resolved = resolveProject(req.db, project, { offerNew: !newPrefix, ask });
   if (resolved.body && !(newPrefix && resolved.body.code === "unknown_project")) {
     return res.status(resolved.status).json(resolved.body);
   }
+  const unconfirmed = resolved.picked ? [resolved.picked] : [];
   if (!title || !String(title).trim()) {
     const first = String(notes || "").split("\n").map((l) => l.replace(/^[#>*\-\s]+/, "").trim()).find(Boolean);
     const suggestion = first && first.slice(0, 80);
-    const r = needsInput(
-      "What should the ticket's title be?",
-      suggestion ? [{ label: suggestion, description: "first line of the description", args: { title: suggestion } }] : [],
-      "title"
-    );
-    return res.status(r.status).json(r.body);
+    if (ask === "on") {
+      const r = needsInput(
+        "What should the ticket's title be?",
+        suggestion ? [{ label: suggestion, description: "first line of the description", args: { title: suggestion } }] : [],
+        "title"
+      );
+      return res.status(r.status).json(r.body);
+    }
+    title = suggestion || "(untitled)";
+    unconfirmed.push(`no title given; used ${suggestion ? "the description's first line" : '"(untitled)"'}`);
   }
   const norm = {};
   for (const [field, v] of [["priority", priority], ["status", status]]) {
@@ -68,15 +75,24 @@ router.post("/", (req, res) => {
     branch: branch || null,
     link: link || null,
     dueDate: dueDate || null,
+    unconfirmed: unconfirmed.join("; ") || null,
   });
-  res.status(201).json(row);
+  let out = row;
+  if (unconfirmed.length) out = appendNote(req.db, row.id, `⚠ unconfirmed — ${unconfirmed.join("; ")}`, agent);
+  // the user's answer to "which project?" — remember the word they used
+  const word = typeof rememberAs === "string" ? rememberAs.trim().toLowerCase() : "";
+  if (word && word !== projectRow.name.toLowerCase()) {
+    req.db.prepare("INSERT OR REPLACE INTO project_aliases (alias, project) VALUES (?, ?)").run(word, projectRow.name);
+    out = appendNote(req.db, row.id, `remembered "${word}" → ${projectRow.name} (undo: agent-board project forget "${word}")`, agent);
+  }
+  res.status(201).json(out);
 });
 
 // "notes" (plural, matches the column) = full overwrite — used by the UI's
 // free-edit Description box. "note" (singular verb) = append a timestamped
 // line — used by the CLI/MCP `note` command so multiple sessions/agents
 // leaving notes over time don't stomp on each other's history.
-const MUTABLE_FIELDS = ["title", "agent", "priority", "status", "worktree", "branch", "link", "dueDate", "notes"];
+const MUTABLE_FIELDS = ["title", "agent", "priority", "status", "worktree", "branch", "link", "dueDate", "notes", "unconfirmed"];
 
 // fields worth an automatic history line: the ones two agents are most
 // likely to race on (claiming/reprioritizing a ticket at the same moment).

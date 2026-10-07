@@ -1,11 +1,20 @@
 import { Router } from "express";
-import { insertProject } from "../db.js";
+import { insertProject, getConfig } from "../db.js";
 import { needsInput, suggestPrefixes } from "../normalize.js";
 
 const router = Router();
 
 router.get("/", (req, res) => {
-  res.json(req.db.prepare("SELECT * FROM projects ORDER BY createdAt").all());
+  const aliases = req.db.prepare("SELECT alias, project FROM project_aliases ORDER BY alias").all();
+  const rows = req.db.prepare("SELECT * FROM projects ORDER BY createdAt").all();
+  res.json(rows.map((p) => ({ ...p, aliases: aliases.filter((a) => a.project === p.name).map((a) => a.alias) })));
+});
+
+// undo a remembered answer ("ops" -> Operations); the next "ops" asks again
+router.delete("/aliases/:alias", (req, res) => {
+  const result = req.db.prepare("DELETE FROM project_aliases WHERE alias = ?").run(req.params.alias.trim().toLowerCase());
+  if (result.changes === 0) return res.status(404).json({ error: `no remembered word "${req.params.alias}"` });
+  res.status(204).end();
 });
 
 router.post("/", (req, res) => {
@@ -18,9 +27,13 @@ router.post("/", (req, res) => {
       return res.status(409).json({ error: `project "${name}" already exists` });
     }
     const projects = req.db.prepare("SELECT * FROM projects").all();
+    const suggestions = suggestPrefixes(name, projects, 3);
+    if (getConfig().ask === "off") {
+      return res.status(400).json({ error: `prefix is required (the board doesn't pick one, and asking is off) — e.g. ${suggestions.join(", ")}` });
+    }
     const r = needsInput(
       `Which ticket prefix for the new project "${name}"? Every ticket id starts with it.`,
-      suggestPrefixes(name, projects, 3).map((p) => ({ label: p, description: `tickets ${p}-1, ${p}-2, …`, args: { name, prefix: p } })),
+      suggestions.map((p) => ({ label: p, description: `tickets ${p}-1, ${p}-2, …`, args: { name, prefix: p } })),
       "prefix"
     );
     return res.status(r.status).json(r.body);
@@ -48,6 +61,7 @@ router.patch("/:name", (req, res) => {
         prefix,
         existing.name
       );
+      req.db.prepare("UPDATE project_aliases SET project = ? WHERE project = ?").run(name, existing.name);
     })();
   } catch (e) {
     if (e.code === "SQLITE_CONSTRAINT_PRIMARYKEY") {
@@ -73,6 +87,7 @@ router.delete("/:name", (req, res) => {
     return res.status(400).json({ error: `project "${req.params.name}" still has ${count} task(s) — move or delete them first` });
   }
   req.db.prepare("DELETE FROM projects WHERE name = ?").run(req.params.name);
+  req.db.prepare("DELETE FROM project_aliases WHERE project = ?").run(req.params.name);
   res.status(204).end();
 });
 
