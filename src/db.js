@@ -287,6 +287,38 @@ export function insertProject(db, name, prefix) {
   return { project: db.prepare("SELECT * FROM projects WHERE name = ?").get(name) };
 }
 
+// words the user says they call a project ("發表會" -> 準備發表會), stored like a
+// remembered answer. Lowercased + trimmed. Refuses a word that is another
+// project's name or prefix (it would hijack that lookup) or already means
+// another project; the project's own name/prefix and duplicates are skipped.
+// -> { added: [...] } or { status, body }
+export function addAliases(db, projectName, words) {
+  const projects = db.prepare("SELECT name, prefix FROM projects").all();
+  const own = projects.find((p) => p.name === projectName);
+  if (!own) return { status: 404, body: { error: `project "${projectName}" not found` } };
+  const added = [];
+  for (const raw of words) {
+    const word = String(raw ?? "").trim().toLowerCase();
+    if (!word || word === own.name.toLowerCase() || word === own.prefix.toLowerCase()) continue;
+    const clash = projects.find((p) => p.name !== own.name && (p.name.toLowerCase() === word || p.prefix.toLowerCase() === word));
+    if (clash) return { status: 409, body: { error: `"${word}" is already project ${clash.name}'s name or prefix` } };
+    const taken = db.prepare("SELECT project FROM project_aliases WHERE alias = ?").get(word);
+    if (taken && taken.project !== own.name) {
+      return { status: 409, body: { error: `"${word}" already means project ${taken.project} (undo: agent-board project forget "${word}")` } };
+    }
+    if (!taken) db.prepare("INSERT INTO project_aliases (alias, project) VALUES (?, ?)").run(word, own.name);
+    if (!added.includes(word)) added.push(word);
+  }
+  return { added };
+}
+
+// "a, b" or ["a", "b"] -> ["a", "b"]
+export function parseAliases(v) {
+  if (Array.isArray(v)) return v.map(String);
+  if (typeof v === "string") return v.split(/[,，、]/);
+  return [];
+}
+
 export function createTask(db, task) {
   return db.transaction((task) => {
     const { next } = db

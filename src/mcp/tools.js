@@ -5,6 +5,7 @@ import * as client from "../client.js";
 // plain strings, not enums: the server normalizes aliases (進行中, wip, 高, p0...) and rejects unknowns with the allowed list
 const STATUS_DESC = "backlog | in_progress | review | done (aliases ok: todo, doing, wip, 待辦, 進行中, 審查, 完成)";
 const PRIORITY_DESC = "low | med | high (aliases ok: urgent, p0, 高, 中, 低)";
+const ALIASES_SCHEMA = z.array(z.string()).optional().describe("Other words the user said they call this project (e.g. [\"發表會\"]), so those words open tickets here without asking. Only words the user actually used — never invent them");
 const PROJECT_DESC = "The project exactly as the user named it (name or prefix, any case) — don't map it to a list_projects entry yourself; the board matches it and asks the user when it's ambiguous or new";
 const WORKSPACE_DESC = "Board workspace to use — omit to use the CLI's current workspace (agent-board workspace use) or \"default\"";
 
@@ -187,27 +188,32 @@ export function createMcpServer({ notice } = {}) {
       inputSchema: {
         name: z.string(),
         prefix: z.string().optional().describe("Ticket-id prefix, e.g. \"AB\" for tickets like AB-1. Only pass one the user chose — omit it and the board asks the user"),
+        aliases: ALIASES_SCHEMA,
         workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
-    async ({ name, prefix, workspace }) => {
-      return json(await client.createProject({ name, prefix, workspace }));
+    async ({ name, prefix, aliases, workspace }) => {
+      return json(await client.createProject({ name, prefix, aliases, workspace }));
     }
   );
 
   tool(
     "rename_project",
     {
-      description: "Rename a project and/or change its ticket-id prefix. Existing tasks are updated to match.",
+      description: "Rename a project, change its ticket-id prefix, and/or add other names the user calls it. Existing tasks are updated to match.",
       inputSchema: {
         currentName: z.string(),
         name: z.string().optional().describe("New name — omit to leave unchanged"),
         prefix: z.string().optional().describe("New ticket-id prefix — omit to leave unchanged"),
+        aliases: ALIASES_SCHEMA,
         workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
-    async ({ currentName, name, prefix, workspace }) => {
-      return json(await client.renameProject(currentName, { name, prefix, workspace }));
+    async ({ currentName, name, prefix, aliases, workspace }) => {
+      let project = currentName;
+      if (name || prefix) project = (await client.renameProject(currentName, { name, prefix, workspace })).name;
+      if (aliases?.length) await client.addAliases(project, aliases, { workspace });
+      return json((await client.listProjects({ workspace })).find((p) => p.name === project));
     }
   );
 

@@ -57,8 +57,16 @@ export function listProjects() {
   return request("GET", "/projects");
 }
 
-export function createProject(name, prefix) {
-  return request("POST", "/projects", { name, prefix });
+export function createProject(name, prefix, aliases) {
+  return request("POST", "/projects", { name, prefix, aliases });
+}
+
+export function addAliases(project, aliases) {
+  return request("POST", `/projects/${encodeURIComponent(project)}/aliases`, { aliases });
+}
+
+export function forgetAlias(alias) {
+  return request("DELETE", `/projects/aliases/${encodeURIComponent(alias)}`);
 }
 
 export function renameProject(currentName, { name, prefix }) {
