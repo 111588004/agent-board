@@ -108,7 +108,7 @@ Add a short section to that project's own `CLAUDE.md` (or equivalent agent-instr
 
 Rules the template teaches agents for opening a ticket in one call:
 
-1. `project` is an existing project's name or prefix (case-insensitive, whitespace trimmed) — never a free-form phrase. If it matches several projects or none, the board returns a question for the user (see "asks instead of guessing" above). The agent asks you and never picks an option or invents a prefix itself.
+1. `project` is passed exactly as the user named it (name or prefix, any case, whitespace trimmed). The agent doesn't look it up in the project list and swap in a match itself: in a real-agent test, Codex turned an ambiguous "ops" into the exact name "OPS" and skipped the question. If it matches several projects or none, the board returns a question for the user (see "asks instead of guessing" above). The agent asks you and never picks an option or invents a prefix itself.
 2. Know the project? Create the ticket directly; no `list` first.
 3. `status`: `backlog` `in_progress` `review` `done`; `priority`: `low` `med` `high`. Aliases such as `doing`/`wip`/`進行中`/`urgent`/`高` are accepted and stored as the standard value; anything else is a 400 listing the allowed values.
 4. Description goes in `notes`; set `agent` to your own id.

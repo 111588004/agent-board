@@ -5,7 +5,7 @@ import * as client from "../client.js";
 // plain strings, not enums: the server normalizes aliases (進行中, wip, 高, p0...) and rejects unknowns with the allowed list
 const STATUS_DESC = "backlog | in_progress | review | done (aliases ok: todo, doing, wip, 待辦, 進行中, 審查, 完成)";
 const PRIORITY_DESC = "low | med | high (aliases ok: urgent, p0, 高, 中, 低)";
-const PROJECT_DESC = "Project name or prefix as shown by list_projects (case-insensitive) — not a free-form phrase";
+const PROJECT_DESC = "The project exactly as the user named it (name or prefix, any case) — don't map it to a list_projects entry yourself; the board matches it and asks the user when it's ambiguous or new";
 const WORKSPACE_DESC = "Board workspace to use — omit to use the CLI's current workspace (agent-board workspace use) or \"default\"";
 
 function json(value) {
@@ -29,7 +29,7 @@ function toolError(e, name) {
 // tool result, the one place the user reliably sees it; HTTP passes nothing.
 export const INSTRUCTIONS = [
   "Opening a ticket: create_task once is enough — don't list_tasks first.",
-  "project = a name or prefix exactly as list_projects shows it (case-insensitive). Only call list_projects if you don't know which project; never use a free-form phrase as the project.",
+  "project = the user's own words for it (name or prefix, any case). Don't look it up in list_projects and substitute a match yourself — the board matches case/prefix and asks the user when several projects fit or none does.",
   "status: backlog | in_progress | review | done (aliases: todo, doing, wip, 進行中, 待辦, 審查, 完成...). priority: low | med | high (aliases: urgent, p0, 高, 中, 低...).",
   "Put the description in notes; set agent to your own id (claude, codex, gemini, ...).",
   "A result starting with NEEDS USER INPUT means the board can't tell what the user wants (several projects match, the project doesn't exist yet, no title). Ask the user that question with your built-in ask tool (Claude Code: AskUserQuestion, Codex: request_user_input, Gemini: ask_user; none -> ask in chat), then call the same tool again with the chosen option's args. Never pick an option yourself.",
