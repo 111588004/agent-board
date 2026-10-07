@@ -75,6 +75,9 @@ Every REST call has a 1.5 s limit (0.6 s at session end), errors are swallowed, 
 ```
 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test mods/agent-board
 claude plugin validate --strict mods/agent-board
+bash mods/agent-board/tests/e2e/band-smoke.sh   # tmux end-to-end, see tests/e2e/README.md
 ```
+
+`tests/band.property.test.ts` is a seeded property test of `hooks/band.ts` (widths, truncation, drop order) and prints a pessimistic-width statistic.
 
 `hooks/board.ts` (REST, timeout, backoff), `hooks/pick-card.ts` (card matching, note text) and `hooks/band.ts` (what the line and `status` say, display-width cutting) are plain functions with no engine dependency. `tsconfig.json` and `.claude-plugin/types/` are written by Claude Code when it loads the folder; they are not committed.
