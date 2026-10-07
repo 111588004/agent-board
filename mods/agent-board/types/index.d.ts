@@ -11,6 +11,7 @@ export type BandCard = {
   branch: string | null
   notes: number
   lastNote: string | null
+  url?: string // the card on the web (AB-19): the band's card id links to it
 }
 
 // linked = bound to a card; the other three are "nothing was claimed" and say why.
@@ -20,6 +21,9 @@ export type BandState =
   | { kind: 'many'; ids: string[] }
   | { kind: 'held'; id: string; agent: string }
 
+// The first session's one-time line (AB-23), shown until its first turn ends.
+export type Welcome = { kind: 'connected'; url: string } | { kind: 'offline' }
+
 declare module 'claude-code' {
   interface PluginState {
     'agent-board': {
@@ -27,6 +31,11 @@ declare module 'claude-code' {
       lastNotedTurnId: string | null
       health: Health
       band: BandState | null
+      welcome: Welcome | null
+      // /board-sync off with offScope "session" (D21): gone with the session.
+      sessionOff: boolean
+      // A "which card?" question was already asked this session (hot reload must not ask again).
+      asked: boolean
     }
   }
 }
