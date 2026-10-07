@@ -87,8 +87,7 @@ export function toBandCard(row: Card): BandCard {
 
 // ---- the band ------------------------------------------------------------
 
-// href: drawn as a Link (OSC 8 on a terminal: cmd/ctrl+click opens it).
-export type Seg = { text: string; color?: string; bold?: boolean; dim?: boolean; href?: string }
+export type Seg = { text: string; color?: string; bold?: boolean; dim?: boolean }
 // left, tail and right follow each other; the title (tail) is padded so right ends exactly EDGE cells
 // before the band's edge. The padding is ours, not a flex spacer: a flex row would run under `[-]`.
 export type Layout = { left: Seg[]; tail: Seg[]; right: Seg[] }
@@ -110,7 +109,7 @@ function linked(card: BandCard, cols: number): Layout {
   // weaker warning/permission colors only have to be readable as a glyph (3:1), not as text (4.5:1).
   const left: Seg[] = [
     { text: '▌ ', color: st.color, bold: true },
-    { text: card.id, bold: true, ...(card.url && { href: card.url }) },
+    { text: card.id, bold: true },
     { text: ' ' + st.glyph, color: st.color },
   ]
   if (tier >= 1) left.push({ text: ' ' + (tier === 3 ? fit(oneLine(card.status), 14) : st.short) })
@@ -128,7 +127,7 @@ function linked(card: BandCard, cols: number): Layout {
   return { left, tail: budget > 0 ? [{ text: ' ' + title + ' '.repeat(budget - width(title) + (right.length ? 2 : 0)) }] : [], right }
 }
 
-function notice(glyph: string, color: string, text: string, hint: string, cols: number, href?: string): Layout {
+function notice(glyph: string, color: string, text: string, hint: string, cols: number): Layout {
   const left: Seg[] = [{ text: `▌ ${glyph} `, color, bold: true }]
   const room = cols - EDGE - w(left)
   const main = fit(text, room)
@@ -136,8 +135,7 @@ function notice(glyph: string, color: string, text: string, hint: string, cols: 
   // < 40 columns: symbol and the first half only, the command hint goes.
   const tail: Seg[] = [{ text: main, bold: true }]
   if (cols >= 40 && hintRoom >= 12 && main === text) {
-    const shown = fit(hint, hintRoom)
-    tail.push({ text: '  → ', dim: true }, { text: shown, dim: true, ...(href && shown === hint && { href }) })
+    tail.push({ text: '  → ' + fit(hint, hintRoom), dim: true })
   }
   return { left, tail, right: [] }
 }
@@ -158,13 +156,17 @@ export function bandLayout(state: BandState | null, isDown: boolean, cols: numbe
   return notice('⊘', 'warning', `${state.id} is held by ${state.agent}`, `/board-sync link ${state.id} to take over`, cols)
 }
 
+// No Link element on this line: a terminal without OSC 8 (the desktop app's Terminal panel) draws a
+// Link as its text plus the URL, which doubled the URL and overflowed the band. A plain URL is still
+// cmd/ctrl+clickable in most terminals; the card's URL is in /board-sync and /board-sync open.
+
 // First session only (AB-23), until its first turn ends: the board answered (where the web tour is),
 // or it did not (how to start it). Never an error: D3.
 export const START_HINT = 'start it in another terminal: npx @limao.li.design/agent-board'
 
 export function welcomeLayout(w: Welcome, cols: number): Layout {
   return w.kind === 'connected'
-    ? notice('✓', 'success', 'Agent Board connected · first time? take the tour', w.url, cols, w.url)
+    ? notice('✓', 'success', 'Agent Board connected · first time? take the tour', w.url, cols)
     : notice('○', 'inactive', 'Agent Board is not running', START_HINT, cols)
 }
 

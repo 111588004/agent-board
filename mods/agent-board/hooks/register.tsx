@@ -89,8 +89,8 @@ async function say($: any, state: BandState, fallbackToast: string) {
   if (!(await drawsBand($))) toast($, fallbackToast)
 }
 
-async function remember($: any, row: Card, urlOf: Settings['urlOf']) {
-  await $.state.set(BAND, { kind: 'linked', card: { ...toBandCard(row), url: urlOf(row.id) } })
+async function remember($: any, row: Card) {
+  await $.state.set(BAND, { kind: 'linked', card: toBandCard(row) })
 }
 
 // The board's global ask mode (`agent-board config ask`, `/board-sync ask`), kept on the server.
@@ -128,7 +128,7 @@ async function claim($: any, s: Settings, card: Card, here: Here) {
   })
   if (!row) return false
   await $.state.set(BINDING, { sessionId: await $.session.id(), cardId: card.id })
-  await remember($, row, s.urlOf)
+  await remember($, row)
   // The repo's project is now known: /board-sync new puts cards there without asking.
   if (row.project) await keep($, 'repoProjects', repoKey(here), row.project)
   return true
@@ -162,7 +162,7 @@ async function autoBind($: any, s: Settings, interactive: boolean) {
     // Hot reload re-ran session.start, or /board-sync on after off: the line needs a card to draw again.
     if ((await $.state.get(BAND)).value) return
     const row = (await call(deps, 'GET', '/tasks') as Card[] | null)?.find((c) => c.id === bound.cardId)
-    return row ? remember($, row, s.urlOf) : undefined
+    return row ? remember($, row) : undefined
   }
   const cards: Card[] | null = await call(deps, 'GET', '/tasks')
   if (interactive) await welcome($, !!cards, s.tourUrl)
@@ -204,7 +204,7 @@ async function reportTurn($: any, options: PluginOptions, turnId: string, answer
   const row: Card | null | undefined = note
     ? await call(deps, 'PATCH', `/tasks/${binding.cardId}`, { note, agent: 'claude' })
     : (await call(deps, 'GET', '/tasks') as Card[] | null)?.find((c) => c.id === binding.cardId)
-  if (row) await remember($, row, s.urlOf)
+  if (row) await remember($, row)
 }
 
 // D18: ending a session says nothing about the work being finished, so it only leaves a line in
@@ -277,7 +277,7 @@ async function newCard($: any, s: Settings, options: PluginOptions, arg: string)
     if (r.ok) {
       const card: Card = r.data
       await $.state.set(BINDING, { sessionId: await $.session.id(), cardId: card.id })
-      await remember($, card, s.urlOf)
+      await remember($, card)
       await keep($, 'repoProjects', repoKey(here), card.project ?? project.name)
       return `Created ${card.id}${project.isNew ? ` in the new project ${project.name}` : ''}${picked ? ` titled "${title}" (rename it on the web)` : ''}: ${s.urlOf(card.id)}`
     }
@@ -390,11 +390,8 @@ async function bandView($: any, e: any, next: any) {
   const health = (await $.state.get(HEALTH)).value ?? { fails: 0, until: 0 }
   const layout = greeting ? welcomeLayout(greeting, e.props.bodyColumns) : bandLayout(state, health.fails > 0, e.props.bodyColumns)
   if (!layout) return next(e)
-  const { Box, Text, Link } = $.ui.resolve(e)
-  const draw = (seg: Seg) => {
-    const text = <Text {...bandText(seg)}>{seg.text}</Text>
-    return seg.href ? <Link href={seg.href}>{text}</Link> : text
-  }
+  const { Box, Text } = $.ui.resolve(e)
+  const draw = (seg: Seg) => <Text {...bandText(seg)}>{seg.text}</Text>
   return (
     <Box>
       {layout.left.map(draw)}

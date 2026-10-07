@@ -12,7 +12,6 @@ describe('1. first-session welcome', () => {
     const b = await band(ui)
     expect(b.text).toContain('Agent Board connected · first time? take the tour')
     expect(b.text).toContain('http://localhost:4317/?tour=1')
-    expect(await ui.find({ type: 'Link' })).toMatchObject({ props: { href: 'http://localhost:4317/?tour=1' } })
     await $.turn.complete(w.complete('t1')) // gone after the first turn
     expect((await band(ui)).text).toContain('no card for this branch')
     expect(w.store['welcome']).toBe('done')
@@ -207,11 +206,10 @@ describe('8. open, bare /board-sync, the card link (AB-19)', () => {
     expect(text).toContain('commands   open | on | off')
   })
 
-  test('the card id on the line is a link to the card', async ($, on) => {
-    const w = world(on, { cards: [card('P-1', { worktree: '/work/x' })] })
+  test('the line draws no Link (a terminal without OSC 8 would print the URL twice)', async ($, on) => {
+    const w = world(on, { cards: [card('P-1', { worktree: '/work/x' })], store: { welcome: undefined } })
     await $.session.start(w.start)
-    const link = await (await $.ui.mount(bandTarget())).find({ type: 'Link' })
-    expect(link).toMatchObject({ props: { href: 'http://localhost:4317/?task=P-1' } })
+    expect(await (await $.ui.mount(bandTarget())).findAll({ type: 'Link' })).toEqual([])
   })
 })
 

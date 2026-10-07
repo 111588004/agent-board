@@ -11,7 +11,6 @@ export type BandCard = {
   branch: string | null
   notes: number
   lastNote: string | null
-  url?: string // the card on the web (AB-19): the band's card id links to it
 }
 
 // linked = bound to a card; the other three are "nothing was claimed" and say why.

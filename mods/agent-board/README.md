@@ -29,7 +29,7 @@ One line, always there once a card is bound (it replaces the old `$.ui.status` l
 
 - Status colors are theme keys, so they follow your theme: `in_progress` warning, `review` permission, `done` success, `backlog` inactive; only `high` priority is error-red. Every state also has a symbol and a word, so it reads under `NO_COLOR`.
 - It narrows with the width it is given (at least 100, 64, 40 columns, then below): full words, then `doing`/`todo` and a priority symbol, then no agent/branch/notes, then only the status symbol. Last to go: id, status, title, priority, agent, branch, note count. Titles are cut by display width (a Chinese character is two cells).
-- The card id is a link to the card on the web (`?task=ID`; OSC 8, cmd/ctrl+click in terminals that support it).
+- No hyperlink element: a terminal without OSC 8 (the desktop app's Terminal panel) prints a link's URL after its text. The welcome URL is plain text (cmd/ctrl+click in most terminals); the card's URL is in `/board-sync` and `/board-sync open`.
 - "no card", "several cards" and "held by another agent" stay on the line until you resolve them (`/board-sync link` or `new`) or turn reporting off; they replace the old 10-second toast. Only in a session that has neither a terminal nor a desktop surface (the line is not drawn there) do they still come as a toast.
 - **Server not running and no card bound: the line stays empty** (many people never start the server). Offline only shows, in red, once a card was bound and then the server stopped answering.
 - `/board-sync off` and `enabled=false`: no line.
