@@ -63,8 +63,8 @@ describe('session.start: claiming (D15)', () => {
     await $.session.start(w.start)
     expect(await sync($, 'link P-1')).toEqual({ text: 'Linked to P-1' })
     expect(w.cards[0]).toMatchObject({ worktree: '/work/x', branch: 'feat/x', agent: 'claude', status: 'backlog' })
-    expect(await sync($, 'new "Do the thing"')).toEqual({ text: 'Created P-2' })
-    expect(w.cards[1]).toMatchObject({ title: 'Do the thing', project: 'Proj', status: 'in_progress' })
+    expect((await sync($, 'new "Do the thing"')).text).toBe('Created P-2: http://localhost:4317/?task=P-2')
+    expect(w.cards[1]).toMatchObject({ title: 'Do the thing', project: 'x', status: 'in_progress' })
   })
 })
 

@@ -25,23 +25,30 @@ export function baseUrl(configured: string, envUrl: string | undefined, workspac
   return workspace ? `${url}/api/w/${encodeURIComponent(workspace)}` : `${url}/api`
 }
 
-// Parsed JSON on 2xx, null on anything else. Only transport failures (refused,
-// timeout) count towards the backoff; a 404 means the server is alive.
+// Parsed JSON on 2xx, null on anything else.
 export async function call(d: Deps, method: string, path: string, body?: unknown, ms = 1500): Promise<any> {
+  const r = await request(d, method, path, body, ms)
+  return r && r.ok ? r.data : null
+}
+
+// { ok, status, data } for any answer (a 422 needs_input carries its question in `data`), null when
+// the server could not be reached. Only transport failures (refused, timeout) count towards the
+// backoff; a 404 means the server is alive.
+export async function request(d: Deps, method: string, path: string, body?: unknown, ms = 1500): Promise<{ ok: boolean; status: number; data: any } | null> {
   try {
     const health = await d.getHealth()
     const now = await d.now()
     if (now < health.until) return null
 
     const stop = new AbortController()
-    const request = Promise.resolve().then(() =>
+    const pending = Promise.resolve().then(() =>
       d.fetch(d.base + path, {
         method,
         headers: body === undefined ? undefined : { 'content-type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       }),
     )
-    request.catch(() => {}) // the loser of the race must not surface as unhandled
+    pending.catch(() => {}) // the loser of the race must not surface as unhandled
     const timeout = d.sleep(ms, stop.signal).then(
       () => { throw new Error('timeout') },
       () => new Promise<never>(() => {}), // aborted because the request finished
@@ -49,7 +56,7 @@ export async function call(d: Deps, method: string, path: string, body?: unknown
 
     let res
     try {
-      res = await Promise.race([request, timeout])
+      res = await Promise.race([pending, timeout])
     } catch {
       const fails = health.fails + 1
       await d.setHealth({ fails, until: now + Math.min(BACKOFF_MAX_MS, BACKOFF_MS * 2 ** (fails - 1)) })
@@ -59,7 +66,9 @@ export async function call(d: Deps, method: string, path: string, body?: unknown
     }
 
     if (health.fails > 0) await d.setHealth({ fails: 0, until: 0 })
-    return res.ok ? JSON.parse(res.text || 'null') : null
+    let data = null
+    try { data = JSON.parse(res.text || 'null') } catch {}
+    return { ok: res.ok, status: res.status, data }
   } catch {
     return null
   }

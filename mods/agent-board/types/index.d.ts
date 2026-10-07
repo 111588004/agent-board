@@ -20,6 +20,9 @@ export type BandState =
   | { kind: 'many'; ids: string[] }
   | { kind: 'held'; id: string; agent: string }
 
+// The first session's one-time line (AB-23), shown until its first turn ends.
+export type Welcome = { kind: 'connected'; url: string } | { kind: 'offline' }
+
 declare module 'claude-code' {
   interface PluginState {
     'agent-board': {
@@ -27,6 +30,11 @@ declare module 'claude-code' {
       lastNotedTurnId: string | null
       health: Health
       band: BandState | null
+      welcome: Welcome | null
+      // /board-sync off with offScope "session" (D21): gone with the session.
+      sessionOff: boolean
+      // A "which card?" question was already asked this session (hot reload must not ask again).
+      asked: boolean
     }
   }
 }

@@ -2,7 +2,7 @@
 // plain strings (no engine dependency, so tests and hooks share one code path).
 // Layout rules come from study/terminal-design-research.md (scenes 1-3).
 
-import type { BandCard, BandState } from '../types'
+import type { BandCard, BandState, Welcome } from '../types'
 import type { Card } from './pick-card'
 
 // ---- display width -------------------------------------------------------
@@ -134,7 +134,9 @@ function notice(glyph: string, color: string, text: string, hint: string, cols: 
   const hintRoom = room - width(main) - 4
   // < 40 columns: symbol and the first half only, the command hint goes.
   const tail: Seg[] = [{ text: main, bold: true }]
-  if (cols >= 40 && hintRoom >= 12 && main === text) tail.push({ text: '  → ' + fit(hint, hintRoom), dim: true })
+  if (cols >= 40 && hintRoom >= 12 && main === text) {
+    tail.push({ text: '  → ' + fit(hint, hintRoom), dim: true })
+  }
   return { left, tail, right: [] }
 }
 
@@ -146,12 +148,26 @@ export function bandLayout(state: BandState | null, isDown: boolean, cols: numbe
     if (isDown) return notice('✗', 'error', 'board offline', `${state.card.id} last known, retrying`, cols)
     return linked(state.card, cols)
   }
-  if (state.kind === 'none') return notice('?', 'warning', 'no card for this branch', '/board-sync new "title" | link <ID>', cols)
+  if (state.kind === 'none') return notice('?', 'warning', 'no card for this branch', '/board-sync new to open one | link <ID>', cols)
   if (state.kind === 'many') {
     const shown = state.ids.slice(0, 3).join(' ') + (state.ids.length > 3 ? ` +${state.ids.length - 3}` : '')
     return notice('≡', 'warning', `${state.ids.length} cards match: ${shown}`, '/board-sync link <ID>', cols)
   }
   return notice('⊘', 'warning', `${state.id} is held by ${state.agent}`, `/board-sync link ${state.id} to take over`, cols)
+}
+
+// No Link element on this line: a terminal without OSC 8 (the desktop app's Terminal panel) draws a
+// Link as its text plus the URL, which doubled the URL and overflowed the band. A plain URL is still
+// cmd/ctrl+clickable in most terminals; the card's URL is in /board-sync and /board-sync open.
+
+// First session only (AB-23), until its first turn ends: the board answered (where the web tour is),
+// or it did not (how to start it). Never an error: D3.
+export const START_HINT = 'start it in another terminal: npx @limao.li.design/agent-board'
+
+export function welcomeLayout(w: Welcome, cols: number): Layout {
+  return w.kind === 'connected'
+    ? notice('✓', 'success', 'Agent Board connected · first time? take the tour', w.url, cols)
+    : notice('○', 'inactive', 'Agent Board is not running', START_HINT, cols)
 }
 
 // ---- /board-sync status --------------------------------------------------
@@ -162,6 +178,8 @@ export const STATUS_WIDTH = 70
 
 export type StatusInput = {
   isOn: boolean
+  offBy?: string // why it is off: "this session", "this project", "everywhere", "settings"
+  url?: string // the bound card on the web, else the board; printed whole so a terminal can open it
   server: string // origin, e.g. http://localhost:4317
   workspace: string
   retryInS: number | null // set while backing off after a failure
@@ -172,14 +190,14 @@ export type StatusInput = {
 function noCard(state: BandState | null): { why: string; next: string } {
   if (state?.kind === 'many') return { why: `≡ ${state.ids.length} cards match: ${state.ids.slice(0, 3).join(' ')}${state.ids.length > 3 ? ` +${state.ids.length - 3}` : ''}`, next: '/board-sync link <ID>' }
   if (state?.kind === 'held') return { why: `⊘ ${state.id} is held by ${state.agent}`, next: `/board-sync link ${state.id}  to take it` }
-  return { why: '? no open card matches this worktree or branch', next: '/board-sync link <ID>  or  /board-sync new "title"' }
+  return { why: '? no open card matches this worktree or branch', next: '/board-sync new  or  /board-sync link <ID>' }
 }
 
 export function statusText(s: StatusInput): string {
   const row = (label: string, value: string) => fit(`  ${label.padEnd(11)}${value}`.trimEnd(), STATUS_WIDTH)
   const cont = (value: string) => fit(' '.repeat(13) + value, STATUS_WIDTH)
   const card = s.state?.kind === 'linked' ? s.state.card : null
-  const lines = [`Agent Board  ${s.isOn ? '● reporting on' : '○ reporting off'}`]
+  const lines = [`Agent Board  ${s.isOn ? '● reporting on' : `○ reporting off${s.offBy ? ` (${s.offBy})` : ''}`}`]
   const marker = !s.isOn ? '' : s.retryInS === null ? '   ● up' : `   ✗ offline, ${s.retryInS > 0 ? `retrying in ${s.retryInS}s` : 'will retry'}`
   lines.push(row('server', s.server + marker))
   lines.push(row('workspace', s.workspace))
@@ -197,11 +215,14 @@ export function statusText(s: StatusInput): string {
       const m = /^\[\d{4}-\d{2}-\d{2} (\d{2}:\d{2})[^\]]*\] ?(.*)$/.exec(card.lastNote)
       lines.push(row('last note', m ? `${m[1]}  ${m[2]}` : card.lastNote))
     }
-    lines.push(s.retryInS !== null ? row('next', 'start the board: agent-board') : row('commands', 'on | off | link <ID> | new "title"'))
+    if (s.retryInS !== null) lines.push(row('next', 'start the board: agent-board'))
   } else {
     const { why, next } = noCard(s.state)
     lines.push(row('card', s.bound ? `${s.bound}  (last known)` : `none  ${why}`))
     lines.push(row('next', s.retryInS !== null ? 'start the board: agent-board' : next))
   }
+  // Not cut: a URL with an ellipsis opens nothing.
+  if (s.url) lines.push(`  ${'open'.padEnd(11)}${s.url}`)
+  lines.push(row('commands', 'open | on | off | link <ID> | new ["title"]'))
   return lines.join('\n')
 }
