@@ -21,7 +21,7 @@ router.post("/", (req, res) => {
   }
   const projectRow = req.db.prepare("SELECT * FROM projects WHERE name = ?").get(project);
   if (!projectRow) {
-    return res.status(404).json({ error: `unknown project "${project}" — create it first via POST /api/projects` });
+    return res.status(404).json({ error: `unknown project "${project}" — create it first: agent-board project create "${project}" --prefix=<PREFIX>` });
   }
   const row = createTask(req.db, {
     title,

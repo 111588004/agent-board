@@ -27,7 +27,7 @@ async function run(fn) {
     return await fn();
   } catch (e) {
     if (e.status === undefined) {
-      console.error("agent-board: can't reach the server — is it running? (agent-board, no args, in another terminal)");
+      console.error("agent-board: can't reach the server — is it running? Start it in another terminal: agent-board  (or: npx @limao.li.design/agent-board)");
     } else {
       console.error(`agent-board: ${e.status} ${e.message}`);
     }

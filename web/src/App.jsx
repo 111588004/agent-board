@@ -2125,7 +2125,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                 </div>
                 <textarea
                   ref={notesRef}
-                  autoFocus
+                  autoFocus={Boolean(card.id)} // a new card is already in edit mode; don't pull focus off the title
                   value={notesDraft}
                   onChange={(e) => setNotesDraft(e.target.value)}
                   placeholder="markdown — blockers, checklist, links…"
