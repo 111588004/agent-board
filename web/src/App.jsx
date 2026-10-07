@@ -437,10 +437,31 @@ export default function AgentBoard() {
     }
   }
 
-  async function createProject(name, prefix) {
-    const project = await api.createProject(name, prefix);
+  async function createProject(name, prefix, aliases) {
+    const project = await api.createProject(name, prefix, aliases);
     setProjects((prev) => [...prev, project]);
     return project;
+  }
+
+  // other words the user calls a project — those words open tickets there without the board asking
+  async function addAliasesByName(target) {
+    const words = window.prompt(`Other names you use for "${target}" (comma-separated), e.g. 發表會, launch:`);
+    if (!words?.trim()) return;
+    try {
+      await api.addAliases(target, words);
+      setProjects(await api.listProjects());
+    } catch (e) {
+      reportError("Add name", e);
+    }
+  }
+
+  async function forgetAliasWord(word) {
+    try {
+      await api.forgetAlias(word);
+      setProjects(await api.listProjects());
+    } catch (e) {
+      reportError("Remove name", e);
+    }
   }
 
   async function renameProjectByName(target) {
@@ -639,6 +660,8 @@ export default function AgentBoard() {
           onRequestCreate={() => setNewProjectOpen(true)}
           onRename={renameProjectByName}
           onDelete={deleteProjectByName}
+          onAddAlias={addAliasesByName}
+          onForgetAlias={forgetAliasWord}
         />
         </span>
         <FilterSelect
@@ -1160,7 +1183,7 @@ function WorkspaceSwitcher({ workspace, workspaces, onSwitch, onRename, onDelete
 // The "All projects" filter, folded together with project management —
 // same hover-reveal row-actions pattern as WorkspaceSwitcher, so renaming or
 // deleting a project happens right where you'd already look to filter by one.
-function ProjectFilterSelect({ value, projects, onChange, onRequestCreate, onRename, onDelete }) {
+function ProjectFilterSelect({ value, projects, onChange, onRequestCreate, onRename, onDelete, onAddAlias, onForgetAlias }) {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
   const [hoveredRow, setHoveredRow] = useState(null);
@@ -1304,9 +1327,33 @@ function ProjectFilterSelect({ value, projects, onChange, onRequestCreate, onRen
                     borderRadius: 8,
                     boxShadow: "0 8px 24px rgba(20,22,30,0.14)",
                     padding: 4,
-                    minWidth: 110,
+                    minWidth: 170,
                   }}
                 >
+                  <div style={{ padding: "6px 10px 2px", fontSize: 10.5, fontWeight: 600, color: "#8B8D98" }}>Also called</div>
+                  {(p.aliases ?? []).map((a) => (
+                    <div key={a} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 6px 3px 10px", fontSize: 12.5, color: "#42454D" }}>
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{a}</span>
+                      <button
+                        type="button"
+                        aria-label={`Stop treating "${a}" as ${p.name}`}
+                        title={`Stop treating "${a}" as ${p.name}`}
+                        onClick={() => onForgetAlias(a)}
+                        style={{ background: "none", border: "none", color: "#8B8D98", cursor: "pointer", padding: 2, display: "flex", borderRadius: 4 }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                  <div
+                    onClick={() => { closeAll(); onAddAlias(p.name); }}
+                    style={{ padding: "6px 10px", borderRadius: 5, fontSize: 12.5, cursor: "pointer", color: "#42454D" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#F4F5F7")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    + Add a name
+                  </div>
+                  <div style={{ height: 1, background: "#E4E6EB", margin: "4px 0" }} />
                   <div
                     onClick={() => { closeAll(); onRename(p.name); }}
                     style={{ padding: "6px 10px", borderRadius: 5, fontSize: 12.5, cursor: "pointer" }}
@@ -1349,6 +1396,7 @@ function ProjectFilterSelect({ value, projects, onChange, onRequestCreate, onRen
 function NewProjectDialog({ onClose, onCreate }) {
   const [name, setName] = useState("");
   const [prefix, setPrefix] = useState(""); // stays empty until the user actually types — the suggestion is a placeholder, not a value
+  const [aliases, setAliases] = useState("");
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const nameRef = useRef(null);
@@ -1380,7 +1428,7 @@ function NewProjectDialog({ onClose, onCreate }) {
     setSaving(true);
     setError(null);
     try {
-      await onCreate(name.trim(), finalPrefix);
+      await onCreate(name.trim(), finalPrefix, aliases.trim() || undefined);
       onClose();
     } catch (err) {
       setError(err.message);
@@ -1434,6 +1482,20 @@ function NewProjectDialog({ onClose, onCreate }) {
           {prefix || suggestedPrefix
             ? `Shows up in ticket ids, e.g. ${prefix || suggestedPrefix}-1 — leave blank to use the suggestion.`
             : "No suggestion for this name — type a short prefix for ticket ids, e.g. AB."}
+        </div>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: "#8B8D98" }}>Also called (optional)</span>
+          <input
+            id="new-project-aliases"
+            value={aliases}
+            onChange={(e) => setAliases(e.target.value)}
+            placeholder="發表會, launch"
+            style={{ border: "1px solid #E4E6EB", borderRadius: 6, padding: "7px 8px", fontSize: 13, fontFamily: "inherit" }}
+          />
+        </label>
+        <div style={{ fontSize: 11, color: "#B7BAC2", marginBottom: error ? 12 : 18 }}>
+          Other words you'd use for this project, comma-separated. Agents that use them land here without asking.
         </div>
 
         {error && <div style={{ color: "#E5484D", fontSize: 12, marginBottom: 10 }}>{error}</div>}

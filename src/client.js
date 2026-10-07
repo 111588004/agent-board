@@ -115,8 +115,12 @@ export function listProjects({ workspace } = {}) {
   return apiRequest("GET", `${workspacePath(workspace)}/projects`);
 }
 
-export function createProject({ name, prefix, workspace }) {
-  return apiRequest("POST", `${workspacePath(workspace)}/projects`, { name, prefix });
+export function createProject({ name, prefix, aliases, workspace }) {
+  return apiRequest("POST", `${workspacePath(workspace)}/projects`, { name, prefix, aliases });
+}
+
+export function addAliases(project, aliases, { workspace } = {}) {
+  return apiRequest("POST", `${workspacePath(workspace)}/projects/${encodeURIComponent(project)}/aliases`, { aliases });
 }
 
 export function renameProject(currentName, { name, prefix, workspace } = {}) {

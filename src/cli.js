@@ -209,11 +209,11 @@ switch (cmd) {
     if (sub === "create") {
       const name = positional[1];
       if (!name) {
-        console.error("usage: agent-board project create <name> [--prefix=<prefix>] [--workspace=<name>]  (no --prefix: asks)");
+        console.error("usage: agent-board project create <name> [--prefix=<prefix>] [--alias=<word>[,<word>...]] [--workspace=<name>]  (no --prefix: asks)");
         process.exit(1);
       }
-      const p = await run(() => client.createProject({ name, prefix: flags.prefix, workspace: flags.workspace }));
-      console.log(`created project ${p.name} (${p.prefix})`);
+      const p = await run(() => client.createProject({ name, prefix: flags.prefix, aliases: flags.alias, workspace: flags.workspace }));
+      console.log(`created project ${p.name} (${p.prefix})${p.aliases?.length ? `, also called: ${p.aliases.join(", ")}` : ""}`);
       break;
     }
     if (sub === "rename") {
@@ -238,6 +238,16 @@ switch (cmd) {
       console.log(`deleted project ${name}`);
       break;
     }
+    if (sub === "alias") {
+      const [, project, ...words] = positional;
+      if (!project || !words.length) {
+        console.error("usage: agent-board project alias <project> <word> [<word>...] [--workspace=<name>]  (what you call it, e.g. 發表會)");
+        process.exit(1);
+      }
+      const r = await run(() => client.addAliases(project, words, { workspace: flags.workspace }));
+      console.log(r.added.length ? `${project} is also called: ${r.added.join(", ")}` : "nothing to add");
+      break;
+    }
     if (sub === "forget") {
       const alias = positional[1];
       if (!alias) {
@@ -248,7 +258,7 @@ switch (cmd) {
       console.log(`forgot ${alias}`);
       break;
     }
-    console.error("usage: agent-board project <list|create|rename|delete|forget> ...");
+    console.error("usage: agent-board project <list|create|rename|delete|alias|forget> ...");
     process.exit(1);
   }
 

@@ -319,3 +319,22 @@ test("CLI: unknown project on list is still a hint, suggesting project create", 
   assert.match(r.err, /agent-board project create "準備發表會" --prefix=<PREFIX>/);
   assert.ok(!r.err.includes("POST /api/projects"));
 });
+
+test("aliases registered up front: create with aliases, add more, clashes refused, word opens tickets", async () => {
+  await api("POST", "/api/workspaces", { name: "al" });
+  const p = await api("POST", "/api/w/al/projects", { name: "Launch", prefix: "LA", aliases: "準備發表會, 發表會" });
+  assert.equal(p.status, 201);
+  assert.deepEqual(p.body.aliases.sort(), ["準備發表會", "發表會"].sort());
+  // another project's name/prefix, or a word that already means another project: 409, and no half-made project
+  await api("POST", "/api/w/al/projects", { name: "Ops", prefix: "OP" });
+  assert.equal((await api("POST", "/api/w/al/projects", { name: "X", prefix: "XX", aliases: ["op"] })).status, 409);
+  assert.equal((await api("POST", "/api/w/al/projects", { name: "X", prefix: "XX", aliases: ["發表會"] })).status, 409);
+  assert.ok(!(await api("GET", "/api/w/al/projects")).body.some((q) => q.name === "X"));
+  const add = await api("POST", "/api/w/al/projects/Ops/aliases", { aliases: ["維運", "ops"] });
+  assert.equal(add.status, 201);
+  assert.deepEqual(add.body.added, ["維運"]); // own name skipped
+  assert.equal((await api("POST", "/api/w/al/projects/Ops/aliases", { alias: "launch" })).status, 409);
+  const t = await create({ project: "準備發表會" }, "al");
+  assert.equal(t.status, 201);
+  assert.equal(t.body.project, "Launch");
+});
