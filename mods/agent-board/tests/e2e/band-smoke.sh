@@ -79,7 +79,7 @@ if [ -n "$STORE" ]; then
   launch 0; grep_screen "offline welcome" "^▌ ○ Agent Board is not running .*npx @limao.li.design/agent-board"
   launch 0; TOTAL=$((TOTAL+1)); if cap | grep -q '^▌'; then echo "  FAIL offline welcome shown twice"; FAILED=$((FAILED+1)); else echo "  ok offline welcome only once"; fi
   start_server
-  launch 1; grep_screen "connected welcome" "^▌ ✓ Agent Board connected · first time\? take the tour  → $URL/"
+  launch 1; grep_screen "connected welcome" "^▌ ✓ Agent Board connected · first time\? take the tour  → $URL/\\?tour=1"
   verify welcome 200 --clean
 else
   echo "  (no store file yet: the first launch below creates it; welcome not checked)"

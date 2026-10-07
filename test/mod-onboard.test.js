@@ -63,6 +63,7 @@ test("card URL: ?task=ID, workspace only when not the default", () => {
   assert.equal(cardUrl("http://localhost:4317", "AB-1"), "http://localhost:4317/?task=AB-1");
   assert.equal(cardUrl("http://localhost:4317", "AB-1", "client a"), "http://localhost:4317/?task=AB-1&workspace=client%20a");
   assert.equal(cardUrl("http://localhost:4317"), "http://localhost:4317/");
+  assert.equal(cardUrl("http://localhost:4317", null, "w", true), "http://localhost:4317/?workspace=w&tour=1");
 });
 
 test("off scope (D21): session beats project beats global; settings last", () => {

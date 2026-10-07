@@ -83,8 +83,9 @@ export function projectFor(projects: { name: string }[], opts: { configured: str
 }
 
 // The card on the web (AB-18's ?task=ID); the workspace only when it is not the default one.
-export function cardUrl(origin: string, id?: string | null, workspace?: string): string {
-  const q = [id && `task=${encodeURIComponent(id)}`, workspace && `workspace=${encodeURIComponent(workspace)}`].filter(Boolean)
+// `tour`: start the web's spotlight tour (AB-30) even in a browser that has seen it.
+export function cardUrl(origin: string, id?: string | null, workspace?: string, tour?: boolean): string {
+  const q = [id && `task=${encodeURIComponent(id)}`, workspace && `workspace=${encodeURIComponent(workspace)}`, tour && 'tour=1'].filter(Boolean)
   return `${origin}/${q.length ? '?' + q.join('&') : ''}`
 }
 

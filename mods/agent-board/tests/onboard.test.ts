@@ -11,8 +11,8 @@ describe('1. first-session welcome', () => {
     const ui = await $.ui.mount(bandTarget())
     const b = await band(ui)
     expect(b.text).toContain('Agent Board connected · first time? take the tour')
-    expect(b.text).toContain('http://localhost:4317/')
-    expect(await ui.find({ type: 'Link' })).toMatchObject({ props: { href: 'http://localhost:4317/' } })
+    expect(b.text).toContain('http://localhost:4317/?tour=1')
+    expect(await ui.find({ type: 'Link' })).toMatchObject({ props: { href: 'http://localhost:4317/?tour=1' } })
     await $.turn.complete(w.complete('t1')) // gone after the first turn
     expect((await band(ui)).text).toContain('no card for this branch')
     expect(w.store['welcome']).toBe('done')

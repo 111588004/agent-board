@@ -46,7 +46,7 @@ async function settings($: any, options: PluginOptions) {
     enabled: options.enabled !== false,
   })
   const origin = new URL(deps.base).origin
-  return { isOn, offBy, deps, urlOf: (id?: string | null) => cardUrl(origin, id, workspace) }
+  return { isOn, offBy, deps, urlOf: (id?: string | null) => cardUrl(origin, id, workspace), tourUrl: cardUrl(origin, null, workspace, true) }
 }
 
 type Settings = Awaited<ReturnType<typeof settings>>
@@ -165,7 +165,7 @@ async function autoBind($: any, s: Settings, interactive: boolean) {
     return row ? remember($, row, s.urlOf) : undefined
   }
   const cards: Card[] | null = await call(deps, 'GET', '/tasks')
-  if (interactive) await welcome($, !!cards, s.urlOf())
+  if (interactive) await welcome($, !!cards, s.tourUrl)
   if (!cards) return // server down: silent (past the one-time hint above)
   const here = await where($)
   const hit = pickCard(cards, here)
