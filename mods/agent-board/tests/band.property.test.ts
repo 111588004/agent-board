@@ -161,8 +161,8 @@ describe('band property: layout invariants over seeded random input', () => {
     const items = (l: L, row: ReturnType<typeof randomRow>) => {
       const t = textOf(l)
       return {
-        id: t.includes(row.id), glyph: /[○◐◑●]/.test(l.left[2]?.text ?? ''), word: (l.left[2]?.text.trim().split(' ').length ?? 0) > 1,
-        priority: l.left.length > 3, agent: !!row.agent && l.right.length > 0, branch: t.includes('⎇'), notes: /\d+ notes?/.test(t),
+        id: t.includes(row.id), glyph: /[○◐◑●]/.test(l.left[2]?.text ?? ''), word: l.left.length > 3,
+        priority: l.left.length > 4, agent: !!row.agent && l.right.length > 0, branch: t.includes('⎇'), notes: /\d+ notes?/.test(t),
       }
     }
     const bad: string[] = []

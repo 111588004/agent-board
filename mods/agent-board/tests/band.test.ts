@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { fit, statusText, width } from '../hooks/band'
+import { bandLayout, fit, priorityOf, statusOf, statusText, toBandCard, width } from '../hooks/band'
 import { band, bandTarget, card, sync, world } from './world'
 
 const END = (reason: string) => ({ reason, sessionId: 's1', resume: { id: 's1' } }) as any
@@ -21,10 +21,12 @@ describe('band: states, symbols and theme keys (D20)', () => {
       await $.session.start(w.start)
       const ui = await $.ui.mount(bandTarget(115, {}, surface))
       const b = await band(ui)
-      expect(b.shown).toEqual(['▌', 'P-1', ' ◐ in_progress', ' ▲ high', ' Fix login', 'claude · ⎇ feat/x'])
+      expect(b.shown).toEqual(['▌', 'P-1', ' ◐', ' in_progress', ' ▲', ' high', ' Fix login', 'claude · ⎇ feat/x'])
       expect(b.colorOf('◐')).toBe('warning')
       expect(b.colorOf('▲')).toBe('error')
-      expect(b.segs[4]!.color).toBeUndefined() // the title is plain text
+      expect(b.colorOf('in_progress')).toBeUndefined() // words are plain text: only the symbols carry a theme color
+      expect(b.colorOf('high')).toBeUndefined()
+      expect(b.segs[6]!.color).toBeUndefined() // the title is plain text
       expect(b.segs.at(-1)).toMatchObject({ dim: true })
       await ui.unmount()
     })
@@ -39,7 +41,7 @@ describe('band: states, symbols and theme keys (D20)', () => {
       w.cards.find((c) => c.id === id)!.status = status
       await sync($, `link ${id}`)
       const b = await band(ui)
-      seen[status] = [b.segs[2]!.color, b.segs[2]!.text]
+      seen[status] = [b.segs[2]!.color, b.segs[2]!.text + b.segs[3]!.text]
     }
     expect(seen).toEqual({
       backlog: ['inactive', ' ○ backlog'], in_progress: ['warning', ' ◐ in_progress'],
@@ -53,11 +55,13 @@ describe('band: states, symbols and theme keys (D20)', () => {
     const ui = await $.ui.mount(bandTarget(115))
     await sync($, 'link P-1')
     let b = await band(ui)
-    expect(b.segs[3]).toMatchObject({ text: ' ◆ med', color: undefined, dim: false })
+    expect(b.segs[4]).toMatchObject({ text: ' ◆', color: undefined, dim: false })
+    expect(b.segs[5]).toMatchObject({ text: ' med', color: undefined, dim: false })
     w.cards[0]!.priority = 'low'
     await sync($, 'link P-1')
     b = await band(ui)
-    expect(b.segs[3]).toMatchObject({ text: ' ▽ low', color: undefined, dim: true })
+    expect(b.segs[4]).toMatchObject({ text: ' ▽', color: undefined, dim: true })
+    expect(b.segs[5]).toMatchObject({ text: ' low', color: undefined, dim: false })
   })
 
   test('no theme key outside the allowed names: no ansi:, no hex, no ansi256', async ($, on) => {
@@ -102,7 +106,7 @@ describe('band: states, symbols and theme keys (D20)', () => {
     const ui = await $.ui.mount(bandTarget(115))
     await sync($, 'new "Do the thing"')
     const b = await band(ui)
-    expect(b.shown.slice(0, 3)).toEqual(['▌', 'P-1', ' ◐ in_progress'])
+    expect(b.shown.slice(0, 4)).toEqual(['▌', 'P-1', ' ◐', ' in_progress'])
     expect(b.text).toContain('Do the thing')
   })
 })
@@ -116,20 +120,20 @@ describe('band: width tiers', () => {
   test('>= 100: full status word, priority word, agent, branch and note count', async ($, on) => {
     const { w, ui } = await bound($, on, { notes: 'a\nb\nc' })
     await sync($, 'link P-1') // refresh the snapshot so notes are counted
-    expect((await band(ui)).shown).toEqual(['▌', 'P-1', ' ◐ in_progress', ' ▲ high', ' Fix login redirect loop on mobile Safari', 'claude · ⎇ feat/x · 3 notes'])
+    expect((await band(ui)).shown).toEqual(['▌', 'P-1', ' ◐', ' in_progress', ' ▲', ' high', ' Fix login redirect loop on mobile Safari', 'claude · ⎇ feat/x · 3 notes'])
     expect(w.statusCalls).toEqual([])
   })
 
   test('64-99: short status word, priority symbol only, agent only', async ($, on) => {
     const b = await at($, on, 76)
-    expect(b.shown).toEqual(['▌', 'P-1', ' ◐ doing', ' ▲', ' Fix login redirect loop on mobile Safari', 'claude'])
+    expect(b.shown).toEqual(['▌', 'P-1', ' ◐', ' doing', ' ▲', ' Fix login redirect loop on mobile Safari', 'claude'])
   })
 
   test('40-63: short status, priority symbol, title only; the title is cut to fit', async ($, on) => {
     const b = await at($, on, 50)
-    expect(b.shown.slice(0, 4)).toEqual(['▌', 'P-1', ' ◐ doing', ' ▲'])
-    expect(b.segs).toHaveLength(5)
-    expect(b.shown[4]!.endsWith('…')).toBe(true)
+    expect(b.shown.slice(0, 5)).toEqual(['▌', 'P-1', ' ◐', ' doing', ' ▲'])
+    expect(b.segs).toHaveLength(6)
+    expect(b.shown[5]!.endsWith('…')).toBe(true)
     expect(width(b.text)).toBeLessThanOrEqual(50 - 4) // 4 cells stay free for the engine's [-]
   })
 
@@ -398,4 +402,79 @@ describe('/board-sync status layout', () => {
     const text = statusText({ isOn: true, server: 'http://' + 'a'.repeat(100) + '.example:4317', workspace: 'w', retryInS: null, bound: null, state: null })
     for (const l of text.split('\n')) expect(width(l)).toBeLessThanOrEqual(70)
   })
+})
+
+// ---- 1. emoji / symbols drawn two cells wide ---------------------------------
+describe('width(): emoji and wide symbols are 2 cells', () => {
+  test('concrete cases', () => {
+    for (const e of ['🚀', '✅', '⚡', '⭐', '🚗', '😀', '❌', '⌚', '🇹'] ) expect(width(e)).toBe(2)
+    expect(width('修正')).toBe(4)
+    expect(width('ab')).toBe(2)
+    expect(width('▲◐')).toBe(2) // ambiguous-width symbols stay 1 (documented limit)
+    expect(width('é')).toBe(1)
+  })
+  test('fit() with emoji never exceeds the limit', () => {
+    for (let max = 1; max < 14; max++) expect(width(fit('🚀✅ab⚡⭐cd🚗', max))).toBeLessThanOrEqual(max)
+  })
+})
+
+// ---- 3. unknown priority / status ----------------------------------------------
+describe('unknown priority and status get a safe symbol', () => {
+  const row = (priority: any, status = 'in_progress') => toBandCard({ id: 'P-1', title: 'T', status, priority, agent: 'claude', branch: null, notes: '' } as any)
+  const text = (c: any, cols: number) => { const l = bandLayout({ kind: 'linked', card: c }, false, cols)!; return [...l.left, ...l.tail, ...l.right].map((s) => s.text).join('') }
+  for (const p of ['urgent', 'critical', 'HIGH', 'constructor', '__proto__', 'toString', 'a\nb', 'x'.repeat(80)]) {
+    test(`priority ${JSON.stringify(p).slice(0, 20)}`, () => {
+      expect(priorityOf(p).glyph).toBe('?')
+      for (const cols of [120, 80, 50]) {
+        const t = text(row(p), cols)
+        expect(t).not.toContain('undefined')
+        expect(t).not.toContain('function')
+        expect(t).not.toContain('\n')
+        expect(t).toContain(' ?')
+        expect(width(t)).toBeLessThanOrEqual(cols - 4)
+      }
+    })
+  }
+  test('known priorities keep their symbols; null/empty draw none', () => {
+    expect(['high', 'med', 'low'].map((p) => priorityOf(p).glyph)).toEqual(['▲', '◆', '▽'])
+    expect(text(row(null), 120)).not.toContain('?')
+    expect(text(row(''), 120)).not.toContain('?')
+  })
+  test('unknown status keeps working, "constructor" included', () => {
+    expect(statusOf('constructor')).toMatchObject({ glyph: '○', short: 'constructor' })
+    expect(text(row('high', 'constructor'), 120)).not.toContain('function')
+  })
+  test('/board-sync status shows the fallback symbol too', () => {
+    const t = statusText({ isOn: true, server: 'http://x', workspace: 'w', retryInS: null, bound: 'P-1', state: { kind: 'linked', card: row('urgent') } })
+    expect(t).toContain('? urgent')
+    expect(t).not.toContain('undefined')
+  })
+})
+
+// ---- 2. contrast ------------------------------------------------------------------
+// The band's own theme keys, with the RGB the engine gives them (read from Claude Code 2.1.288's theme
+// tables: "light" and "dark"). Only symbols are colored (asserted below), so a glyph needs 3:1 (WCAG 1.4.11).
+const THEMES: Record<string, { bg: number[][]; keys: Record<string, number[]> }> = {
+  light: { bg: [[255, 255, 255], [238, 238, 238]], keys: { success: [44, 122, 57], error: [171, 43, 63], warning: [150, 108, 30], permission: [87, 105, 247], inactive: [102, 102, 102] } },
+  dark: { bg: [[0, 0, 0], [28, 28, 28]], keys: { success: [78, 186, 101], error: [255, 107, 128], warning: [255, 193, 7], permission: [177, 185, 249], inactive: [153, 153, 153] } },
+}
+const lum = (c: number[]) => { const [r, g, b] = c.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }); return 0.2126 * r! + 0.7152 * g! + 0.0722 * b! }
+const ratio = (a: number[], b: number[]) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x! + 0.05) / (y! + 0.05) }
+
+describe('band colors: only symbols are colored, and they are readable on light and dark', () => {
+  test('no colored segment contains a letter or digit (words and the title use the default text color)', () => {
+    const states = ['backlog', 'in_progress', 'review', 'done', 'weird']
+    for (const status of states) for (const priority of ['high', 'med', 'low', 'urgent']) for (const cols of [120, 80, 50, 30]) {
+      const l = bandLayout({ kind: 'linked', card: toBandCard({ id: 'P-1', title: 'Fix', status, priority, agent: 'claude', branch: 'b', notes: 'x' } as any) }, false, cols)!
+      for (const s of [...l.left, ...l.tail, ...l.right]) if (s.color && s.text.trim() !== '▌') expect(s.text).not.toMatch(/[\p{L}\p{N}]/u)
+    }
+  })
+  for (const [theme, { bg, keys }] of Object.entries(THEMES)) {
+    test(`${theme} theme: every colored symbol is >= 3:1 on its backgrounds`, () => {
+      const used = new Set<string>()
+      for (const status of ['backlog', 'in_progress', 'review', 'done']) used.add(statusOf(status).color)
+      used.add('error') // high priority and the offline notice
+      for (const k of used) for (const b of bg) expect([theme, k, ratio(keys[k]!, b) >= 3]).toEqual([theme, k, true])
+    })
+  }
 })

@@ -9,6 +9,9 @@ import type { Card } from './pick-card'
 // CJK is two cells, so truncating by character count would overflow the band.
 // Ambiguous-width symbols (● ▲ …) count 1, like the engine's own status line does.
 
+// Emoji that terminals draw two cells wide (🚀 ✅ ⚡ ⭐ 🚗 …): Unicode Emoji_Presentation, which the
+// block ranges below only partly cover. Text-presentation symbols (❤ without U+FE0F) stay 1.
+const EMOJI_WIDE = /^\p{Emoji_Presentation}$/u
 const WIDE: [number, number][] = [
   [0x1100, 0x115f], [0x2e80, 0x303e], [0x3041, 0x33ff], [0x3400, 0x4dbf], [0x4e00, 0x9fff],
   [0xa000, 0xa4cf], [0xac00, 0xd7a3], [0xf900, 0xfaff], [0xfe30, 0xfe6f], [0xff00, 0xff60],
@@ -18,7 +21,7 @@ const WIDE: [number, number][] = [
 function cellWidth(ch: string): number {
   const c = ch.codePointAt(0)!
   if ((c >= 0x300 && c <= 0x36f) || (c >= 0x200b && c <= 0x200f) || (c >= 0xfe00 && c <= 0xfe0f)) return 0
-  return WIDE.some(([a, b]) => c >= a && c <= b) ? 2 : 1
+  return WIDE.some(([a, b]) => c >= a && c <= b) || EMOJI_WIDE.test(ch) ? 2 : 1
 }
 
 export function width(s: string): number {
@@ -60,7 +63,9 @@ export const STATUS: Record<string, { glyph: string; short: string; color: strin
   done: { glyph: '●', short: 'done', color: 'success' },
 }
 const UNKNOWN_STATUS = { glyph: '○', short: '?', color: 'inactive' }
-export const statusOf = (s: string) => STATUS[s] ?? { ...UNKNOWN_STATUS, short: s }
+// hasOwn: a status like "constructor" must not find Object.prototype members.
+const own = <T,>(table: Record<string, T>, k: string): T | undefined => (Object.hasOwn(table, k) ? table[k] : undefined)
+export const statusOf = (s: string) => own(STATUS, s) ?? { ...UNKNOWN_STATUS, short: s }
 
 // Only high gets a color; the three shapes differ, so they read without color too.
 export const PRIORITY: Record<string, { glyph: string; color?: string; dim?: boolean }> = {
@@ -68,6 +73,9 @@ export const PRIORITY: Record<string, { glyph: string; color?: string; dim?: boo
   med: { glyph: '◆' },
   low: { glyph: '▽', dim: true },
 }
+
+// Anything that is not low/med/high (an old or hand-typed value) gets a neutral "?" and its own word.
+export const priorityOf = (p: string) => own(PRIORITY, p) ?? { glyph: '?', dim: true }
 
 export function toBandCard(row: Card): BandCard {
   const lines = (row.notes ?? '').split('\n').filter((l) => l.trim())
@@ -96,13 +104,19 @@ const w = (segs: Seg[]) => segs.reduce((n, s) => n + width(s.text), 0)
 function linked(card: BandCard, cols: number): Layout {
   const tier = cols >= 100 ? 3 : cols >= 64 ? 2 : cols >= 40 ? 1 : 0
   const st = statusOf(card.status)
-  const pr = card.priority ? PRIORITY[card.priority] : undefined
+  const pr = card.priority ? priorityOf(card.priority) : undefined
+  // Only the symbols carry a theme color; the words stay in the default text color, so a light theme's
+  // weaker warning/permission colors only have to be readable as a glyph (3:1), not as text (4.5:1).
   const left: Seg[] = [
     { text: '▌ ', color: st.color, bold: true },
     { text: card.id, bold: true },
-    { text: ' ' + st.glyph + (tier >= 1 ? ' ' + (tier === 3 ? card.status : st.short) : ''), color: st.color },
+    { text: ' ' + st.glyph, color: st.color },
   ]
-  if (tier >= 1 && pr) left.push({ text: ' ' + pr.glyph + (tier === 3 ? ' ' + card.priority : ''), color: pr.color, dim: pr.dim })
+  if (tier >= 1) left.push({ text: ' ' + (tier === 3 ? fit(oneLine(card.status), 14) : st.short) })
+  if (tier >= 1 && pr) {
+    left.push({ text: ' ' + pr.glyph, color: pr.color, dim: pr.dim })
+    if (tier === 3) left.push({ text: ' ' + fit(oneLine(card.priority!), 10) })
+  }
   const meta = tier === 3
     ? [card.agent && fit(card.agent, 14), card.branch && '⎇ ' + fit(card.branch, 24), card.notes > 0 && `${card.notes} note${card.notes > 1 ? 's' : ''}`]
     : tier === 2 ? [card.agent && fit(card.agent, 14)] : []
@@ -175,7 +189,7 @@ export function statusText(s: StatusInput): string {
     lines.push(row('next', '/board-sync on'))
   } else if (card) {
     const st = statusOf(card.status)
-    const pr = card.priority ? PRIORITY[card.priority] : undefined
+    const pr = card.priority ? priorityOf(card.priority) : undefined
     lines.push(row('card', `${card.id}  ${st.glyph} ${card.status}${pr ? `  ${pr.glyph} ${card.priority}` : ''}${s.retryInS !== null ? '  (last known)' : ''}`))
     lines.push(cont(card.title))
     if (card.agent || card.branch) lines.push(row('owner', [card.agent, card.branch && '⎇ ' + card.branch].filter(Boolean).join('  ')))
