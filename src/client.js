@@ -8,6 +8,7 @@ const BASE = process.env.AGENT_BOARD_URL || "http://localhost:4317";
 
 const baseDir = process.env.AGENT_BOARD_DIR || path.join(os.homedir(), ".agent-board");
 const currentWorkspaceFile = path.join(baseDir, "current-workspace");
+const askFile = path.join(baseDir, "ask");
 
 // resolution order: explicit --workspace= flag > AGENT_BOARD_WORKSPACE env
 // var (mirrors AGENT_BOARD_URL, for scripting/CI) > ~/.agent-board/current-workspace
@@ -29,6 +30,21 @@ export function setCurrentWorkspace(name) {
   fs.writeFileSync(currentWorkspaceFile, `${name}\n`);
 }
 
+// global "ask the user" switch (agent-board config ask on|off), default on.
+// Off: a needs_input answer from the server is shown as a plain error instead.
+export function askEnabled() {
+  try {
+    return fs.readFileSync(askFile, "utf8").trim() !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setAsk(on) {
+  fs.mkdirSync(baseDir, { recursive: true });
+  fs.writeFileSync(askFile, `${on ? "on" : "off"}\n`);
+}
+
 export async function apiRequest(method, path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -42,6 +58,7 @@ export async function apiRequest(method, path, body) {
     err.status = res.status;
     err.code = data && data.code;
     err.input = data && data.input;
+    if (err.code === "needs_input") Object.assign(err, { question: data.question, options: data.options, answerArg: data.answerArg });
     throw err;
   }
   return data;

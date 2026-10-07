@@ -245,6 +245,18 @@ export function renameWorkspace(oldName, newName) {
 // ponytail: MAX(seq)+1 can reuse a number if the highest-seq row for that
 // prefix is ever deleted — upgrade to a persisted per-project counter if
 // that gap ever matters in practice.
+// shared by POST /projects and POST /tasks (newProjectPrefix) -> { project } or { status: 409, body }
+export function insertProject(db, name, prefix) {
+  try {
+    db.prepare("INSERT INTO projects (name, prefix, createdAt) VALUES (?, ?, ?)").run(name, prefix, Date.now());
+  } catch (e) {
+    if (e.code === "SQLITE_CONSTRAINT_PRIMARYKEY") return { status: 409, body: { error: `project "${name}" already exists` } };
+    if (e.code === "SQLITE_CONSTRAINT_UNIQUE") return { status: 409, body: { error: `prefix "${prefix}" is already in use` } };
+    throw e;
+  }
+  return { project: db.prepare("SELECT * FROM projects WHERE name = ?").get(name) };
+}
+
 export function createTask(db, task) {
   return db.transaction((task) => {
     const { next } = db

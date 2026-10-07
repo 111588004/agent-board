@@ -23,7 +23,7 @@ cd web && npm run dev      # Vite dev server on :5173, proxies /api to :4316
 cd web && npm run build    # production build → web/dist, served by the server above
 
 agent-board list [--project=] [--status=] [--parent=] [--workspace=]
-agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes sets the Description field
+agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes sets the Description field
 agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--notes="..."] [--workspace=]   # --notes overwrites the Description field
 agent-board note <id> "<text>" [--agent=<name>] [--workspace=]   # appends, never overwrites
 
@@ -34,9 +34,11 @@ agent-board workspace rename <old> <new>    # updates current-workspace too, if 
 agent-board workspace delete <name>         # can't delete "default"; resets current-workspace to "default" if you deleted it
 
 agent-board project list                                                       # prefix + name
-agent-board project create <name> --prefix=<prefix> [--workspace=]             # must exist before tasks can target it
+agent-board project create <name> [--prefix=<prefix>] [--workspace=]           # no --prefix: asks (exit 2) with suggested prefixes
 agent-board project rename <current-name> [--name=] [--prefix=] [--workspace=] # cascades to every task's project/projectPrefix
 agent-board project delete <name> [--workspace=]                              # refuses if the project still has tasks
+
+agent-board config ask [on|off]   # global "ask the user" switch, default on — see needs_input below
 
 agent-board mcp             # MCP over stdio (npx -y @limao.li.design/agent-board mcp) — auto-starts the server if needed, see below
 ```
@@ -113,6 +115,8 @@ web/
 This split exists because the original design doc only specified one `notes` column with append semantics for the CLI use case; the UI's Description editor (added later, styled after Jira's field) needs full-rewrite semantics on the same column. Don't collapse these back into one behavior without re-solving that conflict.
 
 **`PATCH` also auto-logs `status`/`agent`/`priority` changes** as an appended `notes` line (e.g. `status: backlog → in_progress`), separate from and in addition to any explicit `note` in the same request. These three are the fields two agents are most likely to race on (both claiming/reprioritizing the same ticket at once) — there's no optimistic locking, so a race still just resolves as last-write-wins on the column itself, but the auto-log at least makes a collision visible in the ticket's history instead of one agent's change silently vanishing. `title`/`worktree`/`branch`/`link`/`dueDate`/`notes` changes are NOT auto-logged (`TRACKED_FIELDS` in `routes/tasks.js`) — only add a field here if it's actually contention-prone, not for general audit-trail completeness.
+
+**Unclear requests return `needs_input` (HTTP 422), not a guess and not a plain error.** When the board can't uniquely tell what the user meant, the REST API responds `{ code: "needs_input", question, options: [{label, description, args}] (≤4), answerArg?, error }`. Each option's `args` are the exact fields to send again, and `answerArg` names the field a free-text answer goes in. Today's cases: `resolveProject` (`normalize.js`) finds several projects (name ignoring case and prefix together match more than one; an exact name always wins); `POST /tasks` names a project that doesn't exist (`offerNew`: options are up to 2 existing projects plus new-project options with suggested prefixes, and the chosen one comes back as `newProjectPrefix`, which creates project + task in one call); `POST /tasks` has no title (suggests the first line of `notes`); `POST /projects` has no prefix (D15: the prefix is the user's call, so the server suggests and never picks). A zero-match read (`GET /tasks?project=nope`) is deliberately still a 404 hint. The MCP layer (`toolError` in `mcp/tools.js`) turns needs_input into a non-error result starting with `NEEDS USER INPUT` that tells the agent to ask with its own built-in tool (AskUserQuestion / request_user_input / ask_user, or chat) and retry. The rule is also in the MCP `instructions`. That's how every agent asks without per-agent mods or hooks. The CLI prints the question with rerun flags and exits `2`. The global switch `agent-board config ask off` (file `<AGENT_BOARD_DIR or ~/.agent-board>/ask`, read client-side by `client.askEnabled()`) only changes presentation: the server answers the same either way, and the clients show it as a plain error listing the options. Note the HTTP `/mcp` endpoint runs `client.js` inside the server process, so it reads that file from the server's `AGENT_BOARD_DIR`, and it calls `AGENT_BOARD_URL` (default 4317!). Always set both when testing a dev server's `/mcp`.
 
 **Ticket IDs are generated inside a `better-sqlite3` transaction** (`createTask` in `db.js`) — `SELECT MAX(seq)+1` and the `INSERT` happen atomically on the single connection, so concurrent requests can't collide on the same id.
 

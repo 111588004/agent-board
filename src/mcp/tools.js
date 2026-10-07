@@ -12,7 +12,14 @@ function json(value) {
   return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
 }
 
-function toolError(e) {
+// needs_input (and asking is on): not an error — tell the agent to ask the user and retry.
+function toolError(e, name) {
+  if (e.code === "needs_input" && client.askEnabled()) {
+    const open = e.answerArg ? ` If the user answers in their own words, pass it as "${e.answerArg}".` : "";
+    const text = `NEEDS USER INPUT — do not pick an option yourself. Ask the user this question with your built-in ask tool (AskUserQuestion / request_user_input / ask_user; if you have none, ask in chat)${e.options.length ? ", offering these options" : " as an open question"}, then call ${name} again with the same arguments plus the chosen option's args.${open}`;
+    const payload = { needs_input: { question: e.question, options: e.options, ...(e.answerArg && { answerArg: e.answerArg }) } };
+    return { content: [{ type: "text", text }, { type: "text", text: JSON.stringify(payload, null, 2) }] };
+  }
   return { content: [{ type: "text", text: `error: ${client.errorWithHint(e, "mcp")}` }], isError: true };
 }
 
@@ -25,7 +32,8 @@ export const INSTRUCTIONS = [
   "project = a name or prefix exactly as list_projects shows it (case-insensitive). Only call list_projects if you don't know which project; never use a free-form phrase as the project.",
   "status: backlog | in_progress | review | done (aliases: todo, doing, wip, 進行中, 待辦, 審查, 完成...). priority: low | med | high (aliases: urgent, p0, 高, 中, 低...).",
   "Put the description in notes; set agent to your own id (claude, codex, gemini, ...).",
-  "Unknown project -> the error lists existing ones; retry with one of them, or create_project if it is genuinely new.",
+  "A result starting with NEEDS USER INPUT means the board can't tell what the user wants (several projects match, the project doesn't exist yet, no title). Ask the user that question with your built-in ask tool (Claude Code: AskUserQuestion, Codex: request_user_input, Gemini: ask_user; none -> ask in chat), then call the same tool again with the chosen option's args. Never pick an option yourself.",
+  "Ticket prefixes are the user's call: never invent one — omit prefix (create_project) and the board asks.",
 ].join("\n");
 
 export function createMcpServer({ notice } = {}) {
@@ -33,7 +41,12 @@ export function createMcpServer({ notice } = {}) {
   const server = new McpServer({ name: "agent-board", version: "0.1.0" }, { instructions });
   const tool = (name, def, handler) =>
     server.registerTool(name, def, async (args) => {
-      const result = await handler(args);
+      let result;
+      try {
+        result = await handler(args);
+      } catch (e) {
+        result = toolError(e, name);
+      }
       if (notice) {
         result.content.unshift({ type: "text", text: notice });
         notice = undefined;
@@ -53,21 +66,18 @@ export function createMcpServer({ notice } = {}) {
       },
     },
     async ({ project, status, parentId, workspace }) => {
-      try {
-        return json(await client.listTasks({ project, status, parentId, workspace }));
-      } catch (e) {
-        return toolError(e);
-      }
+      return json(await client.listTasks({ project, status, parentId, workspace }));
     }
   );
 
   tool(
     "create_task",
     {
-      description: "Create a new task on the board (or a subtask, if parentId is given). The project must already exist (see list_projects); one call is enough.",
+      description: "Create a new task on the board (or a subtask, if parentId is given). One call is enough — if the project is ambiguous or doesn't exist yet, the result asks you to check with the user.",
       inputSchema: {
-        title: z.string(),
+        title: z.string().optional().describe("Short title — omit only if you truly don't know it; the board will ask the user"),
         project: z.string().describe(PROJECT_DESC),
+        newProjectPrefix: z.string().optional().describe("Only from a NEEDS USER INPUT option the user chose: creates the project with this prefix in the same call. Never invent one"),
         agent: z.string().optional().describe("Your agent id, e.g. claude, codex, opencode, gemini, pi — omit to leave unassigned"),
         priority: z.string().optional().describe(`${PRIORITY_DESC}. Defaults to med`),
         status: z.string().optional().describe(`${STATUS_DESC}. Defaults to backlog`),
@@ -80,14 +90,10 @@ export function createMcpServer({ notice } = {}) {
         workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
-    async ({ title, project, agent, priority, status, parentId, dueDate, worktree, branch, link, notes, workspace }) => {
-      try {
-        return json(
-          await client.createTask({ title, project, agent, priority, status, parentId, dueDate, worktree, branch, link, notes, workspace })
-        );
-      } catch (e) {
-        return toolError(e);
-      }
+    async ({ title, project, newProjectPrefix, agent, priority, status, parentId, dueDate, worktree, branch, link, notes, workspace }) => {
+      return json(
+        await client.createTask({ title, project, newProjectPrefix, agent, priority, status, parentId, dueDate, worktree, branch, link, notes, workspace })
+      );
     }
   );
 
@@ -110,13 +116,9 @@ export function createMcpServer({ notice } = {}) {
       },
     },
     async ({ taskId, status, priority, agent, title, worktree, branch, link, dueDate, notes, workspace }) => {
-      try {
-        return json(
-          await client.updateTask(taskId, { status, priority, agent, title, worktree, branch, link, dueDate, notes, workspace })
-        );
-      } catch (e) {
-        return toolError(e);
-      }
+      return json(
+        await client.updateTask(taskId, { status, priority, agent, title, worktree, branch, link, dueDate, notes, workspace })
+      );
     }
   );
 
@@ -132,11 +134,7 @@ export function createMcpServer({ notice } = {}) {
       },
     },
     async ({ taskId, note, agent, workspace }) => {
-      try {
-        return json(await client.updateTask(taskId, { note, agent, workspace }));
-      } catch (e) {
-        return toolError(e);
-      }
+      return json(await client.updateTask(taskId, { note, agent, workspace }));
     }
   );
 
@@ -150,12 +148,8 @@ export function createMcpServer({ notice } = {}) {
       },
     },
     async ({ taskId, workspace }) => {
-      try {
-        await client.deleteTask(taskId, { workspace });
-        return json({ deleted: taskId });
-      } catch (e) {
-        return toolError(e);
-      }
+      await client.deleteTask(taskId, { workspace });
+      return json({ deleted: taskId });
     }
   );
 
@@ -168,30 +162,22 @@ export function createMcpServer({ notice } = {}) {
       },
     },
     async ({ workspace }) => {
-      try {
-        return json(await client.listProjects({ workspace }));
-      } catch (e) {
-        return toolError(e);
-      }
+      return json(await client.listProjects({ workspace }));
     }
   );
 
   tool(
     "create_project",
     {
-      description: "Create a new project. Required before tasks can be created for it.",
+      description: "Create a new project. Usually not needed: create_task on a new project name asks the user and creates it in the same call.",
       inputSchema: {
         name: z.string(),
-        prefix: z.string().describe("Ticket-id prefix, e.g. \"AB\" for tickets like AB-1"),
+        prefix: z.string().optional().describe("Ticket-id prefix, e.g. \"AB\" for tickets like AB-1. Only pass one the user chose — omit it and the board asks the user"),
         workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
     async ({ name, prefix, workspace }) => {
-      try {
-        return json(await client.createProject({ name, prefix, workspace }));
-      } catch (e) {
-        return toolError(e);
-      }
+      return json(await client.createProject({ name, prefix, workspace }));
     }
   );
 
@@ -207,11 +193,7 @@ export function createMcpServer({ notice } = {}) {
       },
     },
     async ({ currentName, name, prefix, workspace }) => {
-      try {
-        return json(await client.renameProject(currentName, { name, prefix, workspace }));
-      } catch (e) {
-        return toolError(e);
-      }
+      return json(await client.renameProject(currentName, { name, prefix, workspace }));
     }
   );
 
@@ -225,12 +207,8 @@ export function createMcpServer({ notice } = {}) {
       },
     },
     async ({ name, workspace }) => {
-      try {
-        await client.deleteProject(name, { workspace });
-        return json({ deleted: name });
-      } catch (e) {
-        return toolError(e);
-      }
+      await client.deleteProject(name, { workspace });
+      return json({ deleted: name });
     }
   );
 

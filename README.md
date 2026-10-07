@@ -36,7 +36,7 @@ From any other terminal, on any project. (These commands assume `agent-board` is
 
 ```bash
 agent-board list [--project=] [--status=] [--parent=] [--workspace=]
-agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes sets the Description field
+agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes sets the Description field
 agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--notes="..."] [--workspace=]   # --notes overwrites the Description field
 agent-board delete <id> [--workspace=]
 agent-board note <id> "<text>" [--agent=<name>] [--workspace=]
@@ -48,13 +48,16 @@ agent-board workspace rename <old> <new>
 agent-board workspace delete <name>
 
 agent-board project list
-agent-board project create <name> --prefix=<prefix> [--workspace=]
+agent-board project create <name> [--prefix=<prefix>] [--workspace=]   # no --prefix: prints suggestions and asks
 agent-board project rename <current-name> [--name=] [--prefix=] [--workspace=]
 agent-board project delete <name> [--workspace=]           # refuses if the project still has tasks
+agent-board config ask [on|off]                            # "ask the user" when a request is unclear (default on) — see below
 agent-board mcp                                            # MCP over stdio — see MCP below
 ```
 
 The CLI is a REST client — it talks to the server above, it does not touch the database directly, and it requires the server to already be running (the one exception is `agent-board mcp`, below).
+
+**When the board can't tell what you meant, it asks instead of guessing.** Three cases: the project name matches several projects, the project doesn't exist in this workspace yet, or a ticket has no title. Creating a project without `--prefix` asks too, because the prefix is your call, not the agent's. The CLI prints the question and up to 4 options, each with the flags to rerun with, and exits with code `2`. MCP tools return the same question in a result that starts with `NEEDS USER INPUT`. The agent then asks you with its own built-in ask tool (Claude Code: AskUserQuestion, Codex CLI: request_user_input, Gemini CLI: ask_user; agents without one ask in chat) and calls the tool again with your answer. Picking "new project" from the options creates the project and the ticket in one call (`--new-project-prefix=` / `newProjectPrefix`). No match at all is not asked about, for example `list --project=nope`; you get an error that lists the existing projects. `agent-board config ask off` turns asking off for every workspace: those cases become plain errors that list the same options.
 
 **Workspaces** are fully isolated boards (own projects, own tasks, own SQLite file) for separating contexts — e.g. personal projects vs. a client's. Everything defaults to a single `"default"` workspace if you never touch this; it's opt-in.
 
@@ -105,7 +108,7 @@ Add a short section to that project's own `CLAUDE.md` (or equivalent agent-instr
 
 Rules the template teaches agents for opening a ticket in one call:
 
-1. `project` is an existing project's name or prefix (case-insensitive, whitespace trimmed) — never a free-form phrase. An unknown project returns an error that lists the existing ones.
+1. `project` is an existing project's name or prefix (case-insensitive, whitespace trimmed) — never a free-form phrase. If it matches several projects or none, the board returns a question for the user (see "asks instead of guessing" above). The agent asks you and never picks an option or invents a prefix itself.
 2. Know the project? Create the ticket directly; no `list` first.
 3. `status`: `backlog` `in_progress` `review` `done`; `priority`: `low` `med` `high`. Aliases such as `doing`/`wip`/`進行中`/`urgent`/`高` are accepted and stored as the standard value; anything else is a 400 listing the allowed values.
 4. Description goes in `notes`; set `agent` to your own id.
