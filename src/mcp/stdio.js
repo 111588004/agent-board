@@ -69,4 +69,4 @@ async function ensureServer() {
 }
 
 const notice = await ensureServer();
-await createMcpServer({ notice, instructions: notice || undefined }).connect(new StdioServerTransport());
+await createMcpServer({ notice }).connect(new StdioServerTransport());

@@ -40,9 +40,20 @@ export async function apiRequest(method, path, body) {
   if (!res.ok) {
     const err = new Error((data && data.error) || res.statusText);
     err.status = res.status;
+    err.code = data && data.code;
+    err.input = data && data.input;
     throw err;
   }
   return data;
+}
+
+// REST errors are caller-neutral; each front end appends its own next step.
+export function errorWithHint(e, surface) {
+  if (e.code !== "unknown_project") return e.message;
+  const name = e.input || "<name>";
+  return surface === "cli"
+    ? `${e.message} New project: agent-board project create "${name}" --prefix=<PREFIX>`
+    : `${e.message} New project: use the create_project tool (name, prefix).`;
 }
 
 export function listWorkspaces() {
