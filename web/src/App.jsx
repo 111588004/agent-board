@@ -1,7 +1,9 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil } from "lucide-react";
+import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil, Copy, Check, HelpCircle, BookOpen } from "lucide-react";
 import * as api from "./api.js";
+import { LAUNCH_TARGETS, buildLaunchText, defaultLaunchTarget } from "./launch.js";
+import Tour, { TOUR_SEEN_KEY, readStore, writeStore, demoTicket, isSeedProject, guideUrl } from "./Tour.jsx";
 
 const COLUMNS = [
   { id: "backlog", label: "Backlog", color: "#8B8D98" },
@@ -136,6 +138,7 @@ export default function AgentBoard() {
   const [workspace, setWorkspace] = useState(api.getWorkspace());
   const [workspaces, setWorkspaces] = useState([]);
   const [meta, setMeta] = useState(null); // {version, source: "dev"|"npm", root, pid}
+  const [tourOpen, setTourOpen] = useState(false);
 
   useEffect(() => {
     api.listWorkspaces().then(setWorkspaces).catch((e) => reportError("Loading workspaces", e));
@@ -217,6 +220,47 @@ export default function AgentBoard() {
     const card = id && cards.find((c) => c.id === id);
     if (card) setModalCard(card);
   }, [loaded, cards]);
+
+  // first visit: start the tour (AB-30) — but not over a ?task= link someone followed to a card
+  const tourChecked = useRef(false);
+  useEffect(() => {
+    if (!loaded || tourChecked.current) return;
+    tourChecked.current = true;
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("tour")) { // the guide's "run the tour" link
+      const url = new URL(window.location.href);
+      url.searchParams.delete("tour");
+      window.history.replaceState(null, "", url);
+      startTour();
+    } else if (!readStore(TOUR_SEEN_KEY) && !params.has("task")) startTour();
+  }, [loaded]);
+
+  function startTour() {
+    setView("board");
+    setModalCard(null);
+    setNewProjectOpen(false);
+    setTourOpen(true);
+  }
+
+  function closeTour() {
+    writeStore(TOUR_SEEN_KEY, "1");
+    setTourOpen(false);
+  }
+
+  // the demo goes in the starter project if it's there, else whichever project comes first
+  const demoProject = (projects.find(isSeedProject) || projects[0])?.name;
+  const tourActions = {
+    openDemoDraft: () => setModalCard({ id: null, parentId: null, worktree: "", branch: "", link: "", dueDate: "", ...demoTicket(demoProject) }),
+    createDemo: async () => {
+      const created = await api.createTask(demoTicket(demoProject));
+      setCards((prev) => [...prev, created]);
+      setModalCard(null);
+    },
+    openCard: (card) => setModalCard(card),
+    closeDrawer: () => setModalCard(null),
+    openNewProject: () => { setModalCard(null); setNewProjectOpen(true); },
+    deleteCard,
+  };
 
   useEffect(() => {
     if (!deepLinked.current) return; // don't wipe ?task= before it has been read
@@ -525,8 +569,15 @@ export default function AgentBoard() {
 
         <div style={{ flex: 1 }} />
 
+        <button className="card-btn" onClick={startTour} title="Replay the first-visit tour" style={headerLinkStyle}>
+          <HelpCircle size={14} /> Tour
+        </button>
+        <a className="card-btn" href={guideUrl(workspace)} title="First ticket, step by step as text and commands" style={headerLinkStyle}>
+          <BookOpen size={14} /> Guide
+        </a>
         <button
           className="card-btn"
+          data-tour="new-task"
           onClick={() => openNew()}
           style={{
             display: "flex",
@@ -580,6 +631,7 @@ export default function AgentBoard() {
           ))}
         </div>
 
+        <span data-tour="project-filter" style={{ display: "inline-flex" }}>
         <ProjectFilterSelect
           value={projectFilter}
           projects={projects}
@@ -588,6 +640,7 @@ export default function AgentBoard() {
           onRename={renameProjectByName}
           onDelete={deleteProjectByName}
         />
+        </span>
         <FilterSelect
           light
           value={agentFilter}
@@ -625,6 +678,7 @@ export default function AgentBoard() {
           return (
             <div
               key={col.id}
+              data-tour="column"
               className="col-drop"
               onDragOver={(e) => {
                 e.preventDefault();
@@ -671,6 +725,7 @@ export default function AgentBoard() {
                 {colCards.map((c) => (
                   <div
                     key={c.id}
+                    data-tour-card={c.id}
                     draggable
                     onDragStart={() => setDragId(c.id)}
                     onDragEnd={() => setDragId(null)}
@@ -777,6 +832,18 @@ export default function AgentBoard() {
 
       {newProjectOpen && (
         <NewProjectDialog onClose={() => setNewProjectOpen(false)} onCreate={createProject} />
+      )}
+
+      {tourOpen && (
+        <Tour
+          cards={cards}
+          projects={projects}
+          workspace={workspace}
+          drawerOpen={modalCard ? modalCard.id || "new" : null}
+          dialogOpen={newProjectOpen}
+          onClose={closeTour}
+          actions={tourActions}
+        />
       )}
     </div>
   );
@@ -1320,6 +1387,7 @@ function NewProjectDialog({ onClose, onCreate }) {
     <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(15,16,20,0.32)" }} />
       <form
+        data-tour="project-dialog"
         onSubmit={submit}
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -1777,7 +1845,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
   const [notesDraft, setNotesDraft] = useState(card.notes || "");
   const notesRef = useRef(null);
   const [drawerWidth, setDrawerWidth] = useState(
-    () => Number(localStorage.getItem(DRAWER_WIDTH_KEY)) || 460
+    () => Number(readStore(DRAWER_WIDTH_KEY)) || 460
   );
   const [resizing, setResizing] = useState(false);
 
@@ -1802,7 +1870,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
       document.body.style.userSelect = "";
       setResizing(false);
       setDrawerWidth((w) => {
-        localStorage.setItem(DRAWER_WIDTH_KEY, String(w));
+        writeStore(DRAWER_WIDTH_KEY, String(w));
         return w;
       });
     }
@@ -1957,6 +2025,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
       )}
 
       <div
+        data-tour="drawer"
         onClick={(e) => e.stopPropagation()}
         style={{
           position: "absolute",
@@ -2100,6 +2169,8 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
               />
             </DetailRow>
           </div>
+
+          {card.id && <LaunchCommand card={card} />}
 
           <Field label="Description">
             {editingNotes ? (
@@ -2303,6 +2374,67 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
   );
 }
 
+// AB-29: copy a hand-off for an agent. Copy only — never starts a terminal.
+function LaunchCommand({ card }) {
+  const [target, setTarget] = useState(() => defaultLaunchTarget(card.agent));
+  const [copied, setCopied] = useState(false);
+  const [manual, setManual] = useState(false); // clipboard refused: show the text selected instead
+  const text = buildLaunchText({ card, target, workspace: api.getWorkspace(), boardUrl: window.location.origin });
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setManual(false);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setManual(true);
+    }
+  }
+
+  return (
+    <div data-tour="launch" style={{ border: "1px solid #E4E6EB", borderRadius: 8, padding: "10px 10px 8px", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#6B6F79", marginRight: "auto" }}>
+          <Terminal size={13} /> Hand off to
+        </span>
+        <Dropdown
+          value={target}
+          options={LAUNCH_TARGETS}
+          onChange={(v) => { setTarget(v); setManual(false); }}
+          menuAlign="right"
+          renderTrigger={({ onClick }) => (
+            <button type="button" onClick={onClick} style={{ display: "inline-flex", alignItems: "center", gap: 4, border: "1px solid #E4E6EB", background: "#fff", borderRadius: 6, padding: "5px 8px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", color: "#1D2027" }}>
+              {LAUNCH_TARGETS.find((t) => t.id === target).label} <ChevronDown size={12} />
+            </button>
+          )}
+        />
+        <button
+          type="button"
+          onClick={copy}
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, background: copied ? "#3DCC7B" : "#1D2027", color: "#fff", border: "none", borderRadius: 6, padding: "6px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copied" : "Copy launch command"}
+        </button>
+      </div>
+      {manual && <div style={{ fontSize: 11.5, color: "#E5484D", marginTop: 8 }}>The browser blocked the clipboard — the text below is selected, press ⌘C / Ctrl+C.</div>}
+      <details open={manual} style={{ marginTop: 6 }}>
+        <summary style={{ fontSize: 11.5, color: "#9599A3", cursor: "pointer" }}>
+          {LAUNCH_TARGETS.find((t) => t.id === target).cmd ? "Paste it in a terminal — preview" : "Paste it into any agent — preview"}
+        </summary>
+        <textarea
+          readOnly
+          value={text}
+          ref={(el) => { if (el && manual) { el.focus(); el.select(); } }}
+          onFocus={(e) => e.target.select()}
+          className="mono"
+          style={{ ...inputStyle, fontSize: 11, marginTop: 6, height: 120, resize: "vertical" }}
+        />
+      </details>
+    </div>
+  );
+}
+
 function DetailRow({ icon, label, children, last }) {
   return (
     <div
@@ -2349,6 +2481,12 @@ function Field({ label, children, style }) {
     </div>
   );
 }
+
+const headerLinkStyle = {
+  display: "flex", alignItems: "center", gap: 5, background: "transparent", color: "#C7CBD4",
+  border: "1px solid #3A3E48", borderRadius: 7, padding: "7px 10px", fontSize: 12.5, fontWeight: 600,
+  cursor: "pointer", textDecoration: "none", fontFamily: "inherit",
+};
 
 const inputStyle = {
   width: "100%",
