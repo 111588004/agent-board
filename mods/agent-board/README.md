@@ -57,6 +57,7 @@ Or try it for one session: `claude --plugin-dir mods/agent-board`.
 - `status`: on/off, server, workspace, the bound card with its last note, or why there is none and what to type; when the server cannot be reached, how long until the next try. It reads what the mod already knows and makes no request.
 - `link <ID>`: bind this session to a card, claim it, and write this session's directory and branch back into its `worktree`/`branch` so the next session finds it by itself.
 - `new "title"`: create a card (in progress, agent claude, this directory and branch) and bind to it.
+- `ask [on | new | off]`: show or change when the board asks you about unclear requests. This is the board's global setting, the same as `agent-board config ask` and the MCP `set_ask_mode` tool, not a per-session one: `on` asks every time, `new` asks only before creating a project, `off` never asks. In `new` and `off` the board picks and marks the card ⚠ unconfirmed.
 
 ## Failure behaviour
 

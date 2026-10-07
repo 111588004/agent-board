@@ -36,8 +36,8 @@ From any other terminal, on any project. (These commands assume `agent-board` is
 
 ```bash
 agent-board list [--project=] [--status=] [--parent=] [--workspace=]
-agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes sets the Description field
-agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--notes="..."] [--workspace=]   # --notes overwrites the Description field
+agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--remember-as=<word>] [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes sets the Description field
+agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--notes="..."] [--confirm] [--workspace=]   # --notes overwrites the Description field; --confirm clears "unconfirmed"
 agent-board delete <id> [--workspace=]
 agent-board note <id> "<text>" [--agent=<name>] [--workspace=]
 
@@ -47,23 +47,45 @@ agent-board workspace use <name>          # sets the default for every command a
 agent-board workspace rename <old> <new>
 agent-board workspace delete <name>
 
-agent-board project list
+agent-board project list                                   # shows remembered words too: "(also: ops)"
 agent-board project create <name> [--prefix=<prefix>] [--workspace=]   # no --prefix: prints suggestions and asks
 agent-board project rename <current-name> [--name=] [--prefix=] [--workspace=]
 agent-board project delete <name> [--workspace=]           # refuses if the project still has tasks
-agent-board config ask [on|off]                            # "ask the user" when a request is unclear (default on) — see below
+agent-board project forget <word> [--workspace=]           # undo a remembered answer (ops -> Operations); that word asks again
+agent-board config ask [on|new|off]                        # when the board asks you (default on) — see below
 agent-board mcp                                            # MCP over stdio — see MCP below
 ```
 
 The CLI is a REST client — it talks to the server above, it does not touch the database directly, and it requires the server to already be running (the one exception is `agent-board mcp`, below).
 
-**When the board can't tell what you meant, it asks instead of guessing.** Three cases: the project name matches several projects, the project doesn't exist in this workspace yet, or a ticket has no title. Creating a project without `--prefix` asks too, because the prefix is your call, not the agent's. The CLI prints the question and up to 4 options, each with the flags to rerun with, and exits with code `2`. MCP tools return the same question in a result that starts with `NEEDS USER INPUT`. The agent then asks you with its own built-in ask tool (Claude Code: AskUserQuestion, Codex CLI: request_user_input, Gemini CLI: ask_user; agents without one ask in chat) and calls the tool again with your answer. Picking "new project" from the options creates the project and the ticket in one call (`--new-project-prefix=` / `newProjectPrefix`). No match at all is not asked about, for example `list --project=nope`; you get an error that lists the existing projects. `agent-board config ask off` turns asking off for every workspace: those cases become plain errors that list the same options.
+**When the board can't tell what you meant, it asks instead of guessing.** Three cases: the project name matches several projects, the project doesn't exist in this workspace yet, or a ticket has no title. Creating a project without `--prefix` asks too, because the prefix is your call, not the agent's. The CLI prints the question and up to 4 options, each with the flags to rerun with, and exits with code `2`. MCP tools return the same question in a result that starts with `NEEDS USER INPUT`. The agent then asks you with its own built-in ask tool (Claude Code: AskUserQuestion, Codex CLI: request_user_input, Gemini CLI: ask_user, Antigravity CLI: its own question prompt; agents without one, like Pi, ask in chat) and calls the tool again with your answer. Picking "new project" from the options creates the project and the ticket in one call (`--new-project-prefix=` / `newProjectPrefix`). No match at all is not asked about, for example `list --project=nope`; you get an error that lists the existing projects.
+
+**Your answers are remembered.** Each option carries the word you used (`--remember-as=` / `rememberAs`). When you pick Operations for "ops", the board remembers that, so "ops" goes straight to Operations from then on. `project list` shows remembered words, and `project forget ops` undoes one. An exact project name always wins over a remembered word.
+
+**How much it asks is one global setting** (every workspace, every agent), kept by the server:
+
+| | several projects match / no title | project doesn't exist |
+|---|---|---|
+| `on` (default) | asks | asks |
+| `new` | the board picks, marks the ticket ⚠ unconfirmed | asks |
+| `off` | the board picks, marks the ticket ⚠ unconfirmed | error (never auto-created) |
+
+When the board picks, it takes the project with the most tickets (ties: the oldest), or uses the description's first line as the title. It writes why into the ticket's notes and sets its `unconfirmed` field. The web board shows a ⚠ Unconfirmed chip on the card and a Confirm button in the ticket drawer; `agent-board update <id> --confirm` does the same. A ticket can't move to another project, so if the pick was wrong, create it again in the right one. Creating a project without a prefix asks in `on`/`new` and is an error in `off`: the prefix is never picked for you.
+
+Three ways to change it, all the same setting:
+
+```bash
+agent-board config ask off     # CLI (npx: npx @limao.li.design/agent-board config ask off)
+```
+
+- MCP: tell your agent "turn off the board's questions". It calls the `set_ask_mode` tool, which agents are told to use only when you ask.
+- Claude Code mod: `/board-sync ask off`.
 
 **Workspaces** are fully isolated boards (own projects, own tasks, own SQLite file) for separating contexts — e.g. personal projects vs. a client's. Everything defaults to a single `"default"` workspace if you never touch this; it's opt-in.
 
 ## MCP
 
-9 tools: `list_tasks`, `create_task`, `update_task`, `delete_task`, `add_task_note`, `list_projects`, `create_project`, `rename_project`, `delete_project`.
+10 tools: `list_tasks`, `create_task`, `update_task`, `delete_task`, `add_task_note`, `list_projects`, `create_project`, `rename_project`, `delete_project`, `set_ask_mode`.
 
 **stdio (recommended)** — `agent-board mcp` speaks MCP over stdin/stdout, so a client can launch it with no global install:
 
