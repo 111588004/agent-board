@@ -51,7 +51,8 @@ async function ensureServer() {
   const child = spawn(process.execPath, [path.join(srcDir, "server.js")], {
     detached: true,
     stdio: ["ignore", fd, fd],
-    env: { ...process.env, PORT: url.port || "80" },
+    // the server binds 127.0.0.1 by default; a [::1] URL needs it on the IPv6 loopback instead
+    env: { ...process.env, PORT: url.port || "80", ...(url.hostname === "[::1]" ? { HOST: "::1" } : {}) },
   });
   child.unref();
   fs.closeSync(fd);

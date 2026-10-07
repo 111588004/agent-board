@@ -117,9 +117,17 @@ app.use(express.static(path.join(__dirname, "../web/dist")));
 // compared directly — no more "stop one to test the other." PORT still wins
 // if set explicitly.
 const PORT = process.env.PORT || (meta.source === "dev" ? 4316 : 4317);
-app.listen(PORT, () => {
-  console.log(`agent-board v${meta.version} (${meta.source}) listening on http://localhost:${PORT}`);
+// Loopback only by default. There is no authentication, so anything that can reach the port can
+// read, change and delete every board. HOST opts in to something wider (0.0.0.0 for a LAN), knowingly.
+const HOST = process.env.HOST || "127.0.0.1";
+const LOOPBACK = ["127.0.0.1", "::1", "localhost"];
+app.listen(PORT, HOST, () => {
+  const shown = HOST === "::1" ? "[::1]" : LOOPBACK.includes(HOST) ? "localhost" : HOST;
+  console.log(`agent-board v${meta.version} (${meta.source}) listening on http://${shown}:${PORT}`);
   console.log(`  root: ${meta.root}`);
+  if (!LOOPBACK.includes(HOST)) {
+    console.warn(`  WARNING: HOST=${HOST} — other machines on this network can read, change and delete your boards. There is no login.`);
+  }
 }).on("error", (e) => {
   // the port doubles as the "only one server" mutex (see mcp/stdio.js) —
   // losing it is an expected outcome, not a crash. getDb is lazy, so no DB

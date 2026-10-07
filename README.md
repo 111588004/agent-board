@@ -30,7 +30,7 @@ Start the server (foreground, keep it running in its own terminal):
 agent-board
 ```
 
-This serves the REST API and web UI at `http://localhost:4317`. First run seeds a starter "Agent Board" project with 3 example tickets, so there's something to click around before you create your own project — delete it whenever you're ready (`agent-board project delete "Agent Board"`).
+This serves the REST API and web UI at `http://localhost:4317`. The server listens on `127.0.0.1` only, so other devices on your network can't reach it. There is no login, so keep it that way: setting `HOST=0.0.0.0` exposes every board to anyone on the same network (it prints a warning when you do). First run seeds a starter "Agent Board" project with 3 example tickets, so there's something to click around before you create your own project — delete it whenever you're ready (`agent-board project delete "Agent Board"`).
 
 From any other terminal, on any project:
 
