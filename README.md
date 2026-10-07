@@ -101,7 +101,15 @@ claude mcp add --transport http agent-board http://localhost:4317/mcp
 
 ## Tracking work in another project
 
-Add a short section to that project's own `CLAUDE.md` (or equivalent agent-instructions file) telling agents to call the `agent-board` CLI to report status. A working template is in [`templates/CLAUDE.md.example`](templates/CLAUDE.md.example) — copy its "Task board" section in, swap in that project's board name, and create the matching project (`POST /api/projects` with a `name` and a `prefix`) before creating tasks for it.
+Add a short section to that project's own `CLAUDE.md` (or equivalent agent-instructions file) telling agents to call the `agent-board` CLI to report status. A working template is in [`templates/CLAUDE.md.example`](templates/CLAUDE.md.example) — copy its "Task board" section in, swap in that project's board name, and create the matching project (`agent-board project create "<name>" --prefix=<PREFIX>`) before creating tasks for it.
+
+Rules the template teaches agents for opening a ticket in one call:
+
+1. `project` is an existing project's name or prefix (case-insensitive, whitespace trimmed) — never a free-form phrase. An unknown project returns an error that lists the existing ones.
+2. Know the project? Create the ticket directly; no `list` first.
+3. `status`: `backlog` `in_progress` `review` `done`; `priority`: `low` `med` `high`. Aliases such as `doing`/`wip`/`進行中`/`urgent`/`高` are accepted and stored as the standard value; anything else is a 400 listing the allowed values.
+4. Description goes in `notes`; set `agent` to your own id.
+5. MCP clients get these rules automatically as the server's `instructions`.
 
 ## Data
 

@@ -29,7 +29,7 @@ async function run(fn) {
     if (e.status === undefined) {
       console.error("agent-board: can't reach the server — is it running? (agent-board, no args, in another terminal)");
     } else {
-      console.error(`agent-board: ${e.status} ${e.message}`);
+      console.error(`agent-board: ${e.status} ${client.errorWithHint(e, "cli")}`);
     }
     process.exit(1);
   }

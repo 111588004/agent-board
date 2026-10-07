@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { createTask, appendNote } from "../db.js";
+import { normalizeEnum, resolveProject } from "../normalize.js";
 
 const router = Router();
 
@@ -7,8 +8,16 @@ router.get("/", (req, res) => {
   const { project, status, parentId } = req.query;
   const clauses = [];
   const params = [];
-  if (project) { clauses.push("project = ?"); params.push(project); }
-  if (status) { clauses.push("status = ?"); params.push(status); }
+  if (project) {
+    const r = resolveProject(req.db, project);
+    if (r.body) return res.status(r.status).json(r.body);
+    clauses.push("project = ?"); params.push(r.project.name);
+  }
+  if (status) {
+    const n = normalizeEnum("status", status);
+    if (n.error) return res.status(400).json({ error: n.error });
+    clauses.push("status = ?"); params.push(n.value);
+  }
   if (parentId) { clauses.push("parentId = ?"); params.push(parentId); }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   res.json(req.db.prepare(`SELECT * FROM tasks ${where} ORDER BY createdAt`).all(...params));
@@ -19,18 +28,24 @@ router.post("/", (req, res) => {
   if (!title || !project) {
     return res.status(400).json({ error: "title and project are required" });
   }
-  const projectRow = req.db.prepare("SELECT * FROM projects WHERE name = ?").get(project);
-  if (!projectRow) {
-    return res.status(404).json({ error: `unknown project "${project}" — create it first via POST /api/projects` });
+  const resolved = resolveProject(req.db, project);
+  if (resolved.body) return res.status(resolved.status).json(resolved.body);
+  const projectRow = resolved.project;
+  const norm = {};
+  for (const [field, v] of [["priority", priority], ["status", status]]) {
+    if (!v) continue;
+    const n = normalizeEnum(field, v);
+    if (n.error) return res.status(400).json({ error: n.error });
+    norm[field] = n.value;
   }
   const row = createTask(req.db, {
     title,
-    project,
+    project: projectRow.name,
     projectPrefix: projectRow.prefix,
     parentId: parentId || null,
     agent: agent || null,
-    priority: priority || "med",
-    status: status || "backlog",
+    priority: norm.priority || "med",
+    status: norm.status || "backlog",
     notes: notes || null,
     worktree: worktree || null,
     branch: branch || null,
@@ -56,6 +71,14 @@ const TRACKED_FIELDS = ["status", "agent", "priority"];
 router.patch("/:id", (req, res) => {
   const existing = req.db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
   if (!existing) return res.status(404).json({ error: "task not found" });
+
+  for (const field of ["status", "priority"]) {
+    if (req.body[field] === undefined) continue;
+    const n = normalizeEnum(field, req.body[field]);
+    if (n.error) return res.status(400).json({ error: n.error });
+    req.body[field] = n.value;
+  }
+  // `project` in a PATCH body is ignored (the web UI sends the whole card); tasks can't move projects.
 
   const sets = [];
   const params = [];

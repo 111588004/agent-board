@@ -2,8 +2,10 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as client from "../client.js";
 
-const STATUS = ["backlog", "in_progress", "review", "done"];
-const PRIORITY = ["low", "med", "high"];
+// plain strings, not enums: the server normalizes aliases (進行中, wip, 高, p0...) and rejects unknowns with the allowed list
+const STATUS_DESC = "backlog | in_progress | review | done (aliases ok: todo, doing, wip, 待辦, 進行中, 審查, 完成)";
+const PRIORITY_DESC = "low | med | high (aliases ok: urgent, p0, 高, 中, 低)";
+const PROJECT_DESC = "Project name or prefix as shown by list_projects (case-insensitive) — not a free-form phrase";
 const WORKSPACE_DESC = "Board workspace to use — omit to use the CLI's current workspace (agent-board workspace use) or \"default\"";
 
 function json(value) {
@@ -11,14 +13,23 @@ function json(value) {
 }
 
 function toolError(e) {
-  return { content: [{ type: "text", text: `error: ${e.message}` }], isError: true };
+  return { content: [{ type: "text", text: `error: ${client.errorWithHint(e, "mcp")}` }], isError: true };
 }
 
 // a fresh McpServer per HTTP request (see server.js — stateless transport
 // mode), so this is a plain factory rather than a module-level singleton.
 // `notice` (stdio mode only — see mcp/stdio.js) is prepended to the first
 // tool result, the one place the user reliably sees it; HTTP passes nothing.
-export function createMcpServer({ instructions, notice } = {}) {
+export const INSTRUCTIONS = [
+  "Opening a ticket: create_task once is enough — don't list_tasks first.",
+  "project = a name or prefix exactly as list_projects shows it (case-insensitive). Only call list_projects if you don't know which project; never use a free-form phrase as the project.",
+  "status: backlog | in_progress | review | done (aliases: todo, doing, wip, 進行中, 待辦, 審查, 完成...). priority: low | med | high (aliases: urgent, p0, 高, 中, 低...).",
+  "Put the description in notes; set agent to your own id (claude, codex, gemini, ...).",
+  "Unknown project -> the error lists existing ones; retry with one of them, or create_project if it is genuinely new.",
+].join("\n");
+
+export function createMcpServer({ notice } = {}) {
+  const instructions = notice ? `${INSTRUCTIONS}\n\n${notice}` : INSTRUCTIONS;
   const server = new McpServer({ name: "agent-board", version: "0.1.0" }, { instructions });
   const tool = (name, def, handler) =>
     server.registerTool(name, def, async (args) => {
@@ -35,8 +46,8 @@ export function createMcpServer({ instructions, notice } = {}) {
     {
       description: "List tasks on the board. Always call this fresh before acting — the board can change between turns.",
       inputSchema: {
-        project: z.string().optional().describe("Filter to one project's tasks"),
-        status: z.enum(STATUS).optional(),
+        project: z.string().optional().describe(`Filter to one project's tasks. ${PROJECT_DESC}`),
+        status: z.string().optional().describe(STATUS_DESC),
         parentId: z.string().optional().describe("Ticket id of a parent task, to list its subtasks"),
         workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
@@ -53,13 +64,13 @@ export function createMcpServer({ instructions, notice } = {}) {
   tool(
     "create_task",
     {
-      description: "Create a new task on the board (or a subtask, if parentId is given). The project must already exist.",
+      description: "Create a new task on the board (or a subtask, if parentId is given). The project must already exist (see list_projects); one call is enough.",
       inputSchema: {
         title: z.string(),
-        project: z.string(),
+        project: z.string().describe(PROJECT_DESC),
         agent: z.string().optional().describe("Your agent id, e.g. claude, codex, opencode, gemini, pi — omit to leave unassigned"),
-        priority: z.enum(PRIORITY).optional().describe("Defaults to \"med\""),
-        status: z.enum(STATUS).optional().describe("Defaults to \"backlog\""),
+        priority: z.string().optional().describe(`${PRIORITY_DESC}. Defaults to med`),
+        status: z.string().optional().describe(`${STATUS_DESC}. Defaults to backlog`),
         parentId: z.string().optional().describe("Ticket id of the parent task, to create this as a subtask"),
         dueDate: z.string().optional().describe("ISO date, e.g. 2026-03-05"),
         worktree: z.string().optional().describe("Filesystem path of the git worktree this task is being worked in"),
@@ -86,8 +97,8 @@ export function createMcpServer({ instructions, notice } = {}) {
       description: "Update one or more fields on an existing task. Only the fields you pass are changed — omit the rest. Passing notes overwrites the whole description; use add_task_note to append instead.",
       inputSchema: {
         taskId: z.string(),
-        status: z.enum(STATUS).optional(),
-        priority: z.enum(PRIORITY).optional(),
+        status: z.string().optional().describe(STATUS_DESC),
+        priority: z.string().optional().describe(PRIORITY_DESC),
         agent: z.string().optional().describe("Your agent id, e.g. claude, codex, opencode, gemini, pi"),
         title: z.string().optional(),
         worktree: z.string().optional().describe("Filesystem path of the git worktree this task is being worked in"),
