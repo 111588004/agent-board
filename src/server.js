@@ -6,7 +6,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import tasksRouter from "./routes/tasks.js";
 import projectsRouter from "./routes/projects.js";
 import { createMcpServer } from "./mcp/tools.js";
-import { getDb, listWorkspaces, createWorkspace, deleteWorkspace, renameWorkspace } from "./db.js";
+import { getDb, listWorkspaces, createWorkspace, deleteWorkspace, renameWorkspace, getConfig, setConfig, ASK_MODES } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -29,6 +29,17 @@ app.use(express.json());
 
 app.get("/api/meta", (req, res) => {
   res.json(meta);
+});
+
+// global settings — the same for every workspace; the /api/w/:workspace form is
+// accepted too because some clients (the Claude Code mod) only know a workspace base URL
+app.get(["/api/config", "/api/w/:workspace/config"], (req, res) => res.json(getConfig()));
+app.put(["/api/config", "/api/w/:workspace/config"], (req, res) => {
+  const { ask } = req.body || {};
+  if (ask !== undefined && !ASK_MODES.includes(ask)) {
+    return res.status(400).json({ error: `invalid ask "${ask}" — allowed: ${ASK_MODES.join(", ")}` });
+  }
+  res.json(setConfig(ask === undefined ? {} : { ask }));
 });
 
 app.get("/api/workspaces", (req, res) => {

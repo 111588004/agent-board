@@ -34,7 +34,7 @@ If this project's board isn't the default one (ask whoever set up the board if u
 2. Know the project? Just run `create` — don't `list` first just to open a ticket.
 3. Status: `backlog` `in_progress` `review` `done`; priority: `low` `med` `high`. Common aliases (`doing`, `wip`, `進行中`, `urgent`, `高`) are accepted and stored as the standard value.
 4. Put the description in `--notes="..."`; always pass your own `--agent=`.
-5. Exit code `2` / `needs your input` means the board can't tell what the user wants (several projects match, the project doesn't exist yet, no title). Ask the user that question with your built-in ask tool (AskUserQuestion / request_user_input / ask_user; none -> ask in chat), offering the printed options, then rerun with the flags of the one they chose. Never pick an option yourself, and never invent a project prefix.
+5. Exit code `2` / `needs your input` means the board can't tell what the user wants (several projects match, the project doesn't exist yet, no title). Ask the user that question with your built-in ask tool (AskUserQuestion / request_user_input / ask_user; none -> ask in chat), offering the printed options, then rerun with all the flags of the one they chose (including `--remember-as`, so the board learns what they meant). Never pick an option yourself, and never invent a project prefix. Don't change `agent-board config ask` unless the user tells you to.
 
 **When to call it:**
 - At the start of a coding task: `list` first for an existing open ticket matching the work; if none exists, `create` one and set it `in_progress`.

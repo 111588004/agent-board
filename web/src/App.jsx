@@ -778,6 +778,11 @@ export default function AgentBoard() {
                         }}
                         title={priorityMeta(c.priority).label}
                       />
+                      {c.unconfirmed && (
+                        <span title={`The board picked this for you: ${c.unconfirmed}`}>
+                          <Chip label="⚠ Unconfirmed" color="#B7791F" />
+                        </span>
+                      )}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 7, marginLeft: 19, color: "#9599A3" }}>
                       <Clock size={10.5} />
@@ -2065,6 +2070,21 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px" }}>
+          {/* ask mode new/off: the board decided something the user would otherwise have been asked */}
+          {card.id && form.unconfirmed && (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: "#FFF8E6", border: "1px solid #F3D58C", borderRadius: 8, padding: "9px 11px", marginBottom: 14, fontSize: 12.5, color: "#7A5300" }}>
+              <span style={{ flex: 1, lineHeight: 1.45 }}>
+                <b>⚠ The board picked this for you:</b> {form.unconfirmed}. A wrong project can't be changed — create the ticket again in the right one.
+              </span>
+              <button
+                className="card-btn"
+                onClick={() => { setForm((f) => ({ ...f, unconfirmed: null })); onSave({ id: card.id, unconfirmed: null }); }}
+                style={{ flexShrink: 0, border: "1px solid #E0B653", background: "#fff", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 600, color: "#7A5300", cursor: "pointer" }}
+              >
+                Confirm
+              </button>
+            </div>
+          )}
           <input
             autoFocus
             className="drawer-title"

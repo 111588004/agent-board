@@ -79,7 +79,7 @@ test("unknown project on create: asks — existing project or new one with a pre
   assert.equal(r.status, 422);
   assert.equal(r.body.code, "needs_input");
   assert.ok(r.body.options.length >= 2 && r.body.options.length <= 4);
-  assert.deepEqual(r.body.options[0].args, { project: "發表會" }); // name contains it -> offered first
+  assert.deepEqual(r.body.options[0].args, { project: "發表會", rememberAs: "準備發表會" }); // name contains it -> offered first
   const fresh = r.body.options.find((o) => o.args.newProjectPrefix);
   assert.ok(fresh, "a new-project option");
   assert.ok(!r.body.error.includes("POST /api/projects"));
@@ -189,7 +189,7 @@ test("MCP: instructions always present with key rules", async () => {
   const r = await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "t", version: "0" } });
   const text = r.instructions;
   assert.ok(text, "instructions missing");
-  assert.ok(text.split("\n").filter(Boolean).length <= 7);
+  assert.ok(text.split("\n").filter(Boolean).length <= 8);
   for (const kw of ["create_task", "list_projects", "in_progress", "notes", "agent", "NEEDS USER INPUT", "AskUserQuestion", "request_user_input", "ask_user"]) {
     assert.ok(text.includes(kw), kw);
   }
@@ -215,17 +215,69 @@ test("MCP: aliases pass the schema; unknown project -> NEEDS USER INPUT, answer 
   assert.equal(JSON.parse(done.content[0].text).projectPrefix, pick.args.newProjectPrefix);
 });
 
-test("MCP: create_project without prefix asks; ask off -> plain error with the options", async () => {
+const setAsk = (ask) => api("PUT", "/api/config", { ask });
+
+test("MCP: create_project without prefix asks; set_ask_mode changes the global setting", async () => {
   const ask = await rpc("tools/call", { name: "create_project", arguments: { workspace: "t", name: "Mobile" } });
   assert.match(ask.content[0].text, /^NEEDS USER INPUT/);
   assert.match(ask.content[0].text, /"prefix"/);
-  fs.writeFileSync(path.join(dir, "ask"), "off\n");
   try {
+    const set = await rpc("tools/call", { name: "set_ask_mode", arguments: { mode: "off" } });
+    assert.equal(JSON.parse(set.content[0].text).ask, "off");
+    assert.equal((await api("GET", "/api/w/t/config")).body.ask, "off"); // workspace-prefixed path too (the mod uses it)
     const bad = await rpc("tools/call", { name: "create_project", arguments: { workspace: "t", name: "Mobile" } });
     assert.ok(bad.isError);
-    assert.match(bad.content[0].text, /needs input: .*Options: 1\) MO/);
+    assert.match(bad.content[0].text, /prefix is required.*e\.g\. MO/);
   } finally {
-    fs.rmSync(path.join(dir, "ask"));
+    await setAsk("on");
+  }
+  assert.equal((await setAsk("maybe")).status, 400);
+});
+
+test("an answer is remembered: the same word resolves next time; forget undoes it", async () => {
+  await api("POST", "/api/workspaces", { name: "mem" });
+  await api("POST", "/api/w/mem/projects", { name: "OPS", prefix: "OP" });
+  await api("POST", "/api/w/mem/projects", { name: "Operations", prefix: "OPS" });
+  const q = await create({ project: "ops" }, "mem");
+  const pick = q.body.options.find((o) => o.args.project === "Operations");
+  assert.equal(pick.args.rememberAs, "ops");
+  const ok = await create({ project: "ops", ...pick.args }, "mem");
+  assert.equal(ok.status, 201);
+  assert.match(ok.body.notes, /remembered "ops" → Operations/);
+  const again = await create({ project: " Ops " }, "mem"); // trimmed + case-insensitive, but not the exact name "OPS"
+  assert.equal(again.status, 201);
+  assert.equal(again.body.project, "Operations");
+  assert.equal((await create({ project: "OPS" }, "mem")).body.project, "OPS"); // an exact name still wins
+  assert.deepEqual((await api("GET", "/api/w/mem/projects")).body.find((p) => p.name === "Operations").aliases, ["ops"]);
+  assert.equal((await api("DELETE", "/api/w/mem/projects/aliases/OPS")).status, 204);
+  assert.equal((await create({ project: "ops" }, "mem")).status, 422);
+});
+
+test("ask new/off: the board picks the busiest project and marks the ticket unconfirmed", async () => {
+  await api("POST", "/api/workspaces", { name: "auto" });
+  await api("POST", "/api/w/auto/projects", { name: "OPS", prefix: "OP" });
+  await api("POST", "/api/w/auto/projects", { name: "Operations", prefix: "OPS" });
+  await create({ project: "Operations" }, "auto");
+  try {
+    await setAsk("new");
+    const r = await create({ project: "ops", agent: "codex" }, "auto");
+    assert.equal(r.status, 201);
+    assert.equal(r.body.project, "Operations"); // 1 ticket vs 0
+    assert.match(r.body.unconfirmed, /matched OPS, Operations; picked Operations/);
+    assert.match(r.body.notes, /⚠ unconfirmed/);
+    const t = await create({ project: "Operations", title: "", notes: "## Renew domain\nbody" }, "auto");
+    assert.equal(t.body.title, "Renew domain");
+    assert.match(t.body.unconfirmed, /first line/);
+    assert.equal((await create({ project: "Brand New" }, "auto")).status, 422); // new project: still asks (D15)
+    const cleared = await api("PATCH", `/api/w/auto/tasks/${r.body.id}`, { unconfirmed: null });
+    assert.equal(cleared.body.unconfirmed, null);
+
+    await setAsk("off");
+    assert.equal((await create({ project: "ops" }, "auto")).body.project, "Operations");
+    assert.equal((await create({ project: "Brand New" }, "auto")).status, 404); // never auto-created
+    assert.equal((await api("POST", "/api/w/auto/projects", { name: "Brand New" })).status, 400);
+  } finally {
+    await setAsk("on");
   }
 });
 
@@ -240,22 +292,23 @@ function cli(...argv) {
   });
 }
 
-test("CLI: prints the same question + rerun flags, exits 2; ask off -> exit 1", async () => {
+test("CLI: prints the same question + rerun flags, exits 2; config ask off -> plain error, exit 1", async () => {
   const r = await cli("create", "--project=準備發表會");
   assert.equal(r.code, 2);
   assert.match(r.err, /needs your input — This workspace has no project "準備發表會"/);
-  assert.match(r.err, /rerun with: --project="發表會"/);
+  assert.match(r.err, /rerun with: --project="發表會" --remember-as="準備發表會"/);
   assert.match(r.err, /--new-project-prefix="PRJ"/);
   const t = await cli("create", "--project=bm");
   assert.equal(t.code, 2);
   assert.match(t.err, /--title="\.\.\."/);
-  fs.writeFileSync(path.join(dir, "ask"), "off\n");
   try {
+    const set = await cli("config", "ask", "off");
+    assert.equal(set.code, 0);
     const off = await cli("project", "create", "Tablet");
     assert.equal(off.code, 1);
-    assert.match(off.err, /needs input: Which ticket prefix/);
+    assert.match(off.err, /prefix is required/);
   } finally {
-    fs.rmSync(path.join(dir, "ask"));
+    await setAsk("on");
   }
 });
 

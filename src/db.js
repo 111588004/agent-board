@@ -79,7 +79,37 @@ function initSchema(db) {
       createdAt INTEGER,
       updatedAt INTEGER
     );
+
+    -- what the user meant by a word, learned from their answer to a needs_input
+    -- question ("ops" -> Operations); alias is stored lowercased + trimmed
+    CREATE TABLE IF NOT EXISTS project_aliases (
+      alias TEXT PRIMARY KEY,
+      project TEXT NOT NULL
+    );
   `);
+  // added after release: why the board picked for the user (ask mode new/off) — the card shows it until confirmed
+  if (!db.prepare("PRAGMA table_info(tasks)").all().some((c) => c.name === "unconfirmed")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN unconfirmed TEXT");
+  }
+}
+
+// global settings (every workspace), next to the workspaces dir. Read on every
+// request so a change from any client applies at once. ask: on | new | off.
+const configFile = path.join(baseDir, "config.json");
+export const ASK_MODES = ["on", "new", "off"];
+
+export function getConfig() {
+  try {
+    return { ask: "on", ...JSON.parse(fs.readFileSync(configFile, "utf8")) };
+  } catch {
+    return { ask: "on" };
+  }
+}
+
+export function setConfig(patch) {
+  const next = { ...getConfig(), ...patch };
+  fs.writeFileSync(configFile, JSON.stringify(next, null, 2) + "\n");
+  return next;
 }
 
 const connections = new Map();
@@ -265,9 +295,9 @@ export function createTask(db, task) {
     const id = `${task.projectPrefix}-${next}`;
     const now = Date.now();
     db.prepare(
-      `INSERT INTO tasks (id, seq, title, project, projectPrefix, parentId, agent, priority, status, notes, worktree, branch, link, dueDate, createdAt, updatedAt)
-       VALUES (@id, @seq, @title, @project, @projectPrefix, @parentId, @agent, @priority, @status, @notes, @worktree, @branch, @link, @dueDate, @createdAt, @updatedAt)`
-    ).run({ ...task, id, seq: next, createdAt: now, updatedAt: now });
+      `INSERT INTO tasks (id, seq, title, project, projectPrefix, parentId, agent, priority, status, notes, worktree, branch, link, dueDate, unconfirmed, createdAt, updatedAt)
+       VALUES (@id, @seq, @title, @project, @projectPrefix, @parentId, @agent, @priority, @status, @notes, @worktree, @branch, @link, @dueDate, @unconfirmed, @createdAt, @updatedAt)`
+    ).run({ unconfirmed: null, ...task, id, seq: next, createdAt: now, updatedAt: now });
     return db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
   })(task);
 }

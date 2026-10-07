@@ -179,7 +179,21 @@ async function boardSync($: any, options: PluginOptions, args: string): Promise<
     await remember($, card)
     return `Created ${card.id}`
   }
-  return 'Usage: /board-sync on | off | status | link <ID> | new "title"'
+  if (sub === 'ask') {
+    // the board's global "ask the user" setting (same as `agent-board config ask`), not this plugin's
+    const mode = arg.toLowerCase()
+    if (mode && !['on', 'new', 'off'].includes(mode)) return 'Usage: /board-sync ask [on | new | off]'
+    const config = await call(deps, mode ? 'PUT' : 'GET', '/config', mode ? { ask: mode } : undefined)
+    if (!config) return 'Agent Board is not reachable'
+    return `Agent Board asks: ${config.ask} (${ASK_HELP[config.ask as string] ?? ''})`
+  }
+  return 'Usage: /board-sync on | off | status | link <ID> | new "title" | ask [on|new|off]'
+}
+
+const ASK_HELP: Record<string, string> = {
+  on: 'unclear requests ask you',
+  new: 'only new projects ask; otherwise the board picks and marks the card unconfirmed',
+  off: 'never asks; the board picks and marks the card unconfirmed',
 }
 
 // D20: the always-on line. Everything it shows comes from $.state (written by the hooks above), never
@@ -210,7 +224,7 @@ export const register: Register = (on, options) => {
   // D3: the mod is an extra, so every hook swallows its own errors and always continues the chain.
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'board-sync', description: 'Agent Board progress reporting', argumentHint: '[on|off|status|link <ID>|new "title"]' })
+      await $.command.register({ name: 'board-sync', description: 'Agent Board progress reporting', argumentHint: '[on|off|status|link <ID>|new "title"|ask on|new|off]' })
       const { isOn, deps } = await settings($, options)
       if (isOn) await autoBind($, deps)
     } catch {}

@@ -53,31 +53,45 @@ export function suggestPrefixes(name, projects, n) {
   return [...new Set(candidates)].filter((c) => c && !taken.has(c)).slice(0, n);
 }
 
-// -> { project } (row) or { status, body }. Never guesses: an exact name wins,
-// otherwise name-ignoring-case and prefix must point at exactly one project.
-// `offerNew` (creating a task): an unknown project asks — existing project, or
-// a new one with a prefix the user picks — instead of a plain 404.
-export function resolveProject(db, input, { offerNew = false } = {}) {
+// -> { project, picked? } or { status, body }. An exact name wins, then a word
+// the user already answered for (project_aliases), then name-ignoring-case and
+// prefix, which must point at exactly one project. When they don't:
+// - ask "on": needs_input — every option carries rememberAs, so the user's
+//   answer is learned and the same word won't be asked again
+// - ask "new"/"off": pick the busiest candidate (ties: oldest) and return
+//   `picked` (why) for the caller to flag the ticket as unconfirmed
+// `offerNew` (creating a task) and no match: ask "on"/"new" asks — existing
+// project, or a new one with a prefix the user picks (D15: never auto-created);
+// "off" and reads get a plain 404 listing the projects.
+export function resolveProject(db, input, { offerNew = false, ask = "on" } = {}) {
   const projects = db.prepare("SELECT * FROM projects ORDER BY createdAt").all();
   const s = String(input ?? "").trim();
   const lower = s.toLowerCase();
   const exact = projects.filter((p) => p.name === s);
   if (exact.length === 1) return { project: exact[0] };
+  const alias = db.prepare("SELECT project FROM project_aliases WHERE alias = ?").get(lower);
+  const aliased = alias && projects.find((p) => p.name === alias.project);
+  if (aliased) return { project: aliased };
   const hits = projects.filter((p) => p.name.toLowerCase() === lower || p.prefix.toLowerCase() === lower);
   if (hits.length === 1) return { project: hits[0] };
   if (hits.length > 1) {
+    if (ask !== "on") {
+      const count = db.prepare("SELECT COUNT(*) AS n FROM tasks WHERE project = ?");
+      const best = hits.reduce((a, b) => (count.get(b.name).n > count.get(a.name).n ? b : a)); // hits are oldest-first, so ties keep the oldest
+      return { project: best, picked: `"${s}" matched ${hits.map((p) => p.name).join(", ")}; picked ${best.name} (most tickets)` };
+    }
     return needsInput(
       `"${s}" matches ${hits.length} projects in this workspace — which one?`,
-      hits.map((p) => ({ label: p.name, description: `project "${p.name}", tickets ${p.prefix}-N`, args: { project: p.name } })),
+      hits.map((p) => ({ label: p.name, description: `project "${p.name}", tickets ${p.prefix}-N`, args: { project: p.name, rememberAs: s } })),
       "project"
     );
   }
-  if (offerNew && s) {
+  if (offerNew && s && ask !== "off") {
     const near = projects.filter((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase()));
     const options = (near.length ? near : projects).slice(0, 2).map((p) => ({
       label: `Use ${p.name}`,
       description: `existing project, tickets ${p.prefix}-N`,
-      args: { project: p.name },
+      args: { project: p.name, rememberAs: s },
     }));
     for (const prefix of suggestPrefixes(s, projects, Math.min(3, 4 - options.length))) {
       options.push({
