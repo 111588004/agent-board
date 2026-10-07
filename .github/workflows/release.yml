@@ -29,17 +29,20 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm provenance
+      id-token: write # npm Trusted Publishing + provenance
     steps:
       - uses: actions/checkout@v7
-      # no dependency cache here on purpose: a poisoned cache must not reach a published package
+      # no dependency cache here on purpose: a poisoned cache must not reach a published package.
+      # Node 24 ships npm 11, which tries npm Trusted Publishing (OIDC, no token) first and only
+      # falls back to NPM_TOKEN if no trusted publisher is set up for release.yml on npmjs.com.
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
       - run: npm ci
       - run: cd web && npm ci && npm run build
       - run: npm pack --dry-run --json | node scripts/check-pack.js
-      - run: npm publish --access public --provenance
-        env:
+      - run: npm --version && npm publish --access public --provenance
+        env: # empty when the secret isn't set; fine with Trusted Publishing
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
