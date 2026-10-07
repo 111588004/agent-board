@@ -54,7 +54,7 @@ resize() { tmux -L $SOCK resize-window -t qa -x "$1" -y 36; sleep 1.5; }
 launch() { # launch <1: wait for the band | 0: wait a fixed time, no band expected>
   tmux -L $SOCK kill-server 2>/dev/null
   local settings=""; [ -n "${THEME:-}" ] && settings="--settings '{\"theme\":\"$THEME\"}'"
-  tmux -L $SOCK new-session -d -s qa -x 200 -y 36 "cd '$TRIAL_REPO' && env AGENT_BOARD_URL=$URL AGENT_BOARD_DIR='$DB' DISABLE_AUTOUPDATER=1 ${ENGINE_ENV:-} '$CLAUDE_BIN' --plugin-dir '$MOD' --strict-mcp-config $settings"
+  tmux -L $SOCK new-session -d -s qa -x 200 -y 36 "cd '$TRIAL_REPO' && env AGENT_BOARD_URL=$URL DISABLE_AUTOUPDATER=1 ${ENGINE_ENV:-} '$CLAUDE_BIN' --plugin-dir '$MOD' --strict-mcp-config $settings"
   for i in $(seq 60); do cap | grep -q '❯' && break; sleep 0.5; done
   if [ "$1" = 1 ]; then for i in $(seq 40); do cap | grep -q '^▌' && break; sleep 0.5; done; else sleep 10; fi
   sleep 1
@@ -111,11 +111,11 @@ launch 1; widths none
 resize 120; send "/board-sync status"; grep_screen "status explains none" "no open card matches"
 echo "== 7 several cards (two with the same branch)"
 A=$(mk "first card" '{"branch":"feat/try-mod"}'); B=$(mk "second card" '{"branch":"feat/try-mod"}')
-echo 'off' >"$DB/ask"   # agent-board config ask off: no dialog, the band lists them
+api PUT /config '{"ask":"off"}' >/dev/null   # the board's ask mode off: no dialog, the band lists them
 launch 1; widths many
 resize 120; send "/board-sync status"; grep_screen "status lists both ids" "cards match: $A $B"
 echo "== 7b several cards, asking on: a dialog at start; Esc binds nothing"
-rm -f "$DB/ask"
+api PUT /config '{"ask":"on"}' >/dev/null
 launch 0; grep_screen "dialog asks which card" "cards match this branch. Which one"; grep_screen "dialog offers None of these" "None of these"
 tmux -L $SOCK send-keys -t qa Escape; sleep 2; verify many 200
 api GET /tasks | jq -e '[.[] | select(.branch=="feat/try-mod" and .agent != null)] | length == 0' >/dev/null \

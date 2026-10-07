@@ -26,7 +26,7 @@ async function run(fn) {
   try {
     return await fn();
   } catch (e) {
-    if (e.code === "needs_input" && client.askEnabled()) {
+    if (e.code === "needs_input") {
       printQuestion(e);
       process.exit(2);
     }
@@ -76,7 +76,7 @@ switch (cmd) {
   case "create": {
     if (!flags.project) {
       console.error(
-        'usage: agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--parent=<id>] [--agent=<name>] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=<path>] [--branch=<name>] [--link=<url>] [--notes="..."] [--workspace=<name>]\n  (--notes sets the Description field)'
+        'usage: agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--remember-as=<word>] [--parent=<id>] [--agent=<name>] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=<path>] [--branch=<name>] [--link=<url>] [--notes="..."] [--workspace=<name>]\n  (--notes sets the Description field)'
       );
       process.exit(1);
     }
@@ -85,6 +85,7 @@ switch (cmd) {
         title: flags.title,
         project: flags.project,
         newProjectPrefix: flags["new-project-prefix"],
+        rememberAs: flags["remember-as"],
         parentId: flags.parent,
         agent: flags.agent,
         priority: flags.priority,
@@ -105,7 +106,7 @@ switch (cmd) {
     const id = positional[0];
     if (!id) {
       console.error(
-        "usage: agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=<name>] [--title=] [--worktree=] [--branch=] [--link=<url>] [--due-date=<YYYY-MM-DD>] [--notes=\"...\"] [--workspace=<name>]\n  (--notes overwrites the Description field)"
+        "usage: agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=<name>] [--title=] [--worktree=] [--branch=] [--link=<url>] [--due-date=<YYYY-MM-DD>] [--notes=\"...\"] [--confirm] [--workspace=<name>]\n  (--notes overwrites the Description field; --confirm clears an \"unconfirmed\" mark)"
       );
       process.exit(1);
     }
@@ -114,6 +115,7 @@ switch (cmd) {
       if (flags[key] !== undefined) body[key] = flags[key];
     }
     if (flags["due-date"] !== undefined) body.dueDate = flags["due-date"];
+    if (positional.includes("--confirm")) body.unconfirmed = null; // clears the board's "unconfirmed" mark
     const task = await run(() => client.updateTask(id, body));
     console.log(`updated ${task.id}`);
     break;
@@ -201,7 +203,7 @@ switch (cmd) {
     if (sub === "list") {
       const projects = await run(() => client.listProjects({ workspace: flags.workspace }));
       if (!projects.length) console.log("(no projects)");
-      for (const p of projects) console.log(`${p.prefix}  ${p.name}`);
+      for (const p of projects) console.log(`${p.prefix}  ${p.name}${p.aliases?.length ? `  (also: ${p.aliases.join(", ")})` : ""}`);
       break;
     }
     if (sub === "create") {
@@ -236,22 +238,36 @@ switch (cmd) {
       console.log(`deleted project ${name}`);
       break;
     }
-    console.error("usage: agent-board project <list|create|rename|delete> ...");
+    if (sub === "forget") {
+      const alias = positional[1];
+      if (!alias) {
+        console.error("usage: agent-board project forget <word> [--workspace=<name>]  (undo a remembered answer, e.g. ops -> Operations)");
+        process.exit(1);
+      }
+      await run(() => client.forgetAlias(alias, { workspace: flags.workspace }));
+      console.log(`forgot ${alias}`);
+      break;
+    }
+    console.error("usage: agent-board project <list|create|rename|delete|forget> ...");
     process.exit(1);
   }
 
   case "config": {
     const [key, value] = positional;
-    if (key === "ask" && (value === "on" || value === "off")) {
-      client.setAsk(value === "on");
-      console.log(`ask ${value}`);
+    if (key === "ask" && value !== undefined) {
+      const c = await run(() => client.setConfig({ ask: value }));
+      console.log(`ask ${c.ask}`);
       break;
     }
-    if (key === undefined || (key === "ask" && value === undefined)) {
-      console.log(`ask ${client.askEnabled() ? "on" : "off"}`);
+    if (key === undefined || key === "ask") {
+      const c = await run(() => client.getConfig());
+      console.log(`ask ${c.ask}`);
       break;
     }
-    console.error("usage: agent-board config [ask [on|off]]  (ask on: unclear requests return a question for the user instead of an error)");
+    console.error(`usage: agent-board config [ask [on|new|off]]
+  ask on   unclear requests return a question for the user (default)
+  ask new  only ask before creating a project; otherwise the board picks and marks the ticket "unconfirmed"
+  ask off  never ask; the board picks and marks the ticket "unconfirmed" (an unknown project is an error)`);
     process.exit(1);
   }
 

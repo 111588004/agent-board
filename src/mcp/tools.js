@@ -5,7 +5,7 @@ import * as client from "../client.js";
 // plain strings, not enums: the server normalizes aliases (進行中, wip, 高, p0...) and rejects unknowns with the allowed list
 const STATUS_DESC = "backlog | in_progress | review | done (aliases ok: todo, doing, wip, 待辦, 進行中, 審查, 完成)";
 const PRIORITY_DESC = "low | med | high (aliases ok: urgent, p0, 高, 中, 低)";
-const PROJECT_DESC = "Project name or prefix as shown by list_projects (case-insensitive) — not a free-form phrase";
+const PROJECT_DESC = "The project exactly as the user named it (name or prefix, any case) — don't map it to a list_projects entry yourself; the board matches it and asks the user when it's ambiguous or new";
 const WORKSPACE_DESC = "Board workspace to use — omit to use the CLI's current workspace (agent-board workspace use) or \"default\"";
 
 function json(value) {
@@ -14,7 +14,7 @@ function json(value) {
 
 // needs_input (and asking is on): not an error — tell the agent to ask the user and retry.
 function toolError(e, name) {
-  if (e.code === "needs_input" && client.askEnabled()) {
+  if (e.code === "needs_input") {
     const open = e.answerArg ? ` If the user answers in their own words, pass it as "${e.answerArg}".` : "";
     const text = `NEEDS USER INPUT — do not pick an option yourself. Ask the user this question with your built-in ask tool (AskUserQuestion / request_user_input / ask_user; if you have none, ask in chat)${e.options.length ? ", offering these options" : " as an open question"}, then call ${name} again with the same arguments plus the chosen option's args.${open}`;
     const payload = { needs_input: { question: e.question, options: e.options, ...(e.answerArg && { answerArg: e.answerArg }) } };
@@ -29,11 +29,12 @@ function toolError(e, name) {
 // tool result, the one place the user reliably sees it; HTTP passes nothing.
 export const INSTRUCTIONS = [
   "Opening a ticket: create_task once is enough — don't list_tasks first.",
-  "project = a name or prefix exactly as list_projects shows it (case-insensitive). Only call list_projects if you don't know which project; never use a free-form phrase as the project.",
+  "project = the user's own words for it (name or prefix, any case). Don't look it up in list_projects and substitute a match yourself — the board matches case/prefix and asks the user when several projects fit or none does.",
   "status: backlog | in_progress | review | done (aliases: todo, doing, wip, 進行中, 待辦, 審查, 完成...). priority: low | med | high (aliases: urgent, p0, 高, 中, 低...).",
   "Put the description in notes; set agent to your own id (claude, codex, gemini, ...).",
   "A result starting with NEEDS USER INPUT means the board can't tell what the user wants (several projects match, the project doesn't exist yet, no title). Ask the user that question with your built-in ask tool (Claude Code: AskUserQuestion, Codex: request_user_input, Gemini: ask_user; none -> ask in chat), then call the same tool again with the chosen option's args. Never pick an option yourself.",
   "Ticket prefixes are the user's call: never invent one — omit prefix (create_project) and the board asks.",
+  "Whether the board asks is the user's setting (set_ask_mode: on | new | off) — change it only when the user explicitly tells you to. A ticket with an \"unconfirmed\" field was auto-picked by the board; mention it to the user.",
 ].join("\n");
 
 export function createMcpServer({ notice } = {}) {
@@ -78,6 +79,7 @@ export function createMcpServer({ notice } = {}) {
         title: z.string().optional().describe("Short title — omit only if you truly don't know it; the board will ask the user"),
         project: z.string().describe(PROJECT_DESC),
         newProjectPrefix: z.string().optional().describe("Only from a NEEDS USER INPUT option the user chose: creates the project with this prefix in the same call. Never invent one"),
+        rememberAs: z.string().optional().describe("Only from a NEEDS USER INPUT option the user chose: copy it unchanged — the board remembers what the user meant by that word"),
         agent: z.string().optional().describe("Your agent id, e.g. claude, codex, opencode, gemini, pi — omit to leave unassigned"),
         priority: z.string().optional().describe(`${PRIORITY_DESC}. Defaults to med`),
         status: z.string().optional().describe(`${STATUS_DESC}. Defaults to backlog`),
@@ -90,9 +92,9 @@ export function createMcpServer({ notice } = {}) {
         workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
-    async ({ title, project, newProjectPrefix, agent, priority, status, parentId, dueDate, worktree, branch, link, notes, workspace }) => {
+    async ({ title, project, newProjectPrefix, rememberAs, agent, priority, status, parentId, dueDate, worktree, branch, link, notes, workspace }) => {
       return json(
-        await client.createTask({ title, project, newProjectPrefix, agent, priority, status, parentId, dueDate, worktree, branch, link, notes, workspace })
+        await client.createTask({ title, project, newProjectPrefix, rememberAs, agent, priority, status, parentId, dueDate, worktree, branch, link, notes, workspace })
       );
     }
   );
@@ -112,12 +114,13 @@ export function createMcpServer({ notice } = {}) {
         link: z.string().optional().describe("Repo / PR / issue URL"),
         dueDate: z.string().optional().describe("ISO date, e.g. 2026-03-05"),
         notes: z.string().optional().describe("Full description overwrite, markdown — headings, bold, `code`, bullet/numbered lists, [links](url), ![images](url) all render"),
+        confirm: z.boolean().optional().describe("true clears the board's \"unconfirmed\" mark — only after the user has confirmed the auto-picked choice"),
         workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
-    async ({ taskId, status, priority, agent, title, worktree, branch, link, dueDate, notes, workspace }) => {
+    async ({ taskId, status, priority, agent, title, worktree, branch, link, dueDate, notes, confirm, workspace }) => {
       return json(
-        await client.updateTask(taskId, { status, priority, agent, title, worktree, branch, link, dueDate, notes, workspace })
+        await client.updateTask(taskId, { status, priority, agent, title, worktree, branch, link, dueDate, notes, workspace, ...(confirm && { unconfirmed: null }) })
       );
     }
   );
@@ -151,6 +154,17 @@ export function createMcpServer({ notice } = {}) {
       await client.deleteTask(taskId, { workspace });
       return json({ deleted: taskId });
     }
+  );
+
+  tool(
+    "set_ask_mode",
+    {
+      description: "Change whether the board asks the user when a request is unclear — a global user setting. Only call this when the user explicitly asks you to (e.g. \"turn off the board's questions\"); never to avoid a question.",
+      inputSchema: {
+        mode: z.enum(["on", "new", "off"]).describe("on: ask on every unclear request (default). new: ask only before creating a project; otherwise the board picks and marks the ticket unconfirmed. off: never ask; the board picks and marks it unconfirmed (an unknown project is an error)"),
+      },
+    },
+    async ({ mode }) => json(await client.setConfig({ ask: mode }))
   );
 
   tool(

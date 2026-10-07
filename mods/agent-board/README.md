@@ -55,7 +55,7 @@ Or try it for one session: `claude --plugin-dir mods/agent-board`.
 | `project` | empty | Project for `/board-sync new`. Empty: the project this repo was linked to before, else one named like the repo folder, else `/board-sync` asks (see below). |
 | `offScope` | `session` | How far `/board-sync off` reaches: `session` (back on next session), `project` (this repo), `global` (everywhere until `/board-sync on`). |
 
-Questions (`$.ui.ask`) only offer options; anything typed under "Other" counts as cancel. `agent-board config ask off` (the file the CLI and MCP read, under `AGENT_BOARD_DIR` or `~/.agent-board`) turns every question off: the mod then says what to type instead.
+Questions (`$.ui.ask`) only offer options; anything typed under "Other" counts as cancel. The board's ask mode (`/board-sync ask`, `agent-board config ask`) decides which questions the mod asks: `on` all of them; `new` only the new-project question (several cards: the line lists them; no title: the first suggestion is taken); `off` none, the mod says what to type instead.
 
 ## `/board-sync`
 
@@ -65,6 +65,7 @@ Questions (`$.ui.ask`) only offer options; anything typed under "Other" counts a
 - `on` / `off`: turn reporting on or off (`off` reaches as far as `offScope` says). `on` also tries to claim a card right away.
 - `link <ID>`: bind this session to a card, claim it, write this session's directory and branch back into its `worktree`/`branch`, and remember the card's project for this repo.
 - `new ["title"]`: create a card (in progress, agent claude, this directory and branch) and bind to it. No title: asks, offering the first sentence of this conversation, the branch name, or cancel. No project for this repo yet: asks first, as above. When the board answers `needs_input`, its options are asked and the pick sent again.
+- `ask [on | new | off]`: show or change when the board asks you about unclear requests. This is the board's global setting, the same as `agent-board config ask` and the MCP `set_ask_mode` tool, not a per-session one: `on` asks every time, `new` asks only before creating a project, `off` never asks. In `new` and `off` the board picks and marks the card ⚠ unconfirmed.
 
 ## Failure behaviour
 

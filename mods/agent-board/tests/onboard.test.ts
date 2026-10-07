@@ -243,20 +243,42 @@ describe('AB-27: how far /board-sync off reaches (D21)', () => {
   })
 })
 
-describe('agent-board config ask off: no dialogs', () => {
-  test('several cards: no question, the line still lists them', async ($, on) => {
-    const w = world(on, { askFile: 'off\n', cards: [card('P-1', { worktree: '/work/x' }), card('P-2', { branch: 'feat/x' })] })
+describe("the board's ask mode", () => {
+  test('off: no dialogs; several cards are listed on the line', async ($, on) => {
+    const w = world(on, { ask: 'off', cards: [card('P-1', { worktree: '/work/x' }), card('P-2', { branch: 'feat/x' })] })
     await $.session.start(w.start)
     expect(w.asked).toEqual([])
     expect((await band(await $.ui.mount(bandTarget()))).text).toContain('2 cards match')
   })
 
-  test('new without a title or project: says what to type instead', async ($, on) => {
-    const w = world(on, { askFile: 'off\n' })
+  test('off: no project question, says what to do instead', async ($, on) => {
+    const w = world(on, { ask: 'off', projects: [{ name: 'Other', prefix: 'O' }] })
     await $.session.start(w.start)
-    expect((await sync($, 'new')).text).toBe('Give the card a title: /board-sync new "title"')
-    w.projects = [{ name: 'Other', prefix: 'O' }]
     expect((await sync($, 'new "t"')).text).toContain('No board project for x: create a project for it on the web')
     expect(w.asked).toEqual([])
+  })
+
+  test('new: a missing title takes the first suggestion, no dialog', async ($, on) => {
+    const w = world(on, { ask: 'new' })
+    w.messages = [{ role: 'user', text: 'Fix the login bug. Now.', toolUses: [] }]
+    await $.session.start(w.start)
+    expect((await sync($, 'new')).text).toContain('titled "Fix the login bug" (rename it on the web)')
+    expect(w.asked).toEqual([])
+  })
+
+  test('new: the new-project question is still asked', async ($, on) => {
+    const w = world(on, { ask: 'new', projects: [{ name: 'Other', prefix: 'O' }], answers: ['Not now'] })
+    await $.session.start(w.start)
+    await sync($, 'new "t"')
+    expect(w.asked[0]!.header).toBe('New project')
+  })
+
+  test('/board-sync ask shows and changes the mode', async ($, on) => {
+    const w = world(on)
+    await $.session.start(w.start)
+    expect((await sync($, 'ask')).text).toBe('Agent Board asks: on (unclear requests ask you)')
+    expect((await sync($, 'ask off')).text).toContain('Agent Board asks: off')
+    expect(w.ask).toBe('off')
+    expect((await sync($, 'ask maybe')).text).toBe('Usage: /board-sync ask [on | new | off]')
   })
 })

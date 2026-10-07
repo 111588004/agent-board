@@ -15,7 +15,7 @@ type Mode = 'ok' | 'down' | 'hang'
 // answers: what the person picks in each $.ui.ask dialog, in order (a label, or anything else for Other).
 export function world(on: On, opts: {
   cards?: Card[]; projects?: { name: string; prefix: string }[]; env?: Record<string, string>; branch?: string; cwd?: string
-  surfaces?: ('terminal' | 'desktop' | 'vscode' | 'mobile')[]; store?: Record<string, unknown>; answers?: string[]; askFile?: string
+  surfaces?: ('terminal' | 'desktop' | 'vscode' | 'mobile')[]; store?: Record<string, unknown>; answers?: string[]; ask?: 'on' | 'new' | 'off'
 } = {}) {
   const w = {
     cards: structuredClone(opts.cards ?? []),
@@ -24,6 +24,7 @@ export function world(on: On, opts: {
     asked: [] as { question: string; header: string; options: string[] }[],
     opened: [] as string[][],
     store: undefined as unknown as Record<string, unknown>,
+    ask: opts.ask ?? 'on', // the board's ask mode (GET/PUT /api/config)
     mode: 'ok' as Mode,
     requests: [] as { method: string; url: string; body: any }[],
     toasts: [] as string[],
@@ -47,7 +48,7 @@ export function world(on: On, opts: {
   on('store.set', (_$, e) => { store[e.key] = structuredClone(e.value); return { value: undefined } })
   on('store.delete', (_$, e) => { delete store[e.key]; return { value: undefined } })
   on('store.keys', () => ({ value: Object.keys(store) }))
-  mock.env(on, { HOME: '/home/me', ...opts.env })
+  mock.env(on, opts.env ?? {})
 
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
@@ -65,8 +66,6 @@ export function world(on: On, opts: {
     if (e.argv[0] !== 'git') w.opened.push([...e.argv])
     return { value: { exitCode: 0, stdout: `${e.argv[1] === 'rev-parse' ? w.cwd : w.branch}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
-  // `agent-board config ask` writes this file; missing = asking is on.
-  on('fs.read', (_$, e) => (opts.askFile !== undefined && e.path === '/home/me/.agent-board/ask' ? { value: opts.askFile } : { deny: 'ENOENT' }) as any)
   // $.ui.ask is a tool call of AskUserQuestion: answer with the next scripted pick.
   on('tool.call', { tool: 'AskUserQuestion' }, (_$, e: any) => {
     const q = e.questions[0]
@@ -84,6 +83,10 @@ export function world(on: On, opts: {
     const json = (data: unknown, status = 200) => ({ value: { status, ok: status < 300, headers: {}, text: JSON.stringify(data) } })
     const url = new URL(e.url)
     const id = url.pathname.split('/tasks/')[1]
+    if (url.pathname.endsWith('/config')) {
+      if (method === 'PUT') w.ask = body.ask
+      return json({ ask: w.ask })
+    }
     if (url.pathname.endsWith('/projects')) {
       if (method === 'GET') return json(w.projects)
       // Like the server (D15): no prefix -> needs_input with suggested prefixes.

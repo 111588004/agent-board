@@ -93,15 +93,14 @@ async function remember($: any, row: Card, urlOf: Settings['urlOf']) {
   await $.state.set(BAND, { kind: 'linked', card: { ...toBandCard(row), url: urlOf(row.id) } })
 }
 
-// `agent-board config ask off` (the same file the CLI and MCP read) turns every question off: the
-// mod then says what to type instead.
-async function askEnabled($: any): Promise<boolean> {
-  try {
-    const dir = (await $.env.get('AGENT_BOARD_DIR')) || `${await $.env.get('HOME')}/.agent-board`
-    return String(await $.fs.read(`${dir}/ask`)).trim() !== 'off'
-  } catch {
-    return true
-  }
+// The board's global ask mode (`agent-board config ask`, `/board-sync ask`), kept on the server.
+// on: every question. new: only the new-project question; elsewhere the mod picks the first
+// suggestion, as the board does. off: no dialog at all; the mod says what to type instead.
+type AskMode = 'on' | 'new' | 'off'
+
+async function askMode(s: Settings): Promise<AskMode> {
+  const mode = (await call(s.deps, 'GET', '/config'))?.ask
+  return mode === 'new' || mode === 'off' ? mode : 'on'
 }
 
 // Options only (AB-23): anything but a label (Other, Esc, a -p run) is undefined, i.e. cancel.
@@ -176,7 +175,7 @@ async function autoBind($: any, s: Settings, interactive: boolean) {
     const ids = hit.cards.map((c) => c.id)
     await say($, { kind: 'many', ids }, `Agent Board: ${ids.join(', ')} all match. /board-sync link <ID> to pick one`)
     // Scenario 5: asked once per session (a hot reload re-runs this), never with asking turned off.
-    if (!interactive || (await $.state.get(ASKED)).value || !(await askEnabled($))) return
+    if (!interactive || (await $.state.get(ASKED)).value || (await askMode(s)) !== 'on') return
     await $.state.set(ASKED, true)
     const id = await askWhichCard($, s, ids)
     if (id) toast($, `Agent Board: working on ${id}`)
@@ -234,7 +233,7 @@ async function repoProject($: any, s: Settings, options: PluginOptions, here: He
   if (name) return { name }
   const how = `create a project for it on the web (${s.urlOf()}) named "${repo}", or set this plugin's "project" option`
   if ((((await $.store.get('declinedRepos')) ?? {}) as Record<string, true>)[key]) return { text: `No board project for ${repo} (you said not now): ${how}` }
-  if (!(await askEnabled($))) return { text: `No board project for ${repo}: ${how}` }
+  if ((await askMode(s)) === 'off') return { text: `No board project for ${repo}: ${how}` }
   const r = await request(s.deps, 'POST', '/projects', { name: repo })
   if (!r) return { text: UNREACHABLE }
   const prefixes = isNeedsInput(r.data) ? r.data.options.map((o) => String(o.args.prefix ?? '')).filter(Boolean) : []
@@ -259,13 +258,15 @@ async function newCard($: any, s: Settings, options: PluginOptions, arg: string)
   const project = await repoProject($, s, options, here)
   if ('text' in project) return project.text
   let title = arg.replace(/^["'“”]|["'“”]$/g, '').trim()
+  let picked = false
   if (!title) {
-    if (!(await askEnabled($))) return 'Give the card a title: /board-sync new "title"'
     const choices = titleChoices(firstSentence(await $.session.messages()), here.branch)
     if (choices.length < 2) return 'Give the card a title: /board-sync new "title"'
-    const picked = await ask($, 'What should the new card be called?', 'New card', choices)
-    if (!picked) return 'Cancelled'
-    title = picked
+    // Ask mode new/off: the board picks rather than asks, so the mod takes the first suggestion.
+    const t = (await askMode(s)) === 'on' ? await ask($, 'What should the new card be called?', 'New card', choices) : choices[0]!.value
+    if (!t) return 'Cancelled'
+    title = t
+    picked = (await askMode(s)) !== 'on'
   }
   let body: Record<string, unknown> = {
     title, project: project.name, agent: 'claude', status: 'in_progress', worktree: here.cwd, ...(here.branch ? { branch: here.branch } : {}),
@@ -278,10 +279,10 @@ async function newCard($: any, s: Settings, options: PluginOptions, arg: string)
       await $.state.set(BINDING, { sessionId: await $.session.id(), cardId: card.id })
       await remember($, card, s.urlOf)
       await keep($, 'repoProjects', repoKey(here), card.project ?? project.name)
-      return `Created ${card.id}${project.isNew ? ` in the new project ${project.name}` : ''}: ${s.urlOf(card.id)}`
+      return `Created ${card.id}${project.isNew ? ` in the new project ${project.name}` : ''}${picked ? ` titled "${title}" (rename it on the web)` : ''}: ${s.urlOf(card.id)}`
     }
+    // The board only answers needs_input when its ask mode wants the person asked.
     if (!isNeedsInput(r.data)) return `Could not create the card: ${r.data?.error ?? `HTTP ${r.status}`}`
-    if (!(await askEnabled($))) return `Could not create the card: ${r.data.error}`
     const args = await ask($, r.data.question, 'Agent Board', needsInputChoices(r.data))
     if (!args) return 'Cancelled'
     body = { ...body, ...args }
@@ -348,7 +349,7 @@ async function boardSync($: any, options: PluginOptions, args: string): Promise<
     const state: BandState | null = (await $.state.get(BAND)).value ?? null
     const bound = (await $.state.get(BINDING)).value?.sessionId === (await $.session.id())
     let said = ''
-    if (s.isOn && !bound && state?.kind === 'many' && (await askEnabled($))) {
+    if (s.isOn && !bound && state?.kind === 'many' && (await askMode(s)) === 'on') {
       const id = await askWhichCard($, s, state.ids)
       if (id) said = `Linked to ${id}\n`
     } else if (s.isOn && !bound && state?.kind === 'none') {
@@ -358,7 +359,21 @@ async function boardSync($: any, options: PluginOptions, args: string): Promise<
     }
     return said + (await status($, await settings($, options), options))
   }
-  return 'Usage: /board-sync [open | status | on | off | link <ID> | new ["title"]]'
+  if (sub === 'ask') {
+    // the board's global "ask the user" setting (same as `agent-board config ask`), not this plugin's
+    const mode = arg.toLowerCase()
+    if (mode && !['on', 'new', 'off'].includes(mode)) return 'Usage: /board-sync ask [on | new | off]'
+    const config = await call(s.deps, mode ? 'PUT' : 'GET', '/config', mode ? { ask: mode } : undefined)
+    if (!config) return UNREACHABLE
+    return `Agent Board asks: ${config.ask} (${ASK_HELP[config.ask as string] ?? ''})`
+  }
+  return 'Usage: /board-sync [open | status | on | off | link <ID> | new ["title"] | ask [on|new|off]]'
+}
+
+const ASK_HELP: Record<string, string> = {
+  on: 'unclear requests ask you',
+  new: 'only new projects ask; otherwise the board picks and marks the card unconfirmed',
+  off: 'never asks; the board picks and marks the card unconfirmed',
 }
 
 // D20: the always-on line. Everything it shows comes from $.state (written by the hooks above), never
@@ -393,7 +408,7 @@ export const register: Register = (on, options) => {
   // D3: the mod is an extra, so every hook swallows its own errors and always continues the chain.
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'board-sync', description: 'Agent Board: where this session stands, and what to do next', argumentHint: '[open|status|on|off|link <ID>|new ["title"]]' })
+      await $.command.register({ name: 'board-sync', description: 'Agent Board: where this session stands, and what to do next', argumentHint: '[open|status|on|off|link <ID>|new ["title"]|ask on|new|off]' })
       const st = await settings($, options)
       if (st.isOn) await autoBind($, st, e.isInteractive !== false)
     } catch {}
