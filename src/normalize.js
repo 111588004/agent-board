@@ -28,18 +28,65 @@ export function normalizeEnum(field, raw) {
   return { error: `invalid ${field} "${raw}" — allowed: ${allowed} (aliases: ${aliases})` };
 }
 
-// -> { project } (row) or { status, body }. Never guesses: a step must match exactly one row.
-export function resolveProject(db, input) {
+// The board can't tell what the user meant -> ask instead of guessing. 422 with
+// a question and <=4 options; each option's `args` are the fields to send again.
+// `answerArg` names the field a free-text answer goes in. Clients render it as
+// "ask the user" (or, with asking turned off, as a plain error — `error` alone
+// is readable either way).
+export function needsInput(question, options, answerArg) {
+  options = options.slice(0, 4);
+  const list = options.map((o, i) => `${i + 1}) ${o.label} — ${o.description}`).join("; ");
+  const error = `needs input: ${question}${list ? ` Options: ${list}` : ""}`;
+  return { status: 422, body: { error, code: "needs_input", question, options, ...(answerArg && { answerArg }) } };
+}
+
+// D15: the prefix is the user's call — these are only offered as options.
+export function suggestPrefixes(name, projects, n) {
+  const taken = new Set(projects.map((p) => p.prefix.toUpperCase()));
+  const words = String(name).toUpperCase().match(/[A-Z0-9]+/g) || [];
+  const joined = words.join("");
+  const candidates = [
+    words.length > 1 && words.map((w) => w[0]).join(""),
+    joined.slice(0, 2), joined.slice(0, 3), joined.slice(0, 4),
+    "PRJ", "PJ", "P", // names with no ASCII letters (e.g. 發表會)
+  ];
+  return [...new Set(candidates)].filter((c) => c && !taken.has(c)).slice(0, n);
+}
+
+// -> { project } (row) or { status, body }. Never guesses: an exact name wins,
+// otherwise name-ignoring-case and prefix must point at exactly one project.
+// `offerNew` (creating a task): an unknown project asks — existing project, or
+// a new one with a prefix the user picks — instead of a plain 404.
+export function resolveProject(db, input, { offerNew = false } = {}) {
   const projects = db.prepare("SELECT * FROM projects ORDER BY createdAt").all();
   const s = String(input ?? "").trim();
-  const steps = [
-    (p) => p.name === s,
-    (p) => p.name.toLowerCase() === s.toLowerCase(),
-    (p) => p.prefix.toLowerCase() === s.toLowerCase(),
-  ];
-  for (const step of steps) {
-    const hits = projects.filter(step);
-    if (hits.length === 1) return { project: hits[0] };
+  const lower = s.toLowerCase();
+  const exact = projects.filter((p) => p.name === s);
+  if (exact.length === 1) return { project: exact[0] };
+  const hits = projects.filter((p) => p.name.toLowerCase() === lower || p.prefix.toLowerCase() === lower);
+  if (hits.length === 1) return { project: hits[0] };
+  if (hits.length > 1) {
+    return needsInput(
+      `"${s}" matches ${hits.length} projects in this workspace — which one?`,
+      hits.map((p) => ({ label: p.name, description: `project "${p.name}", tickets ${p.prefix}-N`, args: { project: p.name } })),
+      "project"
+    );
+  }
+  if (offerNew && s) {
+    const near = projects.filter((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase()));
+    const options = (near.length ? near : projects).slice(0, 2).map((p) => ({
+      label: `Use ${p.name}`,
+      description: `existing project, tickets ${p.prefix}-N`,
+      args: { project: p.name },
+    }));
+    for (const prefix of suggestPrefixes(s, projects, Math.min(3, 4 - options.length))) {
+      options.push({
+        label: `New project ${s} (${prefix})`,
+        description: `create project "${s}" with ticket prefix ${prefix} (${prefix}-1, ${prefix}-2, …)`,
+        args: { project: s, newProjectPrefix: prefix },
+      });
+    }
+    return needsInput(`This workspace has no project "${s}". Put the ticket in an existing project, or create "${s}" — with which ticket prefix?`, options);
   }
   const list = projects.map((p) => `${p.name} (${p.prefix})`).join(", ");
   const error = projects.length

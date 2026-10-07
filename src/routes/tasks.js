@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { createTask, appendNote } from "../db.js";
-import { normalizeEnum, resolveProject } from "../normalize.js";
+import { createTask, appendNote, insertProject } from "../db.js";
+import { normalizeEnum, needsInput, resolveProject } from "../normalize.js";
 
 const router = Router();
 
@@ -25,18 +25,35 @@ router.get("/", (req, res) => {
 
 router.post("/", (req, res) => {
   const { title, project, parentId, agent, priority, status, notes, worktree, branch, link, dueDate } = req.body;
-  if (!title || !project) {
-    return res.status(400).json({ error: "title and project are required" });
+  if (!project) return res.status(400).json({ error: "project is required" });
+  // newProjectPrefix: the user picked "new project" from a needs_input option
+  const newPrefix = typeof req.body.newProjectPrefix === "string" ? req.body.newProjectPrefix.trim() : "";
+  const resolved = resolveProject(req.db, project, { offerNew: !newPrefix });
+  if (resolved.body && !(newPrefix && resolved.body.code === "unknown_project")) {
+    return res.status(resolved.status).json(resolved.body);
   }
-  const resolved = resolveProject(req.db, project);
-  if (resolved.body) return res.status(resolved.status).json(resolved.body);
-  const projectRow = resolved.project;
+  if (!title || !String(title).trim()) {
+    const first = String(notes || "").split("\n").map((l) => l.replace(/^[#>*\-\s]+/, "").trim()).find(Boolean);
+    const suggestion = first && first.slice(0, 80);
+    const r = needsInput(
+      "What should the ticket's title be?",
+      suggestion ? [{ label: suggestion, description: "first line of the description", args: { title: suggestion } }] : [],
+      "title"
+    );
+    return res.status(r.status).json(r.body);
+  }
   const norm = {};
   for (const [field, v] of [["priority", priority], ["status", status]]) {
     if (!v) continue;
     const n = normalizeEnum(field, v);
     if (n.error) return res.status(400).json({ error: n.error });
     norm[field] = n.value;
+  }
+  let projectRow = resolved.project;
+  if (!projectRow) {
+    const created = insertProject(req.db, String(project).trim(), newPrefix);
+    if (created.body) return res.status(created.status).json(created.body);
+    projectRow = created.project;
   }
   const row = createTask(req.db, {
     title,

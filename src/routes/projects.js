@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { insertProject } from "../db.js";
+import { needsInput, suggestPrefixes } from "../normalize.js";
 
 const router = Router();
 
@@ -7,26 +9,25 @@ router.get("/", (req, res) => {
 });
 
 router.post("/", (req, res) => {
-  const { name, prefix } = req.body;
-  if (!name || !prefix) {
-    return res.status(400).json({ error: "name and prefix are required" });
-  }
-  try {
-    req.db.prepare("INSERT INTO projects (name, prefix, createdAt) VALUES (?, ?, ?)").run(
-      name,
-      prefix,
-      Date.now()
-    );
-  } catch (e) {
-    if (e.code === "SQLITE_CONSTRAINT_PRIMARYKEY") {
+  const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
+  const prefix = typeof req.body.prefix === "string" ? req.body.prefix.trim() : "";
+  if (!name) return res.status(400).json({ error: "name is required" });
+  // D15: no prefix -> ask the user rather than let the caller invent one
+  if (!prefix) {
+    if (req.db.prepare("SELECT 1 FROM projects WHERE name = ?").get(name)) {
       return res.status(409).json({ error: `project "${name}" already exists` });
     }
-    if (e.code === "SQLITE_CONSTRAINT_UNIQUE") {
-      return res.status(409).json({ error: `prefix "${prefix}" is already in use` });
-    }
-    throw e;
+    const projects = req.db.prepare("SELECT * FROM projects").all();
+    const r = needsInput(
+      `Which ticket prefix for the new project "${name}"? Every ticket id starts with it.`,
+      suggestPrefixes(name, projects, 3).map((p) => ({ label: p, description: `tickets ${p}-1, ${p}-2, …`, args: { name, prefix: p } })),
+      "prefix"
+    );
+    return res.status(r.status).json(r.body);
   }
-  res.status(201).json(req.db.prepare("SELECT * FROM projects WHERE name = ?").get(name));
+  const r = insertProject(req.db, name, prefix);
+  if (r.body) return res.status(r.status).json(r.body);
+  res.status(201).json(r.project);
 });
 
 // rename and/or re-prefix a project — cascades to every task's denormalized

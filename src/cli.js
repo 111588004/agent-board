@@ -26,6 +26,10 @@ async function run(fn) {
   try {
     return await fn();
   } catch (e) {
+    if (e.code === "needs_input" && client.askEnabled()) {
+      printQuestion(e);
+      process.exit(2);
+    }
     if (e.status === undefined) {
       console.error("agent-board: can't reach the server — is it running? Start it in another terminal: agent-board  (or: npx @limao.li.design/agent-board)");
     } else {
@@ -33,6 +37,20 @@ async function run(fn) {
     }
     process.exit(1);
   }
+}
+
+// same question + options the MCP tools return; exit 2 so a calling agent can
+// tell "ask the user, then rerun with these flags" apart from a real error (1)
+function printQuestion(e) {
+  const flag = (k, v) => `--${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}=${JSON.stringify(String(v))}`;
+  const lines = [`agent-board: needs your input — ${e.question}`];
+  e.options.forEach((o, i) => {
+    const args = Object.entries(o.args).filter(([k]) => k !== "name").map(([k, v]) => flag(k, v)).join(" "); // name is positional
+    lines.push(`  ${i + 1}) ${o.label} — ${o.description}`, `     rerun with: ${args}`);
+  });
+  if (e.answerArg) lines.push(`  or answer in your own words: ${flag(e.answerArg, "...")}`);
+  lines.push("(agents: ask the user — don't pick for them)");
+  console.error(lines.join("\n"));
 }
 
 function printTasks(tasks) {
@@ -56,9 +74,9 @@ switch (cmd) {
   }
 
   case "create": {
-    if (!flags.title || !flags.project) {
+    if (!flags.project) {
       console.error(
-        'usage: agent-board create --title="..." --project=<name> [--parent=<id>] [--agent=<name>] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=<path>] [--branch=<name>] [--link=<url>] [--notes="..."] [--workspace=<name>]\n  (--notes sets the Description field)'
+        'usage: agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--parent=<id>] [--agent=<name>] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=<path>] [--branch=<name>] [--link=<url>] [--notes="..."] [--workspace=<name>]\n  (--notes sets the Description field)'
       );
       process.exit(1);
     }
@@ -66,6 +84,7 @@ switch (cmd) {
       client.createTask({
         title: flags.title,
         project: flags.project,
+        newProjectPrefix: flags["new-project-prefix"],
         parentId: flags.parent,
         agent: flags.agent,
         priority: flags.priority,
@@ -187,12 +206,12 @@ switch (cmd) {
     }
     if (sub === "create") {
       const name = positional[1];
-      if (!name || !flags.prefix) {
-        console.error("usage: agent-board project create <name> --prefix=<prefix> [--workspace=<name>]");
+      if (!name) {
+        console.error("usage: agent-board project create <name> [--prefix=<prefix>] [--workspace=<name>]  (no --prefix: asks)");
         process.exit(1);
       }
-      await run(() => client.createProject({ name, prefix: flags.prefix, workspace: flags.workspace }));
-      console.log(`created project ${name} (${flags.prefix})`);
+      const p = await run(() => client.createProject({ name, prefix: flags.prefix, workspace: flags.workspace }));
+      console.log(`created project ${p.name} (${p.prefix})`);
       break;
     }
     if (sub === "rename") {
@@ -221,6 +240,21 @@ switch (cmd) {
     process.exit(1);
   }
 
+  case "config": {
+    const [key, value] = positional;
+    if (key === "ask" && (value === "on" || value === "off")) {
+      client.setAsk(value === "on");
+      console.log(`ask ${value}`);
+      break;
+    }
+    if (key === undefined || (key === "ask" && value === undefined)) {
+      console.log(`ask ${client.askEnabled() ? "on" : "off"}`);
+      break;
+    }
+    console.error("usage: agent-board config [ask [on|off]]  (ask on: unclear requests return a question for the user instead of an error)");
+    process.exit(1);
+  }
+
   // stdio MCP — stdout belongs to JSON-RPC from here on, so nothing above
   // may print. The stdin listener keeps the process alive.
   case "mcp": {
@@ -229,6 +263,6 @@ switch (cmd) {
   }
 
   default:
-    console.error("usage: agent-board <list|create|update|delete|note|workspace|project|mcp> ...");
+    console.error("usage: agent-board <list|create|update|delete|note|workspace|project|config|mcp> ...");
     process.exit(1);
 }
