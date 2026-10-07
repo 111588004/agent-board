@@ -25,6 +25,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+        if: matrix.node != 20
+      # Node 20 can't import .ts (no type stripping). test/mod-*.test.js covers the Claude Code mod,
+      # which isn't in the npm package, so on 20 run everything else.
+      - run: node --test $(ls test/*.test.js | grep -v '^test/mod-')
+        if: matrix.node == 20
 
   # web/dist is gitignored, so there is no committed build to diff against.
   # What can go wrong instead is publishing a package without the UI — check the tarball.
