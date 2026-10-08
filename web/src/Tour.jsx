@@ -227,7 +227,7 @@ export default function Tour({ cards, projects, workspace, drawerOpen, dialogOpe
   }, [rect, step, minimized, drawerOpen, dialogOpen]);
 
   const btn = (primary) => ({
-    border: primary ? "none" : "1px solid #E4E6EB", background: primary ? "#D97757" : "#fff",
+    border: primary ? "none" : "1px solid #E4E6EB", background: primary ? "var(--ab-accent)" : "#fff",
     color: primary ? "#fff" : "#42454D", borderRadius: 7, padding: "7px 12px", fontSize: 12.5,
     fontWeight: 600, cursor: busy ? "wait" : "pointer", fontFamily: "inherit",
   });
@@ -254,7 +254,7 @@ export default function Tour({ cards, projects, workspace, drawerOpen, dialogOpe
       {hole && (
         <div
           style={{
-            position: "fixed", zIndex: 900, pointerEvents: "none", borderRadius: 6, boxShadow: "0 0 0 2px #D97757",
+            position: "fixed", zIndex: 900, pointerEvents: "none", borderRadius: 6, boxShadow: "0 0 0 2px var(--ab-accent)",
             top: hole.top, left: hole.left, width: hole.right - hole.left, height: hole.bottom - hole.top,
           }}
         />

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Terminal, Copy, Check, ArrowLeft } from "lucide-react";
+import { readTheme, BrandMark } from "./theme.jsx";
 import { buildLaunchText } from "./launch.js";
 import template from "../../templates/CLAUDE.md.example?raw";
 
@@ -50,14 +51,14 @@ export default function Guide() {
         body { margin: 0; background: #F4F5F7; }
         .guide { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1D2027; min-height: 100vh; }
         .mono { font-family: 'JetBrains Mono', monospace; }
-        .guide header { background: #181B21; color: #fff; padding: 14px 22px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .guide header { background: var(--ab-chrome); color: #fff; padding: 14px 22px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .guide header a { color: #C7CBD4; text-decoration: none; display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; border: 1px solid #3A3E48; border-radius: 7px; padding: 6px 10px; }
         .guide main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
         .guide h1 { font-size: 24px; margin: 8px 0 6px; }
         .guide .lede { color: #5B5F69; font-size: 14.5px; line-height: 1.6; margin: 0 0 22px; }
         .guide-step { background: #fff; border: 1px solid #E4E6EB; border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; }
         .guide-step h2 { font-size: 16px; margin: 0 0 10px; display: flex; align-items: center; gap: 10px; }
-        .guide-step h2 .mono { font-size: 12px; background: #D97757; color: #fff; border-radius: 99px; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .guide-step h2 .mono { font-size: 12px; background: var(--ab-accent); color: #fff; border-radius: 99px; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .guide-step h3 { font-size: 13px; margin: 14px 0 6px; color: #42454D; text-transform: uppercase; letter-spacing: .4px; }
         .guide-step p, .guide-step li { font-size: 14px; line-height: 1.6; color: #31343B; }
         .guide-step p { margin: 0 0 8px; }
@@ -71,7 +72,7 @@ export default function Guide() {
       `}</style>
 
       <header>
-        <Terminal size={18} color="#D97757" />
+        {readTheme() === "brand" ? <BrandMark size={20} /> : <Terminal size={18} color="var(--ab-accent-on-dark)" />}
         <span style={{ fontWeight: 700, fontSize: 15 }}>Agent Board</span>
         <span style={{ fontSize: 13, color: "#8B8D98" }}>First ticket guide</span>
         <span style={{ flex: 1 }} />
