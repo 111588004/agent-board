@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Agent Board 實測</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+/* Layout: one column read top to bottom. Each section = one-line answer (big) + one figure + a muted footnote; exact numbers live in collapsed tables at the end. Same tokens as the Agent Board site. */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --ink:#0f1a24; --dim:#5a6a79; --line:#d5dce4; --soft:#e2e8ee;
+  --accent:#0b6e8a; --accent-soft:#d8eef4; --ctx:#7d8fa0;
+  --bad:#c0392b; --q:#8a5a00; --q-soft:#fbefd4; --w:#1d7a46; --w-soft:#dcf1e4;
+  --sans:"Noto Sans TC","IBM Plex Sans",system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0d1319; --panel:#151d26; --ink:#e7edf3; --dim:#97a6b5; --line:#263340; --soft:#1c2733;
+  --accent:#4fc0dc; --accent-soft:#12303a; --ctx:#5d7080;
+  --bad:#f08a7e; --q:#e0b04a; --q-soft:#3a2d0e; --w:#58c284; --w-soft:#15341f; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1319; --panel:#151d26; --ink:#e7edf3; --dim:#97a6b5; --line:#263340; --soft:#1c2733;
+  --accent:#4fc0dc; --accent-soft:#12303a; --ctx:#5d7080;
+  --bad:#f08a7e; --q:#e0b04a; --q-soft:#3a2d0e; --w:#58c284; --w-soft:#15341f; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 var(--sans);padding-inline:16px;padding-block:0 80px}
+main{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:64px;padding-top:40px}
+h1{font-size:clamp(30px,6vw,46px);line-height:1.15;margin:0;font-weight:900;letter-spacing:-.02em;text-wrap:balance}
+h2{font-size:clamp(22px,4vw,28px);line-height:1.3;margin:0;font-weight:700;text-wrap:balance}
+h2 em{font-style:normal;color:var(--accent)}
+p{margin:0}
+a{color:var(--accent)}
+a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.eyebrow{font:500 12px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.lede{color:var(--dim);max-width:56ch;font-size:17px}
+section{display:flex;flex-direction:column;gap:16px}
+.note{color:var(--dim);font-size:13.5px;line-height:1.6;max-width:68ch}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px}
+
+/* setup strip */
+.setup{display:grid;grid-template-columns:repeat(5,1fr);gap:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.setup div{padding:14px 14px 16px;border-left:1px solid var(--line);min-width:0}
+.setup div:first-child{border-left:0}
+.setup b{display:block;font:700 19px/1.25 var(--sans)}
+.setup span{display:block;color:var(--dim);font-size:12.5px;line-height:1.45;margin-top:4px}
+@media(max-width:640px){.setup{grid-template-columns:1fr 1fr}.setup div{border-left:0;border-top:1px solid var(--line)}.setup div:nth-child(-n+2){border-top:0}.setup div:nth-child(even){border-left:1px solid var(--line)}.setup div:last-child{grid-column:1/-1;border-left:0}}
+.bubble{position:relative;background:var(--accent-soft);border-radius:14px 14px 14px 4px;padding:14px 16px;font-size:15.5px;max-width:62ch}
+.bubble small{display:block;font:500 11px var(--mono);letter-spacing:.08em;color:var(--accent);margin-bottom:4px}
+
+/* strip plot */
+.strip{margin:0;display:flex;flex-direction:column;gap:2px}
+.srow{display:grid;grid-template-columns:120px minmax(0,1fr) 72px;gap:14px;align-items:center;min-height:40px}
+.sn{font-size:14.5px;font-weight:500;line-height:1.2}
+.sn small{display:block;color:var(--dim);font-size:12px;font-weight:400}
+.srow.hi .sn{color:var(--accent);font-weight:700}
+.st{position:relative;height:36px;border-left:1px solid var(--line)}
+.st b{position:absolute;top:50%;display:block}
+.wh{height:2px;margin-top:-1px;background:var(--ctx);border-radius:1px}
+.iqr{height:12px;margin-top:-6px;background:var(--ctx);opacity:.45;border-radius:4px}
+.md{width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--ctx);box-shadow:0 0 0 2px var(--panel);z-index:1}
+.srow.hi .wh,.srow.hi .iqr,.srow.hi .md{background:var(--accent)}
+.sv{font:700 18px var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+.sv small{font:400 12px var(--sans);color:var(--dim)}
+.srow.hi .sv{color:var(--accent)}
+.axis{min-height:24px}
+.axis .st{height:20px;border-left:0}
+.axis .st::after{display:none}
+.axis span{position:absolute;transform:translateX(-50%);white-space:nowrap;font:12px var(--mono);color:var(--dim)}
+.axis span:last-child::after{content:" 秒"}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--dim);align-items:center}
+.legend i{display:inline-block;vertical-align:-1px;margin-right:6px}
+.lg-md{width:12px;height:12px;border-radius:50%;background:var(--ctx)}
+.lg-iqr{width:22px;height:10px;border-radius:3px;background:var(--ctx);opacity:.45}
+.lg-wh{width:22px;height:2px;background:var(--ctx);vertical-align:3px!important}
+@media(max-width:560px){.srow{grid-template-columns:1fr auto;gap:2px 10px;padding-top:6px}.sn{grid-column:1}.sv{grid-column:2;grid-row:1}.st{grid-column:1/-1}.sn small{display:inline;margin-left:6px}.axis .sn,.axis .sv{display:none}}
+
+/* steps */
+.prow{display:grid;grid-template-columns:120px 56px minmax(0,1fr);gap:14px;align-items:start;padding:14px 0;border-top:1px solid var(--line)}
+.prow:first-child{border-top:0;padding-top:0}
+.pn{font-size:14.5px;font-weight:500;padding-top:4px}
+.prow.hi .pn{color:var(--accent);font-weight:700}
+.pc b{font:700 26px/1 var(--mono)}
+.pc small{color:var(--dim);font-size:12px;margin-left:2px}
+.prow.hi .pc b{color:var(--accent)}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.ch{font-size:12.5px;padding:3px 9px;border-radius:6px;white-space:nowrap}
+.ch.ld{background:var(--soft);color:var(--dim)}
+.ch.q{background:var(--q-soft);color:var(--q)}
+.ch.w{background:var(--w-soft);color:var(--w);font-weight:600}
+.ch.x{border:1px dashed var(--q);color:var(--q)}
+.pp p{color:var(--dim);font-size:13px;margin-top:6px;line-height:1.5}
+@media(max-width:560px){.prow{grid-template-columns:1fr auto;gap:6px 10px}.pp{grid-column:1/-1}}
+
+/* waffle */
+.waffle{display:grid;grid-template-columns:repeat(15,1fr);gap:4px;max-width:420px}
+.wf{aspect-ratio:1;border-radius:4px;max-width:100%}
+.wf.on{background:var(--accent)}
+.wf.off{background:transparent;box-shadow:inset 0 0 0 1.5px var(--ctx)}
+.lg-on{width:12px;height:12px;border-radius:3px;background:var(--accent)}
+.lg-off{width:12px;height:12px;border-radius:3px;box-shadow:inset 0 0 0 1.5px var(--ctx)}
+
+/* limits */
+.limits{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.limits div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.limits b{display:block;font-size:15px;margin-bottom:2px}
+.limits span{color:var(--dim);font-size:13.5px;line-height:1.55;display:block}
+@media(max-width:600px){.limits{grid-template-columns:1fr}}
+
+/* details */
+details{border-top:1px solid var(--line);padding:14px 0}
+details:last-of-type{border-bottom:1px solid var(--line)}
+summary{cursor:pointer;font-weight:600;list-style:none;display:flex;gap:10px;align-items:baseline}
+summary::before{content:"+";font:600 16px var(--mono);color:var(--accent);width:1em;flex:none}
+details[open] summary::before{content:"−"}
+summary::-webkit-details-marker{display:none}
+summary small{font-weight:400;color:var(--dim);font-size:13px}
+.scroll{overflow-x:auto;margin-top:12px}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;vertical-align:top}
+th{color:var(--dim);font-weight:500}
+td.n,th.n{text-align:right;font-family:var(--mono);white-space:nowrap}
+td small{display:block;color:var(--dim);font-size:12px}
+td.n small{display:inline}
+table.raw{font-size:13px}
+table.raw td.skip{color:var(--dim);text-decoration:line-through}
+table.raw sup{color:var(--bad);font-weight:700}
+pre{margin:12px 0 0;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font:13px/1.65 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.foot{font-size:13px;color:var(--dim)}
+.back{font:500 13px var(--mono);text-decoration:none;align-self:flex-start}
+body{padding-top:env(safe-area-inset-top,0px)}
+</style>
+</head><body>
+<main>
+  <header style="display:flex;flex-direction:column;gap:14px">
+    <a href="./" class="back">← 回 Agent Board 首頁</a>
+    <p class="eyebrow">Agent Board · 實測詳細說明</p>
+    <h1>首頁的數字，是這樣測出來的</h1>
+    <p class="lede">同一句話交給 AI agent，請它在五個看板工具上開單、接手單。下面每一節先講答案，再給你看每一次執行的資料。結論摘要在<a href="./">首頁</a>。</p>
+  </header>
+
+  <section aria-labelledby="h-setup">
+    <h2 id="h-setup">怎麼測</h2>
+    <div class="setup">
+      <div><b>同一句話</b><span>每家拿到的任務一字不差</span></div>
+      <div><b>同一個模型</b><span>Claude Sonnet 5.5，每次全新 session</span></div>
+      <div><b>各家官方 MCP</b><span>Jira、Linear、Notion、Plane、Agent Board</span></div>
+      <div><b>每組 13–15 次</b><span>依序跑，輪流換起跑順序</span></div>
+      <div><b>逐張讀回</b><span>單子內容對才算成功，不信 agent 自述</span></div>
+    </div>
+    <div class="bubble"><small>開單任務原文</small>請在「準備發表會」這個專案的看板新增一張單：標題「確認發表會場地與報價」，狀態設為進行中，優先度高，描述寫「預算上限 5 萬、要能容納 80 人」。</div>
+    <p class="note">不給指令範例、不給 ID、不准讀說明文件。2026-10-07 測五家；Agent Board 0.4.3 於 10-08 用同一題重測，下面 Agent Board 的開單數字都是這次。</p>
+  </section>
+
+  <section aria-labelledby="h-t1">
+    <p class="eyebrow">開一張單</p>
+    <h2 id="h-t1">Agent Board 每一次都在 <em>10 秒內</em>完成，Jira 最快的一次也要 20 秒</h2>
+    <div class="panel">
+<figure class="strip" aria-label="開一張單，每一次執行的耗時">
+<div class="srow hi"><div class="sn">Agent Board<small>MCP</small></div><div class="st" title="最快 6.1 秒，中間一半 6.4–6.8 秒，中位數 6.5 秒，最慢 8.3 秒"><b class="wh" style="left:14.5%;width:5.2%"></b><b class="iqr" style="left:15.2%;width:1.0%"></b><b class="md" style="left:15.5%"></b></div><div class="sv">6.5<small> 秒</small></div></div>
+<div class="srow hi"><div class="sn">Agent Board<small>CLI</small></div><div class="st" title="最快 5.1 秒，中間一半 5.5–6.4 秒，中位數 5.7 秒，最慢 9.3 秒"><b class="wh" style="left:12.1%;width:10.0%"></b><b class="iqr" style="left:13.1%;width:2.1%"></b><b class="md" style="left:13.6%"></b></div><div class="sv">5.7<small> 秒</small></div></div>
+<div class="srow"><div class="sn">Linear<small>中途出錯 1 次</small></div><div class="st" title="最快 10.3 秒，中間一半 11.5–14.6 秒，中位數 12.3 秒，最慢 19.1 秒"><b class="wh" style="left:24.5%;width:21.0%"></b><b class="iqr" style="left:27.4%;width:7.4%"></b><b class="md" style="left:29.3%"></b></div><div class="sv">12.3<small> 秒</small></div></div>
+<div class="srow"><div class="sn">Plane<small></small></div><div class="st" title="最快 15.6 秒，中間一半 16.2–18.6 秒，中位數 17.1 秒，最慢 24.5 秒"><b class="wh" style="left:37.1%;width:21.2%"></b><b class="iqr" style="left:38.7%;width:5.6%"></b><b class="md" style="left:40.7%"></b></div><div class="sv">17.1<small> 秒</small></div></div>
+<div class="srow"><div class="sn">Notion<small>13 次</small></div><div class="st" title="最快 15.1 秒，中間一半 17.1–18.9 秒，中位數 18.4 秒，最慢 23.7 秒"><b class="wh" style="left:36.0%;width:20.5%"></b><b class="iqr" style="left:40.7%;width:4.3%"></b><b class="md" style="left:43.8%"></b></div><div class="sv">18.4<small> 秒</small></div></div>
+<div class="srow"><div class="sn">Jira<small>中途出錯 5 次</small></div><div class="st" title="最快 20.5 秒，中間一半 23.2–31.4 秒，中位數 27.2 秒，最慢 40.3 秒"><b class="wh" style="left:48.8%;width:47.1%"></b><b class="iqr" style="left:55.2%;width:19.6%"></b><b class="md" style="left:64.8%"></b></div><div class="sv">27.2<small> 秒</small></div></div>
+<div class="srow axis"><div class="sn"></div><div class="st"><span style="left:0.0%">0</span><span style="left:23.8%">10</span><span style="left:47.6%">20</span><span style="left:71.4%">30</span><span style="left:95.2%">40</span></div><div class="sv"></div></div>
+</figure>
+      <div class="legend" style="margin-top:12px"><span><i class="lg-md"></i>中位數（右邊數字）</span><span><i class="lg-iqr"></i>中間一半的執行</span><span><i class="lg-wh"></i>最快到最慢</span></div>
+    </div>
+    <p class="note">橫條越短，表示每次花的時間越穩定。最後開出來的單每一家都正確，「中途出錯」只代表過程中有一次呼叫失敗後重試。Notion 有 2 次發現已有同樣的單而沒新建，只算有建單的 13 次。把滑鼠移到橫條上可以看最快、最慢與中間一半的秒數；每一次的數字在頁尾。</p>
+  </section>
+
+  <section aria-labelledby="h-why">
+    <p class="eyebrow">為什麼差這麼多</p>
+    <h2 id="h-why">別家要先查幾次，<em>才知道單該怎麼寫</em></h2>
+    <div class="panel">
+<div class="prow hi"><div class="pn">Agent Board</div><div class="pc"><b>2</b><small>次</small></div><div class="pp"><div class="chips"><span class="ch ld">載入工具</span><span class="ch w">建單</span></div></div></div>
+<div class="prow"><div class="pn">Linear</div><div class="pc"><b>2</b><small>次</small></div><div class="pp"><div class="chips"><span class="ch ld">載入工具</span><span class="ch w">建單</span></div><p>能直接寫名稱，一樣兩步；慢在每次呼叫本身。</p></div></div>
+<div class="prow"><div class="pn">Plane</div><div class="pc"><b>4</b><small>次</small></div><div class="pp"><div class="chips"><span class="ch ld">載入工具</span><span class="ch q">查專案</span><span class="ch q">查狀態 ID</span><span class="ch w">建單</span></div></div></div>
+<div class="prow"><div class="pn">Notion</div><div class="pc"><b>4</b><small>次</small></div><div class="pp"><div class="chips"><span class="ch ld">載入工具</span><span class="ch q">搜尋</span><span class="ch q">讀資料庫結構</span><span class="ch w">建頁</span></div></div></div>
+<div class="prow"><div class="pn">Jira</div><div class="pc"><b>7</b><small>次</small></div><div class="pp"><div class="chips"><span class="ch ld">載入工具</span><span class="ch q">取站台 ID</span><span class="ch q">搜專案</span><span class="ch w">建單</span><span class="ch q">轉狀態</span><span class="ch x">重搜</span><span class="ch x">重搜</span></div><p>建單時不能指定狀態，要建完再轉。同名單累積後要多搜幾次，從 5 次漲到最多 10 次。</p></div></div>
+      <div class="legend" style="margin-top:14px"><span><span class="ch ld">灰</span> 載入工具</span><span><span class="ch q">黃</span> 查詢</span><span><span class="ch w">綠</span> 寫入</span><span><span class="ch x">虛線</span> 同名單變多後的額外搜尋</span></div>
+    </div>
+    <p class="note">每一格是一次工具呼叫，左邊是中位數。路徑取自每家最典型的一次執行。</p>
+  </section>
+
+  <section aria-labelledby="h-t2">
+    <p class="eyebrow">接手一張單</p>
+    <h2 id="h-t2">看狀態、改完成、留註記：Agent Board 約 <em>10 秒</em>，其他四家 16 到 22 秒</h2>
+    <div class="bubble"><small>接手任務原文</small>請接手這張單：〈單號〉。先看它現在的狀態與內容，然後把狀態改成「完成」，並在這張單上新增一筆註記：「已比對三個場地，報價 3.8 到 6.5 萬，建議選第二個」。</div>
+    <div class="panel">
+<figure class="strip" aria-label="接手一張單，每一次執行的耗時">
+<div class="srow hi"><div class="sn">Agent Board<small>CLI</small></div><div class="st" title="最快 7.2 秒，中間一半 8.8–10.4 秒，中位數 10.0 秒，最慢 15.4 秒"><b class="wh" style="left:22.5%;width:25.6%"></b><b class="iqr" style="left:27.5%;width:5.0%"></b><b class="md" style="left:31.2%"></b></div><div class="sv">10.0<small> 秒</small></div></div>
+<div class="srow hi"><div class="sn">Agent Board<small>MCP</small></div><div class="st" title="最快 8.8 秒，中間一半 9.2–12.9 秒，中位數 10.5 秒，最慢 18.0 秒"><b class="wh" style="left:27.5%;width:28.7%"></b><b class="iqr" style="left:28.7%;width:11.6%"></b><b class="md" style="left:32.8%"></b></div><div class="sv">10.5<small> 秒</small></div></div>
+<div class="srow"><div class="sn">Linear<small></small></div><div class="st" title="最快 14.4 秒，中間一半 15.6–17.4 秒，中位數 16.0 秒，最慢 18.3 秒"><b class="wh" style="left:45.0%;width:12.2%"></b><b class="iqr" style="left:48.8%;width:5.6%"></b><b class="md" style="left:50.0%"></b></div><div class="sv">16.0<small> 秒</small></div></div>
+<div class="srow"><div class="sn">Jira<small>中途出錯 1 次</small></div><div class="st" title="最快 16.0 秒，中間一半 17.4–22.0 秒，中位數 19.8 秒，最慢 27.5 秒"><b class="wh" style="left:50.0%;width:35.9%"></b><b class="iqr" style="left:54.4%;width:14.4%"></b><b class="md" style="left:61.9%"></b></div><div class="sv">19.8<small> 秒</small></div></div>
+<div class="srow"><div class="sn">Plane<small></small></div><div class="st" title="最快 19.7 秒，中間一半 19.9–22.0 秒，中位數 21.0 秒，最慢 26.0 秒"><b class="wh" style="left:61.6%;width:19.7%"></b><b class="iqr" style="left:62.2%;width:6.6%"></b><b class="md" style="left:65.6%"></b></div><div class="sv">21.0<small> 秒</small></div></div>
+<div class="srow"><div class="sn">Notion<small>中途出錯 1 次</small></div><div class="st" title="最快 18.9 秒，中間一半 19.9–26.4 秒，中位數 21.9 秒，最慢 30.9 秒"><b class="wh" style="left:59.1%;width:37.5%"></b><b class="iqr" style="left:62.2%;width:20.3%"></b><b class="md" style="left:68.4%"></b></div><div class="sv">21.9<small> 秒</small></div></div>
+<div class="srow axis"><div class="sn"></div><div class="st"><span style="left:0.0%">0</span><span style="left:31.2%">10</span><span style="left:62.5%">20</span><span style="left:93.8%">30</span></div><div class="sv"></div></div>
+</figure>
+      <div class="legend" style="margin-top:12px"><span><i class="lg-md"></i>中位數（右邊數字）</span><span><i class="lg-iqr"></i>中間一半的執行</span><span><i class="lg-wh"></i>最快到最慢</span></div>
+    </div>
+    <p class="note">每組 13 次，每次一張不同的單。這一題只比耗時：CLI 一次 Bash 能串好幾個指令，比呼叫次數對它不公平。所有單事後讀回都已完成；註記在 Jira 與 Agent Board 讀回確認，其他家以 agent 回報為準。</p>
+  </section>
+
+  <section aria-labelledby="h-alias">
+    <p class="eyebrow">口語開單</p>
+    <h2 id="h-alias">說「準備發表會」也能開對專案：<em>19 次中 19 次</em></h2>
+    <div class="panel" style="display:flex;flex-direction:column;gap:14px">
+      <div class="waffle" role="img" aria-label="30 次開單中，19 次用口語名且一次開對，11 次直接用正式名稱"><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i></div>
+      <div class="legend"><span><i class="lg-on"></i>用口語名，一次就進對專案（19）</span><span><i class="lg-off"></i>agent 直接用正式名稱，不計入（11）</span></div>
+    </div>
+    <p class="note">看板上的專案正式名稱是 AB-Benchmark，事先登記了「準備發表會」這個叫法，CLI、MCP 各跑 15 次。沒登記時，看板會擋下不認識的名稱並列出選項；但「agent 會停下來問你」這件事這次沒量到，因為 subagent 沒有人可以問。</p>
+  </section>
+
+  <section aria-labelledby="h-lim">
+    <h2 id="h-lim">讀這些數字時要記得</h2>
+    <div class="limits">
+      <div><b>樣本小</b><span>每組 13 到 15 次、單一模型、同一台機器。看得出量級差異，不是統計結論。</span></div>
+      <div><b>比的是步數，不是產品</b><span>其他四家是功能完整的產品，Agent Board 是刻意做窄的工具。</span></div>
+      <div><b>不是同一天</b><span>Agent Board 0.4.3 晚一天重測，其他家沒有重測。</span></div>
+      <div><b>不講省錢</b><span>token 幾乎都是每回合重送的快取，和費用不是同一回事。</span></div>
+      <div><b>測試空間會變大</b><span>Jira、Notion 累積同名單，後面幾次搜尋變慢。</span></div>
+      <div><b>作者自己測的</b><span>不是第三方評測。題目原文在下面，歡迎重跑。</span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-data">
+    <h2 id="h-data">完整數字與原始資料</h2>
+    <div>
+      <details><summary>開單：各家完整數字 <small>中位數與範圍、token、出錯次數</small></summary><div class="scroll"><table><thead><tr><th>工具</th><th class="n">呼叫次數</th><th class="n">耗時（秒）</th><th class="n">輸入 token（萬）</th><th class="n">中途出錯</th><th class="n">單子正確</th></tr></thead><tbody>
+<tr><td>Agent Board MCP<small>0.4.3</small></td><td class="n">2</td><td class="n">6.5<small>（6.1–8.3）</small></td><td class="n">28.5</td><td class="n">0/15</td><td class="n">15/15</td></tr>
+<tr><td>Agent Board CLI<small>0.4.3</small></td><td class="n">1<small>（1–2）</small></td><td class="n">5.7<small>（5.1–9.3）</small></td><td class="n">18.7<small>（18.7–28.3）</small></td><td class="n">0/15</td><td class="n">15/15</td></tr>
+<tr><td>Agent Board MCP<small>0.4.1</small></td><td class="n">2</td><td class="n">6.1<small>（5.4–8.5）</small></td><td class="n">27.1</td><td class="n">0/15</td><td class="n">15/15</td></tr>
+<tr><td>Agent Board CLI<small>0.4.1，叫法未登記</small></td><td class="n">2<small>（2–3）</small></td><td class="n">7.1<small>（6.6–11.3）</small></td><td class="n">27.0<small>（27.0–36.1）</small></td><td class="n">15/15</td><td class="n">15/15</td></tr>
+<tr><td>Linear<small></small></td><td class="n">2<small>（2–3）</small></td><td class="n">12.3<small>（10.3–19.1）</small></td><td class="n">27.9<small>（27.9–37.7）</small></td><td class="n">1/15</td><td class="n">15/15</td></tr>
+<tr><td>Plane<small></small></td><td class="n">4</td><td class="n">17.1<small>（15.6–24.5）</small></td><td class="n">47.4</td><td class="n">0/15</td><td class="n">15/15</td></tr>
+<tr><td>Notion<small>有建單的 13 次</small></td><td class="n">4<small>（4–5）</small></td><td class="n">18.4<small>（15.1–23.7）</small></td><td class="n">39.3<small>（39.3–50.2）</small></td><td class="n">0/13</td><td class="n">13/13</td></tr>
+<tr><td>Jira<small></small></td><td class="n">7<small>（5–10）</small></td><td class="n">27.2<small>（20.5–40.3）</small></td><td class="n">67.8<small>（47.3–107.3）</small></td><td class="n">5/15</td><td class="n">15/15</td></tr>
+</tbody></table></div><p class="note" style="margin-top:10px">0.4.1 的 CLI 每次都先把口語名當專案名而被拒，所以 15 次都出錯一次；0.4.3 登記叫法後不再被拒。</p></details>
+      <details><summary>接手：各家完整數字</summary><div class="scroll"><table><thead><tr><th>工具</th><th class="n">呼叫次數</th><th class="n">耗時（秒）</th><th class="n">輸入 token（萬）</th><th class="n">中途出錯</th><th class="n">單子正確</th></tr></thead><tbody>
+<tr><td>Agent Board CLI<small></small></td><td class="n">2<small>（2–4）</small></td><td class="n">10.0<small>（7.2–15.4）</small></td><td class="n">27.2<small>（27.0–37.7）</small></td><td class="n">0/13</td><td class="n">13/13</td></tr>
+<tr><td>Agent Board MCP<small></small></td><td class="n">4</td><td class="n">10.5<small>（8.8–18.0）</small></td><td class="n">37.8<small>（37.7–38.0）</small></td><td class="n">0/13</td><td class="n">13/13</td></tr>
+<tr><td>Linear<small></small></td><td class="n">5<small>（4–5）</small></td><td class="n">16.0<small>（14.4–18.3）</small></td><td class="n">38.0<small>（37.9–38.0）</small></td><td class="n">0/13</td><td class="n">13/13</td></tr>
+<tr><td>Jira<small></small></td><td class="n">5<small>（4–6）</small></td><td class="n">19.8<small>（16.0–27.5）</small></td><td class="n">47.2<small>（37.5–47.3）</small></td><td class="n">1/13</td><td class="n">13/13</td></tr>
+<tr><td>Plane<small></small></td><td class="n">6<small>（5–6）</small></td><td class="n">21.0<small>（19.7–26.0）</small></td><td class="n">47.9<small>（47.6–47.9）</small></td><td class="n">0/13</td><td class="n">13/13</td></tr>
+<tr><td>Notion<small></small></td><td class="n">5<small>（4–6）</small></td><td class="n">21.9<small>（18.9–30.9）</small></td><td class="n">49.3<small>（29.0–59.7）</small></td><td class="n">1/13</td><td class="n">13/13</td></tr>
+</tbody></table></div></details>
+      <details><summary>開單：每一次執行 <small>2026-10-07，Agent Board 0.4.1</small></summary><div class="scroll"><table class="raw"><thead><tr><th>次</th>
+<th class="n" colspan="3">Agent Board CLI</th>
+<th class="n" colspan="3">Agent Board MCP</th>
+<th class="n" colspan="3">Linear</th>
+<th class="n" colspan="3">Plane</th>
+<th class="n" colspan="3">Notion</th>
+<th class="n" colspan="3">Jira</th>
+</tr><tr><th></th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th></tr></thead><tbody>
+<tr><td>1</td><td class="n">3<sup>!</sup></td><td class="n">10.0</td><td class="n">36.1</td><td class="n">2</td><td class="n">8.5</td><td class="n">27.1</td><td class="n">3</td><td class="n">15.3</td><td class="n">37.6</td><td class="n">4</td><td class="n">16.5</td><td class="n">47.4</td><td class="n">4</td><td class="n">17.1</td><td class="n">48.8</td><td class="n">5</td><td class="n">22.1</td><td class="n">47.4</td></tr>
+<tr><td>2</td><td class="n">2<sup>!</sup></td><td class="n">7.1</td><td class="n">27.0</td><td class="n">2</td><td class="n">5.4</td><td class="n">27.1</td><td class="n">2</td><td class="n">10.5</td><td class="n">28.0</td><td class="n">4</td><td class="n">23.8</td><td class="n">47.4</td><td class="n">5</td><td class="n">22.0</td><td class="n">50.2</td><td class="n">5</td><td class="n">20.5</td><td class="n">47.4</td></tr>
+<tr><td>3</td><td class="n">2<sup>!</sup></td><td class="n">6.6</td><td class="n">27.0</td><td class="n">2</td><td class="n">6.5</td><td class="n">27.1</td><td class="n">2</td><td class="n">10.8</td><td class="n">27.9</td><td class="n">4</td><td class="n">16.3</td><td class="n">47.4</td><td class="n">4</td><td class="n">17.5</td><td class="n">39.3</td><td class="n">7</td><td class="n">28.4</td><td class="n">75.9</td></tr>
+<tr><td>4</td><td class="n">2<sup>!</sup></td><td class="n">6.7</td><td class="n">27.0</td><td class="n">2</td><td class="n">5.5</td><td class="n">27.1</td><td class="n">3</td><td class="n">13.9</td><td class="n">37.7</td><td class="n">4</td><td class="n">15.6</td><td class="n">47.4</td><td class="n skip">4</td><td class="n skip">18.5</td><td class="n skip">38.7</td><td class="n">6</td><td class="n">25.2</td><td class="n">56.6</td></tr>
+<tr><td>5</td><td class="n">2<sup>!</sup></td><td class="n">7.6</td><td class="n">27.0</td><td class="n">2</td><td class="n">6.9</td><td class="n">27.1</td><td class="n">3</td><td class="n">18.9</td><td class="n">37.6</td><td class="n">4</td><td class="n">15.6</td><td class="n">47.4</td><td class="n">4</td><td class="n">16.0</td><td class="n">49.0</td><td class="n">7</td><td class="n">30.1</td><td class="n">78.3</td></tr>
+<tr><td>6</td><td class="n">2<sup>!</sup></td><td class="n">7.2</td><td class="n">27.0</td><td class="n">2</td><td class="n">7.6</td><td class="n">27.1</td><td class="n">2</td><td class="n">11.7</td><td class="n">27.9</td><td class="n">4</td><td class="n">18.9</td><td class="n">47.4</td><td class="n skip">4</td><td class="n skip">14.1</td><td class="n skip">38.7</td><td class="n">8<sup>!</sup></td><td class="n">29.1</td><td class="n">78.9</td></tr>
+<tr><td>7</td><td class="n">2<sup>!</sup></td><td class="n">7.4</td><td class="n">27.0</td><td class="n">2</td><td class="n">6.1</td><td class="n">27.1</td><td class="n">2</td><td class="n">11.8</td><td class="n">27.9</td><td class="n">4</td><td class="n">17.1</td><td class="n">47.4</td><td class="n">4</td><td class="n">18.6</td><td class="n">39.3</td><td class="n">8<sup>!</sup></td><td class="n">39.4</td><td class="n">88.1</td></tr>
+<tr><td>8</td><td class="n">3<sup>!</sup></td><td class="n">8.8</td><td class="n">36.1</td><td class="n">2</td><td class="n">6.6</td><td class="n">27.1</td><td class="n">2</td><td class="n">12.3</td><td class="n">28.0</td><td class="n">4</td><td class="n">21.8</td><td class="n">47.4</td><td class="n">4</td><td class="n">23.7</td><td class="n">49.0</td><td class="n">9<sup>!</sup></td><td class="n">38.5</td><td class="n">97.0</td></tr>
+<tr><td>9</td><td class="n">3<sup>!</sup></td><td class="n">9.7</td><td class="n">36.1</td><td class="n">2</td><td class="n">5.7</td><td class="n">27.1</td><td class="n">3<sup>!</sup></td><td class="n">19.1</td><td class="n">37.5</td><td class="n">4</td><td class="n">16.9</td><td class="n">47.4</td><td class="n">4</td><td class="n">19.2</td><td class="n">39.3</td><td class="n">7</td><td class="n">22.9</td><td class="n">67.8</td></tr>
+<tr><td>10</td><td class="n">2<sup>!</sup></td><td class="n">6.6</td><td class="n">27.0</td><td class="n">2</td><td class="n">5.8</td><td class="n">27.1</td><td class="n">3</td><td class="n">15.7</td><td class="n">37.6</td><td class="n">4</td><td class="n">17.3</td><td class="n">47.4</td><td class="n">4</td><td class="n">17.9</td><td class="n">39.3</td><td class="n">8<sup>!</sup></td><td class="n">32.8</td><td class="n">88.1</td></tr>
+<tr><td>11</td><td class="n">2<sup>!</sup></td><td class="n">6.6</td><td class="n">27.0</td><td class="n">2</td><td class="n">5.9</td><td class="n">27.1</td><td class="n">2</td><td class="n">10.3</td><td class="n">27.9</td><td class="n">4</td><td class="n">18.3</td><td class="n">47.4</td><td class="n">4</td><td class="n">18.4</td><td class="n">39.3</td><td class="n">10<sup>!</sup></td><td class="n">40.3</td><td class="n">107.3</td></tr>
+<tr><td>12</td><td class="n">2<sup>!</sup></td><td class="n">6.7</td><td class="n">27.0</td><td class="n">2</td><td class="n">5.8</td><td class="n">27.1</td><td class="n">2</td><td class="n">13.4</td><td class="n">27.9</td><td class="n">4</td><td class="n">24.5</td><td class="n">47.4</td><td class="n">4</td><td class="n">15.1</td><td class="n">39.3</td><td class="n">5</td><td class="n">25.5</td><td class="n">47.3</td></tr>
+<tr><td>13</td><td class="n">2<sup>!</sup></td><td class="n">11.3</td><td class="n">27.0</td><td class="n">2</td><td class="n">7.9</td><td class="n">27.1</td><td class="n">2</td><td class="n">11.8</td><td class="n">27.9</td><td class="n">4</td><td class="n">15.9</td><td class="n">47.4</td><td class="n">5</td><td class="n">18.9</td><td class="n">50.2</td><td class="n">6</td><td class="n">27.2</td><td class="n">66.0</td></tr>
+<tr><td>14</td><td class="n">2<sup>!</sup></td><td class="n">6.9</td><td class="n">27.0</td><td class="n">2</td><td class="n">6.1</td><td class="n">27.1</td><td class="n">2</td><td class="n">11.3</td><td class="n">27.9</td><td class="n">4</td><td class="n">17.4</td><td class="n">47.4</td><td class="n">4</td><td class="n">15.7</td><td class="n">39.3</td><td class="n">5</td><td class="n">23.5</td><td class="n">56.8</td></tr>
+<tr><td>15</td><td class="n">2<sup>!</sup></td><td class="n">6.7</td><td class="n">27.0</td><td class="n">2</td><td class="n">6.0</td><td class="n">27.1</td><td class="n">2</td><td class="n">12.3</td><td class="n">27.9</td><td class="n">4</td><td class="n">16.2</td><td class="n">47.4</td><td class="n">5</td><td class="n">18.9</td><td class="n">50.2</td><td class="n">5</td><td class="n">21.3</td><td class="n">56.8</td></tr>
+</tbody></table></div></details>
+      <details><summary>開單：Agent Board 0.4.3 每一次執行 <small>2026-10-08</small></summary><div class="scroll"><table class="raw"><thead><tr><th>次</th>
+<th class="n" colspan="3">Agent Board CLI</th>
+<th class="n" colspan="3">Agent Board MCP</th>
+</tr><tr><th></th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th></tr></thead><tbody>
+<tr><td>1</td><td class="n">1</td><td class="n">6.9</td><td class="n">18.7</td><td class="n">2</td><td class="n">7.5</td><td class="n">28.5</td></tr>
+<tr><td>2</td><td class="n">1</td><td class="n">6.3</td><td class="n">18.7</td><td class="n">2</td><td class="n">6.4</td><td class="n">28.5</td></tr>
+<tr><td>3</td><td class="n">1</td><td class="n">6.5</td><td class="n">18.7</td><td class="n">2</td><td class="n">6.4</td><td class="n">28.5</td></tr>
+<tr><td>4</td><td class="n">1</td><td class="n">5.4</td><td class="n">18.7</td><td class="n">2</td><td class="n">8.3</td><td class="n">28.5</td></tr>
+<tr><td>5</td><td class="n">1</td><td class="n">5.6</td><td class="n">18.7</td><td class="n">2</td><td class="n">6.8</td><td class="n">28.5</td></tr>
+<tr><td>6</td><td class="n">1</td><td class="n">5.4</td><td class="n">18.7</td><td class="n">2</td><td class="n">6.5</td><td class="n">28.5</td></tr>
+<tr><td>7</td><td class="n">1</td><td class="n">5.5</td><td class="n">18.7</td><td class="n">2</td><td class="n">6.2</td><td class="n">28.5</td></tr>
+<tr><td>8</td><td class="n">1</td><td class="n">5.7</td><td class="n">18.7</td><td class="n">2</td><td class="n">6.3</td><td class="n">28.5</td></tr>
+<tr><td>9</td><td class="n">1</td><td class="n">5.1</td><td class="n">18.7</td><td class="n">2</td><td class="n">6.4</td><td class="n">28.5</td></tr>
+<tr><td>10</td><td class="n">2</td><td class="n">9.3</td><td class="n">28.3</td><td class="n">2</td><td class="n">6.7</td><td class="n">28.5</td></tr>
+<tr><td>11</td><td class="n">2</td><td class="n">8.8</td><td class="n">28.3</td><td class="n">2</td><td class="n">6.5</td><td class="n">28.5</td></tr>
+<tr><td>12</td><td class="n">1</td><td class="n">5.5</td><td class="n">18.7</td><td class="n">2</td><td class="n">6.8</td><td class="n">28.5</td></tr>
+<tr><td>13</td><td class="n">1</td><td class="n">6.2</td><td class="n">18.7</td><td class="n">2</td><td class="n">6.5</td><td class="n">28.5</td></tr>
+<tr><td>14</td><td class="n">1</td><td class="n">5.5</td><td class="n">18.7</td><td class="n">2</td><td class="n">6.8</td><td class="n">28.5</td></tr>
+<tr><td>15</td><td class="n">1</td><td class="n">5.9</td><td class="n">18.7</td><td class="n">2</td><td class="n">6.1</td><td class="n">28.5</td></tr>
+</tbody></table></div></details>
+      <details><summary>接手：每一次執行 <small>2026-10-07</small></summary><div class="scroll"><table class="raw"><thead><tr><th>次</th>
+<th class="n" colspan="3">Agent Board CLI</th>
+<th class="n" colspan="3">Agent Board MCP</th>
+<th class="n" colspan="3">Linear</th>
+<th class="n" colspan="3">Jira</th>
+<th class="n" colspan="3">Plane</th>
+<th class="n" colspan="3">Notion</th>
+</tr><tr><th></th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th><th class="n">呼叫</th><th class="n">秒</th><th class="n">萬 token</th></tr></thead><tbody>
+<tr><td>1</td><td class="n">2</td><td class="n">7.9</td><td class="n">27.2</td><td class="n">4</td><td class="n">8.9</td><td class="n">37.7</td><td class="n">5</td><td class="n">15.6</td><td class="n">38.0</td><td class="n">4</td><td class="n">16.0</td><td class="n">37.5</td><td class="n">6</td><td class="n">19.8</td><td class="n">47.9</td><td class="n">5</td><td class="n">24.7</td><td class="n">49.3</td></tr>
+<tr><td>2</td><td class="n">2</td><td class="n">10.4</td><td class="n">27.2</td><td class="n">4</td><td class="n">12.9</td><td class="n">37.7</td><td class="n">5</td><td class="n">15.6</td><td class="n">38.0</td><td class="n">4</td><td class="n">17.4</td><td class="n">37.5</td><td class="n">6</td><td class="n">25.9</td><td class="n">47.9</td><td class="n">5</td><td class="n">27.4</td><td class="n">49.4</td></tr>
+<tr><td>3</td><td class="n">2</td><td class="n">11.0</td><td class="n">27.2</td><td class="n">4</td><td class="n">12.2</td><td class="n">37.7</td><td class="n">4</td><td class="n">14.5</td><td class="n">37.9</td><td class="n">5</td><td class="n">19.5</td><td class="n">47.2</td><td class="n">5</td><td class="n">19.7</td><td class="n">47.6</td><td class="n">5</td><td class="n">19.3</td><td class="n">49.3</td></tr>
+<tr><td>4</td><td class="n">4</td><td class="n">9.7</td><td class="n">37.7</td><td class="n">4</td><td class="n">10.5</td><td class="n">37.8</td><td class="n">5</td><td class="n">16.0</td><td class="n">37.9</td><td class="n">4</td><td class="n">16.0</td><td class="n">37.6</td><td class="n">5</td><td class="n">21.2</td><td class="n">47.6</td><td class="n">6</td><td class="n">30.9</td><td class="n">59.7</td></tr>
+<tr><td>5</td><td class="n">2</td><td class="n">9.3</td><td class="n">27.2</td><td class="n">4</td><td class="n">9.2</td><td class="n">37.8</td><td class="n">5</td><td class="n">16.1</td><td class="n">38.0</td><td class="n">5</td><td class="n">19.8</td><td class="n">47.2</td><td class="n">6</td><td class="n">20.9</td><td class="n">47.9</td><td class="n">5</td><td class="n">26.4</td><td class="n">49.4</td></tr>
+<tr><td>6</td><td class="n">2</td><td class="n">10.2</td><td class="n">27.2</td><td class="n">4</td><td class="n">8.8</td><td class="n">37.8</td><td class="n">5</td><td class="n">17.6</td><td class="n">38.0</td><td class="n">5</td><td class="n">27.5</td><td class="n">47.2</td><td class="n">5</td><td class="n">21.9</td><td class="n">47.6</td><td class="n">4</td><td class="n">22.1</td><td class="n">39.0</td></tr>
+<tr><td>7</td><td class="n">2</td><td class="n">10.4</td><td class="n">27.2</td><td class="n">4</td><td class="n">13.7</td><td class="n">37.8</td><td class="n">5</td><td class="n">15.7</td><td class="n">38.0</td><td class="n">5</td><td class="n">22.0</td><td class="n">47.2</td><td class="n">5</td><td class="n">19.9</td><td class="n">47.6</td><td class="n">5</td><td class="n">21.8</td><td class="n">49.4</td></tr>
+<tr><td>8</td><td class="n">2</td><td class="n">7.7</td><td class="n">27.2</td><td class="n">4</td><td class="n">10.7</td><td class="n">37.9</td><td class="n">5</td><td class="n">16.3</td><td class="n">37.9</td><td class="n">5</td><td class="n">23.9</td><td class="n">47.2</td><td class="n">5</td><td class="n">26.0</td><td class="n">47.6</td><td class="n">6<sup>!</sup></td><td class="n">26.7</td><td class="n">46.2</td></tr>
+<tr><td>9</td><td class="n">2</td><td class="n">10.0</td><td class="n">27.2</td><td class="n">4</td><td class="n">9.1</td><td class="n">37.9</td><td class="n">4</td><td class="n">18.3</td><td class="n">37.9</td><td class="n">5</td><td class="n">19.3</td><td class="n">47.2</td><td class="n">6</td><td class="n">22.0</td><td class="n">47.9</td><td class="n">5</td><td class="n">21.9</td><td class="n">49.4</td></tr>
+<tr><td>10</td><td class="n">2</td><td class="n">13.5</td><td class="n">27.1</td><td class="n">4</td><td class="n">9.2</td><td class="n">37.9</td><td class="n">5</td><td class="n">17.5</td><td class="n">38.0</td><td class="n">6<sup>!</sup></td><td class="n">20.0</td><td class="n">47.3</td><td class="n">6</td><td class="n">22.9</td><td class="n">47.9</td><td class="n">5</td><td class="n">19.3</td><td class="n">49.3</td></tr>
+<tr><td>11</td><td class="n">2</td><td class="n">15.4</td><td class="n">27.0</td><td class="n">4</td><td class="n">13.7</td><td class="n">37.9</td><td class="n">5</td><td class="n">14.4</td><td class="n">38.0</td><td class="n">4</td><td class="n">16.0</td><td class="n">37.5</td><td class="n">6</td><td class="n">21.0</td><td class="n">47.9</td><td class="n">5</td><td class="n">19.9</td><td class="n">49.1</td></tr>
+<tr><td>12</td><td class="n">2</td><td class="n">8.8</td><td class="n">27.2</td><td class="n">4</td><td class="n">18.0</td><td class="n">38.0</td><td class="n">5</td><td class="n">14.5</td><td class="n">38.0</td><td class="n">5</td><td class="n">24.1</td><td class="n">47.2</td><td class="n">6</td><td class="n">19.7</td><td class="n">47.9</td><td class="n">4</td><td class="n">20.5</td><td class="n">29.0</td></tr>
+<tr><td>13</td><td class="n">2</td><td class="n">7.2</td><td class="n">27.0</td><td class="n">4</td><td class="n">9.3</td><td class="n">38.0</td><td class="n">5</td><td class="n">17.4</td><td class="n">38.0</td><td class="n">4</td><td class="n">21.1</td><td class="n">37.5</td><td class="n">6</td><td class="n">20.6</td><td class="n">47.9</td><td class="n">4</td><td class="n">18.9</td><td class="n">37.9</td></tr>
+</tbody></table></div></details>
+      <details><summary>題目原文與計算方式</summary><pre>任務（用自然語言，像人對助理說的一樣）：
+請在「準備發表會」這個專案的看板新增一張單：標題「確認發表會場地與報價」，狀態設為進行中，優先度高，描述寫「預算上限 5 萬、要能容納 80 人」。
+做完後只用一句話回報：建好了什麼、單子的編號或網址。
+
+規則：
+- 只准動下面指定的測試空間；不要刪除或修改任何既有資料；不要向使用者詢問任何憑證。
+- 工具若是延後載入的（需要先用 ToolSearch 取得 schema），照常做。
+- 不要讀專案原始碼或文件來學怎麼用；直接用工具完成。
+- 最後的回報要誠實：有沒有成功、哪裡卡過。
+
+使用工具：〈該組的工具〉。要用的看板：〈該組的測試空間〉（就是「準備發表會」這個專案）。</pre><pre>任務（用自然語言，像人對助理說的一樣）：
+請接手這張單：〈單號〉。先看它現在的狀態與內容，然後把狀態改成「完成」，並在這張單上新增一筆註記：「已比對三個場地，報價 3.8 到 6.5 萬，建議選第二個」。
+做完後只用一句話回報：現在這張單的狀態是什麼、註記有沒有寫上。
+
+規則：
+- 只准動這一張單；不要刪除任何資料；不要向使用者詢問任何憑證。
+- 工具若是延後載入的（需要先用 ToolSearch 取得 schema），照常做。
+- 不要讀專案原始碼或文件來學怎麼用；直接用工具完成。
+- 最後的回報要誠實：有沒有成功、哪裡卡過。
+
+使用工具：〈該組的工具〉。這張單在〈該組的測試空間〉。</pre><p class="note" style="margin-top:12px">呼叫次數含載入工具那一次。耗時是 session 第一筆到最後一筆紀錄的時間差。token 是每個模型回應的輸入相加，同一個回應只算一次。「!」表示該次有工具呼叫回傳錯誤；劃掉的是 Notion 沒建單的兩次。原始紀錄含測試站台名稱與空間識別碼，不公開。</p></details>
+    </div>
+  </section>
+
+  <p class="foot">Agent Board 是開源的本機看板，MIT 授權：<a href="https://github.com/111588004/agent-board" target="_blank" rel="noopener">github.com/111588004/agent-board</a></p>
+</main>
+<script>
+/* land at the top: the artifact frame keeps the previous page's scroll position */
+if('scrollRestoration' in history)history.scrollRestoration='manual';
+(function(){function top(){if(location.hash)return;document.documentElement.style.scrollBehavior='auto';window.scrollTo(0,0);try{document.body.scrollIntoView({block:'start',behavior:'instant'})}catch(e){document.body.scrollIntoView(true)}}
+top();addEventListener('load',top);addEventListener('pageshow',top);})();
+</script>
+</body></html>

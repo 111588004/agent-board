@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Agent Board</title>
+<meta name="description" content="你和你的 AI coding agent 共用的本機看板。一句話交代下去：agent 開單、另一個 agent 接手、最後回到你手上。">
+<meta property="og:title" content="Agent Board">
+<meta property="og:description" content="你和你的 AI coding agent 共用的本機看板：agent 開單、接手、交回來。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://111588004.github.io/agent-board/">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%20width%3D%22512%22%20height%3D%22512%22%20role%3D%22img%22%20aria-labelledby%3D%22t%22%3E%3Ctitle%20id%3D%22t%22%3EAgent%20Board%3C%2Ftitle%3E%3Crect%20id%3D%22tile%22%20width%3D%22512%22%20height%3D%22512%22%20rx%3D%22112%22%20fill%3D%22%230f1a24%22%2F%3E%3Cg%20transform%3D%22scale%281.33%29%22%3E%3Cpath%20id%3D%22person%22%20fill%3D%22%23FFFFFF%22%20d%3D%22M75.31%2053.22L207.31%20129.43A22%2022%200%200%201%20218.31%20148.48L218.31%20185.67A22%2022%200%200%201%20185.31%20204.72L53.31%20128.51A22%2022%200%200%201%2042.31%20109.46L42.31%2072.27A22%2022%200%200%201%2075.31%2053.22Z%22%2F%3E%3Cpath%20id%3D%22agent%22%20fill%3D%22%234fc0dc%22%20d%3D%22M53.31%20231.04L122.1%20191.32A12%2012%200%200%201%20134.1%20191.32L186.31%20221.47A12%2012%200%200%201%20186.31%20242.25L75.31%20306.34A22%2022%200%200%201%2042.31%20287.29L42.31%20250.09A22%2022%200%200%201%2053.31%20231.04Z%22%2F%3E%3Cpath%20id%3D%22cursor%22%20fill%3D%22%234fc0dc%22%20d%3D%22M256.31%20269.39L324.31%20269.39A18%2018%200%200%201%20342.31%20287.39L342.31%20307.39A18%2018%200%200%201%20324.31%20325.39L256.31%20325.39A18%2018%200%200%201%20238.31%20307.39L238.31%20287.39A18%2018%200%200%201%20256.31%20269.39Z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E%0A">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+/* Layout: phone-first single column. One claim, one command, then a "screen recording" that zooms into what matters. Everything after it is proof, then the exits. */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --ink:#0f1a24; --dim:#5a6a79; --line:#d5dce4; --soft:#e2e8ee;
+  --accent:#0b6e8a; --accent-ink:#ffffff; --accent-soft:#d8eef4;
+  --mat:#0b1218;
+  --term:#101820; --term-fg:#dde5ec; --term-dim:#7f8fa0; --term-line:#223040;
+  --sans:"Noto Sans TC","IBM Plex Sans",system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+  --en:"IBM Plex Sans","Noto Sans TC",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0d1319; --panel:#151d26; --ink:#e7edf3; --dim:#97a6b5; --line:#263340; --soft:#1c2733;
+  --accent:#4fc0dc; --accent-ink:#06222b; --accent-soft:#12303a; --mat:#05090d;
+  --term:#0a0f14; --term-line:#1b2733; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1319; --panel:#151d26; --ink:#e7edf3; --dim:#97a6b5; --line:#263340; --soft:#1c2733;
+  --accent:#4fc0dc; --accent-ink:#06222b; --accent-soft:#12303a; --mat:#05090d;
+  --term:#0a0f14; --term-line:#1b2733; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 var(--sans);padding-inline:16px;padding-block:0 56px}
+.wrap{max-width:980px;margin-inline:auto}
+h1,h2,h3{margin:0;line-height:1.2;text-wrap:balance}
+p{margin:0}
+a{color:var(--accent)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+code,kbd{font-family:var(--mono)}
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px calc(50vw - 50%);margin-inline:calc(50% - 50vw);font:500 13px var(--en);flex-wrap:wrap;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+html{scroll-behavior:smooth;scroll-padding-top:64px}
+body{overflow-x:clip}
+.top .logo{display:flex;align-items:center;color:var(--ink);text-decoration:none}
+.top .logo .lk{height:22px;width:auto;display:block}
+.top nav{display:flex;gap:14px;flex-wrap:wrap}
+.top nav a{color:var(--dim);text-decoration:none}
+.top nav a{position:relative;padding-block:4px}
+.top nav a::after{content:"";position:absolute;left:0;right:0;bottom:-2px;height:2px;border-radius:2px;background:var(--accent);transform:scaleX(0);transition:transform .2s}
+.top nav a[aria-current="true"]{color:var(--ink)}
+.top nav a[aria-current="true"]::after{transform:scaleX(1)}
+.top nav a:hover{color:var(--ink)}
+@media(max-width:600px){.top{flex-direction:column;align-items:flex-start;gap:8px;padding-block:10px}.top nav{flex-wrap:nowrap;overflow-x:auto;max-width:100%;scrollbar-width:none;white-space:nowrap;gap:16px}.top nav::-webkit-scrollbar{display:none}html{scroll-padding-top:76px}}
+section{padding-top:56px}
+.eyebrow{font:500 12px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+h2{font-size:clamp(24px,5vw,34px);font-weight:700;margin-bottom:10px}
+.lede{color:var(--dim);max-width:60ch;margin-bottom:22px}
+
+/* hero */
+.hero{padding-top:28px}
+.hero h1{font-size:clamp(34px,8.5vw,64px);font-weight:900;letter-spacing:-.02em;line-height:1.12}
+.hero h1 em{font-style:normal;color:var(--accent)}
+.hero .sub{font-size:clamp(16px,2.6vw,19px);color:var(--dim);max-width:46ch;margin:16px 0 22px}
+.cmd{display:flex;align-items:center;gap:10px;background:var(--term);color:var(--term-fg);border-radius:10px;padding:12px 12px 12px 14px;font:500 14px/1.4 var(--mono);max-width:560px}
+.cmd .p{color:var(--term-dim)}
+.cmd code{flex:1;min-width:0;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
+button.copy{font:600 12px var(--mono);background:transparent;color:var(--term-fg);border:1px solid var(--term-dim);border-radius:7px;padding:6px 10px;cursor:pointer;flex:none}
+button.copy:hover{border-color:var(--term-fg)}
+.hero .note{font:13px/1.6 var(--sans);color:var(--dim);margin-top:10px;max-width:60ch}
+
+/* player: a dark mat with the "screen" inset, like a screen recording on a wallpaper */
+.player{margin-top:28px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.pbar{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);font:12px var(--mono);color:var(--dim)}
+.pbar .dots{display:flex;gap:5px}
+.pbar .dots i{width:9px;height:9px;border-radius:50%;background:var(--soft);display:block}
+.pbar .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pbar button{all:unset;cursor:pointer;font:600 12px var(--mono);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:4px 9px}
+.pbar button:hover{border-color:var(--dim)}
+.mat{background:var(--mat);padding:clamp(10px,2.5vw,26px)}
+.stage{position:relative;aspect-ratio:16/9;max-width:100%;overflow:hidden;background:#0c1116;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.45)}
+.cam{position:absolute;left:0;top:0;width:1280px;height:720px;transform-origin:0 0;will-change:transform}
+.scene{position:absolute;inset:0;background:#1a222c}
+.el{opacity:0}.el.on{opacity:1}
+.chap{position:absolute;z-index:6;inset:0;pointer-events:none;opacity:0;transition:opacity .6s ease-out}
+.chap::before{content:"";position:absolute;inset:0;background:rgba(8,12,16,.74)}
+.chap .in{position:absolute;left:50%;top:50%;width:max-content;max-width:88%;text-align:center;color:#fff;transform:translate(-50%,calc(-50% + 22px));transition:transform .7s cubic-bezier(.2,.7,.2,1)}
+.chap .in::before{content:"";display:block;width:2.2em;height:4px;background:var(--accent);border-radius:2px;margin:0 auto .5em}
+.chap .in small{display:block;font:600 clamp(11px,1.3vw,14px)/1 var(--mono);letter-spacing:.14em;opacity:.7;margin-bottom:.6em}
+.chap .in span{display:block;font:800 clamp(22px,4.2vw,46px)/1.15 var(--sans);letter-spacing:-.01em;text-shadow:0 2px 12px rgba(0,0,0,.4)}
+.chap.on{opacity:1}.chap.on .in{transform:translate(-50%,-50%)}
+.chap.lt::before{background:none}
+.chap.lt .in{left:0;top:auto;bottom:0;width:auto;max-width:none;text-align:left;padding:8px 14px 8px 12px;background:rgba(8,12,16,.72);border-radius:0 8px 0 0;backdrop-filter:blur(6px);transform:translateY(100%);transition:transform .45s cubic-bezier(.2,.7,.2,1)}
+.chap.lt .in::before{display:none}
+.chap.lt .in small{display:inline;margin:0 .7em 0 0;vertical-align:middle}
+.chap.lt .in span{display:inline;font:700 clamp(13px,1.7vw,19px)/1.3 var(--sans);vertical-align:middle;text-shadow:none}
+.chap.lt.on .in{transform:none}
+.callout{position:absolute;z-index:5;display:flex;align-items:center;gap:8px;background:#ffd84d;color:#1b1500;font:700 22px/1.2 var(--sans);padding:10px 16px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.35);opacity:0;transform:translateY(6px);white-space:nowrap}
+.callout::before{content:"";position:absolute;width:14px;height:14px;background:#ffd84d;transform:rotate(45deg);left:22px;bottom:-7px}
+.callout.up::before{bottom:auto;top:-7px}
+.callout.on{opacity:1;transform:none}
+.cap{display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--line);min-height:62px}
+.cap .n{font:600 12px var(--mono);color:var(--accent);background:var(--accent-soft);border-radius:6px;padding:3px 8px;flex:none}
+.cap .t{font-size:15px;font-weight:500;line-height:1.5}
+.seg{display:flex;gap:4px;padding:0 12px 12px}
+.seg button{all:unset;cursor:pointer;flex:1;height:22px;position:relative;display:flex;align-items:flex-end}
+.seg button i{display:block;width:100%;height:4px;border-radius:2px;background:var(--soft);overflow:hidden;position:relative}
+.seg button i b{position:absolute;left:0;top:0;bottom:0;width:var(--w,0%);background:var(--accent)}
+.seg button[aria-current="true"] i{background:var(--line)}
+.player .static{display:none}
+@media (prefers-reduced-motion:reduce){.player .static{display:block}}
+
+/* in-scene terminal, drawn after Claude Code's transcript */
+.tw{position:absolute;left:24px;top:24px;width:600px;height:672px;background:var(--term);border-radius:12px;border:1px solid var(--term-line);color:var(--term-fg);font:400 18px/1.5 var(--mono);overflow:hidden}
+.tbar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--term-line);font:600 14px var(--mono);color:var(--term-dim)}
+.tbar .dot{width:10px;height:10px;border-radius:50%;background:var(--ac)}
+.tbar b{color:var(--term-fg);font-weight:600}
+.tbody{position:absolute;left:0;right:0;top:41px;bottom:0;padding:14px 16px 16px;display:flex;flex-direction:column;justify-content:flex-end;gap:10px;overflow:hidden}
+.tw .ln.el{display:none}.tw .ln.el.on{display:block}
+.ln{white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+.pr{color:#8fd4e6}.dim{color:var(--term-dim)}.ok{color:#7bd88f}.hi{color:#f2d98a}.cx{color:#a9acff}
+.tw.codex{border-color:#a9acff;box-shadow:0 0 0 4px rgba(169,172,255,.35)}
+.tw.codex .tbar{background:#23264d;color:#dfe0ff;border-bottom-color:#3a3f8a}
+.hdr{font-size:16px;line-height:1.35}.tw .cchd.el.on{display:flex;gap:14px;align-items:center;white-space:pre-wrap}.cclogo{flex:none;display:block}.hdr .lg{color:#f0a273;font-weight:600}.hdr .lgx{color:#a9acff;font-weight:600}
+.hand.focus{box-shadow:0 0 0 2px #4c8dff;border-radius:6px;padding:3px 4px}
+.hand .cp.done{background:#1d7a46}
+.ask{border-top:1px solid var(--term-line);border-bottom:1px solid var(--term-line);padding:8px 0;margin:4px 0}
+.ask .h{color:var(--term-dim);font-size:16px}
+.ask .sel{background:#1b2a36;border-radius:4px}
+.cur::after{content:"▍";color:var(--term-dim)}
+/* in-scene web ui: redrawn from the real board (always light, like the app) */
+.web{position:absolute;left:648px;top:24px;width:608px;height:672px;background:#f4f5f7;color:#1d2027;border-radius:12px;overflow:hidden;font:400 13px/1.4 "IBM Plex Sans",-apple-system,"Noto Sans TC",sans-serif;border:1px solid #d9dde3}
+.whead{background:#0f1a24;color:#fff;display:flex;align-items:center;gap:10px;padding:9px 12px;font-size:12px}
+.whead .brand{display:flex;align-items:center;gap:6px;font-weight:700;font-size:13px}
+.whead .host{font:10.5px var(--mono);color:#8b8d98}
+.whead .ws{font-size:11px;background:#1a2733;border-radius:6px;padding:2px 8px}
+.whead .tb{margin-left:auto;display:flex;gap:6px;align-items:center}
+.whead .ghost{font-size:11px;border:1px solid #3a3f48;border-radius:6px;padding:3px 8px;color:#d6d8de}
+.whead .newbtn{background:#0b6e8a;color:#fff;border-radius:7px;padding:4px 10px;font-weight:600;font-size:11.5px}
+.wtool{display:flex;gap:8px;padding:9px 12px 0;align-items:center}
+.segm{display:flex;background:#fff;border:1px solid #e4e6eb;border-radius:7px;padding:2px;font-size:11px;font-weight:600;color:#6b6f79}
+.segm span{padding:2px 9px;border-radius:5px}.segm .on{background:#1d2027;color:#fff}
+.flt{font-size:11px;background:#fff;border:1px solid #e4e6eb;border-radius:7px;padding:4px 9px;color:#42454d}
+.uboard{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:10px 12px}
+.ucol{background:#ebecf0;border-radius:10px;padding:8px;min-height:300px}
+.uh{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.ut{font:700 10.5px var(--sans);text-transform:uppercase;letter-spacing:.04em;color:#42454d}
+.un{margin-left:auto;font-size:10px;color:#8b8d98;background:#dee1e8;border-radius:5px;padding:0 5px}
+.ucard{position:relative;background:#fff;border:1px solid #e4e6eb;border-radius:8px;padding:8px 9px 8px 18px;margin-bottom:7px;box-shadow:0 1px 2px rgba(9,10,12,.08)}
+.ucard::before{content:"⋮⋮";position:absolute;left:5px;top:9px;font-size:10px;color:#c7cbd4;letter-spacing:-2px}
+.ucard.cur2{border-color:#4c8dff;box-shadow:0 0 0 2px #4c8dff40}
+.uid{font:11px var(--mono);color:#9599a3;display:block}
+.utt{font-weight:500;font-size:13.5px;line-height:1.35;display:block;margin:2px 0 6px}
+.ucr{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.chip{display:inline-block;font:600 10px/1.5 var(--mono);padding:0 6px;border-radius:5px;background:#f0f1f4;color:#5b5f69;border:1px solid #e4e6eb;white-space:nowrap}
+.chip.cl{color:#D97757;background:#D977571A;border-color:#D9775733}.chip.cx2{color:#10A37F;background:#10A37F1A;border-color:#10A37F33}
+.pd{display:inline-block;width:6px;height:6px;border-radius:50%}
+.utm{font-size:10px;color:#9599a3;margin-top:5px}
+.addt{font-size:11px;color:#6b6f79;padding:4px 2px}
+/* drawer, drawn after the real ticket drawer */
+.drawer{position:absolute;left:0;right:0;top:0;bottom:0;background:#fff;padding:12px 16px 14px;display:grid;gap:10px;align-content:start;font-size:12.5px}
+.drawer .dh{display:flex;justify-content:space-between;font:11px var(--mono);color:#6b6f79}
+.drawer h4{margin:0;font-size:16px;font-weight:700}
+.stpill{display:inline-block;font-size:11px;font-weight:600;border-radius:99px;padding:2px 9px;background:#4C8DFF1A;color:#4C8DFF;justify-self:start}
+.stpill.rv{background:#E8A33D1A;color:#b8761a}
+.fbox{border:1px solid #e4e6eb;border-radius:8px;padding:2px 10px}
+.frow{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #eef0f3;font-size:12px}
+.frow:last-child{border-bottom:0}
+.frow .k{color:#42454d}.frow .v{font-weight:500}
+.frow.focus{box-shadow:0 0 0 2px #4c8dff;border-radius:4px;padding-inline:4px}
+.menu{position:absolute;background:#fff;border:1px solid #e4e6eb;border-radius:8px;box-shadow:0 8px 24px rgba(20,22,30,.14);padding:4px;font-size:11.5px;min-width:72px;z-index:3}
+.menu div{padding:4px 10px;border-radius:5px}.menu .on{background:#F0F4FF;font-weight:600}
+.hand{display:flex;align-items:center;gap:8px;font-size:11.5px;color:#42454d}
+.hand .sl{border:1px solid #e4e6eb;border-radius:6px;padding:2px 8px}
+.hand .cp{background:#1d2027;color:#fff;border-radius:6px;padding:3px 8px;font-weight:600}
+.lab{font:600 10.5px var(--sans);letter-spacing:.04em;color:#6b6f79;text-transform:uppercase}
+.desc{font:12px/1.6 var(--mono);color:#1d2027;white-space:pre-wrap;overflow-wrap:anywhere;padding:4px 8px;border-radius:4px}
+.desc.focus{box-shadow:0 0 0 2px #4c8dff}
+.desc .hl{background:#fff3d6;border-radius:3px}
+.desc .caret{display:none;width:1.5px;height:1.15em;background:#1d2027;vertical-align:-0.2em;margin-left:1px}
+.desc.focus .caret{display:inline-block}
+.dev{font-size:11px;color:#6b6f79}
+.dfoot{display:flex;justify-content:space-between;font-size:11px;color:#9599a3;margin-top:4px}
+.dfoot b{color:#E5484D;font-weight:500}
+.pointer{position:absolute;width:18px;height:20px;z-index:4;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))}
+.endcard{position:absolute;inset:0;z-index:6;background:rgba(12,17,22,.92);color:#e7edf3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center;padding:40px}
+.endcard .emk{width:64px;height:64px;color:#fff;--accent:#4fc0dc;margin-bottom:-4px}
+.endcard .e0{font:500 22px/1.3 var(--sans);color:#9fb0c0;margin-bottom:-6px}.endcard .e1{font:900 54px/1.2 var(--sans);letter-spacing:-.01em}.endcard .e1 em{font-style:normal;color:#4fc0dc}.endcard .e2{font:500 26px var(--mono);background:#1a232d;padding:12px 22px;border-radius:10px}.endcard .e3{font:14px var(--mono);color:#7f8fa0;letter-spacing:.1em}
+
+/* proof numbers */
+.bench{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 18px 14px}
+.kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 16px;padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+.kpi b{display:block;font:700 32px/1.05 var(--en);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.kpi b small{font-size:15px;font-weight:600;color:var(--dim);margin-left:3px}
+.kpi .l{font-size:13px;color:var(--dim);margin-top:4px;line-height:1.4}
+.bars h4{font-size:13px;font-weight:600;margin:10px 0 2px}
+.bars h4 span{font-weight:400;color:var(--dim)}
+.bar{display:grid;grid-template-columns:5.5em 1fr 3.2em 4.6em;gap:0 10px;align-items:center;font-size:13px;margin:4px 0}
+.bar .n{color:var(--dim);text-align:right;white-space:nowrap}
+.bar .t{position:relative;height:22px}
+.bar .t i{display:block;height:100%;width:calc(var(--w) * var(--k,1));background:var(--dim);opacity:.45;border-radius:4px}
+.bar .v{position:absolute;left:calc(var(--w) * var(--k,1) + 8px);top:0;line-height:22px;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.bar .v small{font-weight:400;color:var(--dim);font-size:11px;margin-left:1px}
+.bar .c,.bar .k{color:var(--dim);font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+.bar.h{margin:0 0 2px;font-size:11px;color:var(--dim)}
+.bar.h .c,.bar.h .k{font-size:11px}
+.bar.ab .n{color:var(--ink);font-weight:600}
+.bar.ab .t i{background:var(--accent);opacity:1}
+.bar.ab .c,.bar.ab .k{color:var(--ink)}
+.tog{display:inline-flex;background:var(--line);border-radius:999px;padding:3px;gap:2px;margin:2px 0 8px}
+.tog label{cursor:pointer}
+.tog input{position:absolute;opacity:0;width:0;height:0}
+.tog span{display:block;padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;color:var(--dim)}
+.tog input:checked+span{background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.tog input:focus-visible+span{outline:2px solid var(--accent)}
+.bench:has(#bt1:checked) .b2,.bench:has(#bt2:checked) .b1{display:none}
+@media(max-width:720px){.kpi{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){
+.kpi{grid-template-columns:1fr 1fr;gap:10px 12px}.kpi b{font-size:28px}
+.bars{--k:.5}
+.bar{grid-template-columns:1fr 2.4em 4.2em;grid-template-areas:"n n n" "t c k";gap:2px 10px;margin:0 0 8px}
+.bar .n{grid-area:n;text-align:left}.bar .t{grid-area:t;height:18px}.bar .c{grid-area:c}.bar .k{grid-area:k}
+.bar .v{line-height:18px;font-size:12px}
+.bar.h{grid-template-areas:"n c k";margin:0 0 4px}.bar.h span:nth-child(2){display:none}
+}
+.bench .f{font-size:12.5px;color:var(--dim);line-height:1.55;margin:12px 0 0}
+.cond{font-size:13px;color:var(--dim);margin-top:14px;line-height:1.6}
+.cond a{display:block;margin-top:6px;text-align:left}
+
+/* entries */
+.ways{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:960px){.ways{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.ways{grid-template-columns:1fr}}
+.way{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;min-width:0;display:flex;flex-direction:column;gap:10px}
+.way .ill{width:100%;height:auto;display:block;border-radius:8px;background:var(--soft)}
+.way{position:relative}
+.way.new::after{content:"NEW";position:absolute;top:10px;right:10px;font:700 10px/1 var(--mono);letter-spacing:.08em;color:#fff;background:var(--accent);padding:4px 7px;border-radius:999px}
+.way h3{font-size:16px;font-weight:700}
+.way p{font-size:14px;color:var(--dim)}
+.way pre{margin:0;background:var(--term);color:var(--term-fg);border-radius:8px;padding:10px 12px;font:12.5px/1.6 var(--mono);overflow-x:auto;white-space:pre}
+.way .tag{align-self:flex-start;font:600 11px var(--mono);letter-spacing:.06em;padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent)}
+
+/* why / honesty */
+.mapbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.mapbox svg.d,.mapbox svg.m{display:block;width:100%;height:auto}
+.mapbox svg.m{display:none;max-width:420px;margin:0 auto}
+@media(max-width:600px){.mapbox svg.d{display:none}.mapbox svg.m{display:block}}
+.mapbox text{font-family:var(--mono);fill:var(--ink)}
+.mapbox .d{fill:var(--dim)}
+.mapbox .ic{color:var(--dim)}
+.why{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.why div{border-left:3px solid var(--accent);padding:4px 0 4px 16px}
+.why .wi{width:22px;height:22px;display:block;color:var(--ink);margin-bottom:8px}
+.why b{display:block;font-size:16px;margin-bottom:4px}
+.why p{font-size:14.5px;color:var(--dim)}
+.flat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+.flat ul{margin:0;padding-left:18px;display:grid;gap:6px;font-size:15px}
+.flat li::marker{color:var(--accent)}
+
+/* cta */
+.cta{background:var(--term);color:var(--term-fg);border-radius:14px;padding:26px 20px}
+.cta h2{color:var(--term-fg)}
+.cta .lede{color:var(--term-dim)}
+.cmds{display:grid;gap:10px}
+.row{display:grid;grid-template-columns:72px minmax(0,1fr);gap:10px;align-items:center;font:13px var(--mono)}
+.row small{color:var(--term-dim)}
+.row code{background:#1a232d;padding:7px 10px;border-radius:7px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
+.cta a{color:#8fd4e6}
+.faq details{border-top:1px solid var(--line);padding:14px 0}
+.faq details:last-of-type{border-bottom:1px solid var(--line)}
+.faq summary{cursor:pointer;font-weight:700;font-size:16px;list-style:none;display:flex;gap:10px}
+.faq summary::before{content:"+";font:600 16px var(--mono);color:var(--accent);flex:none;width:1em}
+.faq details[open] summary::before{content:"−"}
+.faq summary::-webkit-details-marker{display:none}
+.faq details p{color:var(--dim);margin:10px 0 0 1.6em;font-size:15px;max-width:62ch}
+.faq details code{font-size:.9em;background:var(--soft);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+footer{margin-top:28px;font:12px var(--mono);color:var(--dim);display:flex;gap:14px;flex-wrap:wrap}
+@media (max-width:560px){.row{grid-template-columns:1fr}.cta{padding:22px 16px}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs><symbol id="ab-mark" viewBox="0 0 256 256"><g transform="scale(0.68)"><path fill="currentColor" d="M70.5 51.41L202.5 127.62A22 22 0 0 1 213.5 146.68L213.5 183.87A22 22 0 0 1 180.5 202.92L48.5 126.71A22 22 0 0 1 37.5 107.66L37.5 70.47A22 22 0 0 1 70.5 51.41Z"/><path fill="var(--accent)" d="M48.5 229.24L117.29 189.52A12 12 0 0 1 129.29 189.52L181.5 219.66A12 12 0 0 1 181.5 240.45L70.5 304.53A22 22 0 0 1 37.5 285.48L37.5 248.29A22 22 0 0 1 48.5 229.24Z"/><path fill="var(--accent)" d="M251.5 267.59L319.5 267.59A18 18 0 0 1 337.5 285.59L337.5 305.59A18 18 0 0 1 319.5 323.59L251.5 323.59A18 18 0 0 1 233.5 305.59L233.5 285.59A18 18 0 0 1 251.5 267.59Z"/></g></symbol><symbol id="ab-lockup" viewBox="0 0 1167 256"><g transform="scale(0.68)"><path fill="currentColor" d="M70.5 51.41L202.5 127.62A22 22 0 0 1 213.5 146.68L213.5 183.87A22 22 0 0 1 180.5 202.92L48.5 126.71A22 22 0 0 1 37.5 107.66L37.5 70.47A22 22 0 0 1 70.5 51.41Z"/><path fill="var(--accent)" d="M48.5 229.24L117.29 189.52A12 12 0 0 1 129.29 189.52L181.5 219.66A12 12 0 0 1 181.5 240.45L70.5 304.53A22 22 0 0 1 37.5 285.48L37.5 248.29A22 22 0 0 1 48.5 229.24Z"/><path fill="var(--accent)" d="M251.5 267.59L319.5 267.59A18 18 0 0 1 337.5 285.59L337.5 305.59A18 18 0 0 1 319.5 323.59L251.5 323.59A18 18 0 0 1 233.5 305.59L233.5 285.59A18 18 0 0 1 251.5 267.59Z"/></g><path fill="currentColor" id="wordmark" transform="translate(278.00 181.76) scale(0.15404)" d="M514 0 458 -178H210L155 0H21L255 -698H419L651 0ZM336 -578H331L242 -291H426ZM1205 44Q1205 85 1190.5 116.5Q1176 148 1143.0 169.0Q1110 190 1058.0 201.0Q1006 212 931 212Q865 212 819.0 203.5Q773 195 743.5 179.5Q714 164 701.0 141.0Q688 118 688 89Q688 45 712.5 20.5Q737 -4 781 -11V-22Q749 -30 731.5 -53.5Q714 -77 714 -109Q714 -129 722.0 -144.5Q730 -160 743.5 -171.0Q757 -182 774.0 -189.5Q791 -197 810 -201V-205Q762 -227 738.5 -266.0Q715 -305 715 -357Q715 -437 770.0 -485.5Q825 -534 931 -534Q955 -534 978.5 -531.0Q1002 -528 1022 -521V-538Q1022 -614 1096 -614H1177V-516H1066V-502Q1107 -479 1127.0 -442.0Q1147 -405 1147 -357Q1147 -278 1092.5 -230.0Q1038 -182 931 -182Q885 -182 851 -191Q836 -184 825.0 -172.5Q814 -161 814 -144Q814 -105 882 -105H1022Q1118 -105 1161.5 -65.5Q1205 -26 1205 44ZM1085 59Q1085 34 1065.0 20.0Q1045 6 996 6H818Q791 26 791 60Q791 90 816.0 107.0Q841 124 901 124H965Q1028 124 1056.5 108.0Q1085 92 1085 59ZM931 -269Q1025 -269 1025 -349V-366Q1025 -446 931 -446Q837 -446 837 -366V-349Q837 -269 931 -269ZM1472 12Q1414 12 1368.5 -7.5Q1323 -27 1291.5 -62.5Q1260 -98 1243.0 -148.5Q1226 -199 1226 -262Q1226 -324 1242.5 -374.0Q1259 -424 1290.0 -459.5Q1321 -495 1366.0 -514.5Q1411 -534 1468 -534Q1529 -534 1574.0 -513.0Q1619 -492 1648.0 -456.0Q1677 -420 1691.5 -372.5Q1706 -325 1706 -271V-229H1359V-216Q1359 -159 1391.0 -124.5Q1423 -90 1486 -90Q1534 -90 1564.5 -110.0Q1595 -130 1619 -161L1688 -84Q1656 -39 1600.5 -13.5Q1545 12 1472 12ZM1470 -438Q1419 -438 1389.0 -404.0Q1359 -370 1359 -316V-308H1573V-317Q1573 -371 1546.5 -404.5Q1520 -438 1470 -438ZM1807 0V-522H1935V-435H1940Q1956 -477 1990.5 -505.5Q2025 -534 2086 -534Q2167 -534 2210.0 -481.0Q2253 -428 2253 -330V0H2125V-317Q2125 -373 2105.0 -401.0Q2085 -429 2039 -429Q2019 -429 2000.5 -423.5Q1982 -418 1967.5 -407.5Q1953 -397 1944.0 -381.5Q1935 -366 1935 -345V0ZM2546 0Q2480 0 2445.5 -34.5Q2411 -69 2411 -133V-420H2334V-522H2374Q2403 -522 2413.5 -535.5Q2424 -549 2424 -576V-665H2539V-522H2646V-420H2539V-102H2638V0ZM2977 -698H3300Q3343 -698 3377.5 -685.0Q3412 -672 3436.0 -649.0Q3460 -626 3472.5 -592.5Q3485 -559 3485 -519Q3485 -479 3474.5 -451.5Q3464 -424 3446.5 -406.0Q3429 -388 3406.5 -379.0Q3384 -370 3360 -369V-363Q3383 -363 3409.5 -354.0Q3436 -345 3458.5 -325.5Q3481 -306 3496.0 -275.5Q3511 -245 3511 -200Q3511 -158 3497.5 -121.5Q3484 -85 3460.0 -58.0Q3436 -31 3403.0 -15.5Q3370 0 3331 0H2977ZM3109 -112H3293Q3331 -112 3352.0 -131.5Q3373 -151 3373 -188V-222Q3373 -259 3352.0 -279.0Q3331 -299 3293 -299H3109ZM3109 -407H3272Q3308 -407 3328.0 -426.5Q3348 -446 3348 -481V-512Q3348 -547 3328.0 -566.5Q3308 -586 3272 -586H3109ZM3827 12Q3771 12 3726.5 -7.0Q3682 -26 3650.5 -62.0Q3619 -98 3602.0 -148.5Q3585 -199 3585 -262Q3585 -325 3602.0 -375.0Q3619 -425 3650.5 -460.5Q3682 -496 3726.5 -515.0Q3771 -534 3827 -534Q3883 -534 3928.0 -515.0Q3973 -496 4004.5 -460.5Q4036 -425 4053.0 -375.0Q4070 -325 4070 -262Q4070 -199 4053.0 -148.5Q4036 -98 4004.5 -62.0Q3973 -26 3928.0 -7.0Q3883 12 3827 12ZM3827 -91Q3878 -91 3907.0 -122.0Q3936 -153 3936 -213V-310Q3936 -369 3907.0 -400.0Q3878 -431 3827 -431Q3777 -431 3748.0 -400.0Q3719 -369 3719 -310V-213Q3719 -153 3748.0 -122.0Q3777 -91 3827 -91ZM4555 0Q4513 0 4488.5 -24.5Q4464 -49 4458 -90H4452Q4439 -39 4399.0 -13.5Q4359 12 4300 12Q4220 12 4177.0 -30.0Q4134 -72 4134 -142Q4134 -223 4192.0 -262.5Q4250 -302 4357 -302H4446V-340Q4446 -384 4423.0 -408.0Q4400 -432 4349 -432Q4304 -432 4276.5 -412.5Q4249 -393 4230 -366L4154 -434Q4183 -479 4231.0 -506.5Q4279 -534 4358 -534Q4464 -534 4519.0 -486.0Q4574 -438 4574 -348V-102H4626V0ZM4343 -81Q4386 -81 4416.0 -100.0Q4446 -119 4446 -156V-225H4364Q4264 -225 4264 -161V-144Q4264 -112 4284.5 -96.5Q4305 -81 4343 -81ZM4718 0V-522H4846V-414H4851Q4856 -435 4866.5 -454.5Q4877 -474 4894.0 -489.0Q4911 -504 4934.5 -513.0Q4958 -522 4989 -522H5017V-401H4977Q4912 -401 4879.0 -382.0Q4846 -363 4846 -320V0ZM5418 -87H5413Q5399 -42 5360.0 -15.0Q5321 12 5269 12Q5170 12 5117.5 -59.0Q5065 -130 5065 -262Q5065 -393 5117.5 -463.5Q5170 -534 5269 -534Q5321 -534 5360.0 -507.5Q5399 -481 5413 -436H5418V-740H5546V0H5418ZM5310 -94Q5356 -94 5387.0 -116.0Q5418 -138 5418 -179V-345Q5418 -383 5387.0 -406.0Q5356 -429 5310 -429Q5260 -429 5229.5 -395.5Q5199 -362 5199 -306V-216Q5199 -160 5229.5 -127.0Q5260 -94 5310 -94Z"/></symbol></defs></svg>
+<header class="top">
+  <a class="logo" href="#top" aria-label="Agent Board"><svg class="lk" viewBox="0 0 1167 256"><use href="#ab-lockup"/></svg></a>
+  <nav><a href="#demo">60 秒 demo</a><a href="#why">為什麼</a><a href="#proof">實測</a><a href="#ways">怎麼接</a><a href="#start">開始</a><a href="#faq">疑問</a><a href="https://github.com/111588004/agent-board" target="_blank" rel="noopener">GitHub</a></nav>
+</header>
+
+<section class="hero" id="top">
+  <p class="eyebrow">本機看板 · 人和 AI agent 共用 · MIT</p>
+  <h1>你講一句話，<br>agent <em>開單、接手、交回來。</em></h1>
+  <p class="sub">一個跑在你電腦上的看板。Claude Code、Codex、任何會跑指令的 agent 都能直接寫，人在網頁上隨時插手，誰改過什麼都留在卡上。</p>
+  <div class="cmd"><span class="p">$</span><code id="c1">npm install -g @limao.li.design/agent-board</code><button class="copy" data-copy="c1" type="button">複製</button></div>
+  <p class="note">Node 20+ · 資料存在本機 <code>~/.agent-board</code> · 免安裝試用：<code>npx @limao.li.design/agent-board</code></p>
+
+  <div class="player" id="demo" aria-label="60 秒操作示範">
+    <div class="pbar"><span class="dots"><i></i><i></i><i></i></span><span class="ttl">agent-board · 一張卡從開單到交回</span><button type="button" id="play">暫停</button><button type="button" id="restart">重播</button></div>
+    <div class="mat"><div class="stage" id="stage">
+      <div class="chap" id="chap"><div class="in"><small></small><span></span></div></div>
+      <div class="cam" id="cam">
+        <div class="scene">
+          <!-- terminal: Claude Code, then Codex takes the same window -->
+          <div class="tw" id="tw">
+            <div class="tbar" id="tbar"><span class="dot" id="tdot" style="--ac:#f0a273"></span><b id="tname">claude</b><span style="margin-left:auto;color:var(--term-dim)">~/launch</span></div>
+            <div class="tbody" id="tbody">
+              <div class="ln el hdr cchd" data-s="1" id="hdr1"><svg class="cclogo" viewBox="0 0 90 48" width="126" height="67.2" fill="#f0a273" aria-hidden="true" shape-rendering="crispEdges"><rect x="15" y="0" width="5" height="8"/><rect x="15" y="8" width="5" height="8"/><rect x="20" y="0" width="5" height="8"/><rect x="25" y="0" width="5" height="8"/><rect x="20" y="8" width="5" height="8"/><rect x="30" y="0" width="5" height="8"/><rect x="35" y="0" width="5" height="8"/><rect x="30" y="8" width="5" height="8"/><rect x="35" y="8" width="5" height="8"/><rect x="40" y="0" width="5" height="8"/><rect x="45" y="0" width="5" height="8"/><rect x="40" y="8" width="5" height="8"/><rect x="45" y="8" width="5" height="8"/><rect x="50" y="0" width="5" height="8"/><rect x="55" y="0" width="5" height="8"/><rect x="50" y="8" width="5" height="8"/><rect x="55" y="8" width="5" height="8"/><rect x="60" y="0" width="5" height="8"/><rect x="65" y="0" width="5" height="8"/><rect x="60" y="8" width="5" height="8"/><rect x="70" y="0" width="5" height="8"/><rect x="75" y="0" width="5" height="8"/><rect x="70" y="8" width="5" height="8"/><rect x="75" y="8" width="5" height="8"/><rect x="5" y="16" width="5" height="8"/><rect x="10" y="16" width="5" height="8"/><rect x="15" y="16" width="5" height="8"/><rect x="15" y="24" width="5" height="8"/><rect x="20" y="16" width="5" height="8"/><rect x="25" y="16" width="5" height="8"/><rect x="20" y="24" width="5" height="8"/><rect x="25" y="24" width="5" height="8"/><rect x="30" y="16" width="5" height="8"/><rect x="35" y="16" width="5" height="8"/><rect x="30" y="24" width="5" height="8"/><rect x="35" y="24" width="5" height="8"/><rect x="40" y="16" width="5" height="8"/><rect x="45" y="16" width="5" height="8"/><rect x="40" y="24" width="5" height="8"/><rect x="45" y="24" width="5" height="8"/><rect x="50" y="16" width="5" height="8"/><rect x="55" y="16" width="5" height="8"/><rect x="50" y="24" width="5" height="8"/><rect x="55" y="24" width="5" height="8"/><rect x="60" y="16" width="5" height="8"/><rect x="65" y="16" width="5" height="8"/><rect x="60" y="24" width="5" height="8"/><rect x="65" y="24" width="5" height="8"/><rect x="70" y="16" width="5" height="8"/><rect x="75" y="16" width="5" height="8"/><rect x="70" y="24" width="5" height="8"/><rect x="75" y="24" width="5" height="8"/><rect x="80" y="16" width="5" height="8"/><rect x="85" y="16" width="5" height="8"/><rect x="15" y="32" width="5" height="8"/><rect x="25" y="32" width="5" height="8"/><rect x="65" y="32" width="5" height="8"/><rect x="75" y="32" width="5" height="8"/></svg><div>Claude Code v2.1.292
+<span class="dim">Sonnet 5.5 · Claude Pro</span>
+<span class="dim">~/launch</span></div></div>
+              <p class="ln el" data-s="1" id="l1"><span class="pr">❯</span> 在「準備發表會」這個專案的看板新增一張單：標題「確認發表會場地與報價」，狀態設為進行中，優先度高，描述寫「預算上限 5 萬、要能容納 80 人」。</p>
+              <p class="ln el" data-s="2" id="l2"><span class="ok">⏺</span> Calling agent-board…</p>
+              <p class="ln el ask" data-s="3" id="q1"><span class="h">☐ 專案</span>
+看板上沒有「準備發表會」這個專案。要把單放進既有專案，還是建立新專案？
+
+<span class="sel"><span class="pr">❯</span> 1. 使用既有「發表會」</span>
+     <span class="dim">放進現有專案，單號 LA-N</span>
+  2. 新建「準備發表會」(PRJ)
+     <span class="dim">建立新專案，前綴 PRJ（PRJ-1、PRJ-2…）</span>
+  3. 新建「準備發表會」(PJ)
+  4. 新建「準備發表會」(P)
+  5. Type something.
+<span class="dim">Enter to select · ↑/↓ to navigate · Esc to cancel</span></p>
+              <p class="ln el" data-s="5" id="l5"><span class="dim">  Called agent-board</span>
+<span class="ok">⏺</span> 已在「發表會」（準備發表會）開了 LA-3「確認發表會場地與報價」，進行中、優先度高。看板已記住「準備發表會」就是這個專案。</p>
+              <p class="ln el" data-s="7" id="l7"><span class="pr">❯</span> 再開一張「排定 demo 彩排」，一樣放在準備發表會，優先度低。</p>
+              <p class="ln el" data-s="8" id="l8"><span class="ok">⏺</span> Calling agent-board…
+<span class="dim">  Called agent-board</span></p>
+              <p class="ln el" data-s="9" id="l9"><span class="ok">⏺</span> 已在「發表會」（準備發表會）開了 LA-4「排定 demo 彩排」，優先度低、狀態待辦（backlog）。
+<span class="dim">✻ Brewed for 6s</span></p>
+              <p class="ln el" data-s="13" id="l12"><span class="pr">$</span> codex <span class="hi">'You are picking up Agent Board ticket LA-3: "確認發表會場地與報價" (project 發表會). Ticket: http://localhost:4317/?task=LA-3  1. Before changing anything, read the description and history of the ticket …  2. Claim it: agent-board update LA-3 --status=in_progress --agent=codex  3. Report as you go: agent-board note LA-3 "…" --agent=codex. When finished: agent-board update LA-3 --status=review'</span></p>
+              <p class="ln el hdr" data-s="13" id="hdr2"><span class="lgx">&gt;_ OpenAI Codex</span> (v0.157.1)
+<span class="dim">model: gpt-5-codex   directory: ~/launch</span></p>
+              <p class="ln el" data-s="14" id="l13"><span class="cx">•</span> Ran <span class="hi">agent-board list --project=發表會</span>
+<span class="dim">  └ LA-3  [in_progress]  確認發表會場地與報價  (claude, high)
+    LA-4  [backlog]  排定 demo 彩排  (claude, low)</span>
+<span class="cx">•</span> Ran <span class="hi">agent-board update LA-3 --status=in_progress --agent=codex</span>
+<span class="dim">  └ updated LA-3</span></p>
+              <p class="ln el" data-s="15" id="l14"><span class="cx">•</span> Ran <span class="hi">agent-board update LA-3 --status=review --agent=codex</span>
+<span class="dim">  └ updated LA-3</span>
+<span class="cx">•</span> Ran <span class="hi">agent-board note LA-3 "依預算 5 萬、80 人、要有投影設備，剩兩個場地，建議書已附" --agent=codex</span>
+<span class="dim">  └ noted LA-3</span></p>
+              <p class="ln el" data-s="16" id="l15"><span class="cx">•</span> 讀了描述和 claude 留的比價紀錄，加上你補的投影設備條件，剩兩個場地符合。建議書寫進卡片，已改成審查中。</p>
+            </div>
+          </div>
+          <!-- web ui -->
+          <div class="web" id="web">
+            <div class="whead"><span class="brand"><svg width="16" height="16" viewBox="0 0 256 256" aria-hidden="true" style="color:#fff;--accent:#4fc0dc"><use href="#ab-mark"/></svg>Agent Board</span><span class="host">localhost:4317</span><span class="ws">▭ 發表會</span><span class="tb"><span class="ghost">Tour</span><span class="ghost">Guide</span><span class="newbtn">+ New task</span></span></div>
+            <div class="wtool"><div class="segm"><span class="on">Board</span><span>List</span></div><span class="flt">All projects ▾</span><span class="flt">All agents ▾</span></div>
+            <div class="uboard">
+              <div class="ucol"><div class="uh"><span class="pd" style="background:#8B8D98;width:8px;height:8px"></span><span class="ut">Backlog</span><span class="un" id="n-bl">1</span></div>
+                <div class="ucard"><span class="uid">LA-1</span><span class="utt">寄邀請函給媒體名單</span><div class="ucr"><span class="chip">發表會</span><span class="chip">Unassigned</span><span class="pd" style="background:#4C8DFF"></span></div><div class="utm">⏱ 2h ago</div></div>
+                <div class="ucard el" data-s="10" id="card4"><span class="uid">LA-4</span><span class="utt">排定 demo 彩排</span><div class="ucr"><span class="chip">發表會</span><span class="chip cl">Claude Code</span><span class="pd" style="background:#8B8D98"></span></div><div class="utm">⏱ just now</div></div>
+                <div class="addt">+ Add task</div></div>
+              <div class="ucol"><div class="uh"><span class="pd" style="background:#4C8DFF;width:8px;height:8px"></span><span class="ut">In progress</span><span class="un" id="n-ip">1</span></div>
+                <div class="ucard"><span class="uid">LA-2</span><span class="utt">講者投影片初稿</span><div class="ucr"><span class="chip">發表會</span><span class="chip cx2">Codex</span><span class="pd" style="background:#4C8DFF"></span></div><div class="utm">⏱ 40m ago</div></div>
+                <div class="ucard el" data-s="6" id="card3"><span class="uid">LA-3</span><span class="utt">確認發表會場地與報價</span><div class="ucr"><span class="chip">發表會</span><span class="chip cl">Claude Code</span><span class="pd" style="background:#E5484D"></span></div><div class="utm">⏱ just now</div></div>
+                <div class="addt">+ Add task</div></div>
+              <div class="ucol"><div class="uh"><span class="pd" style="background:#E8A33D;width:8px;height:8px"></span><span class="ut">Review</span><span class="un" id="n-rv">0</span></div>
+                <div class="ucard el" data-s="17" id="card3b"><span class="uid">LA-3</span><span class="utt">確認發表會場地與報價</span><div class="ucr"><span class="chip">發表會</span><span class="chip cx2">Codex</span><span class="pd" style="background:#E5484D"></span></div><div class="utm">⏱ just now</div></div>
+                <div class="addt">+ Add task</div></div>
+              <div class="ucol"><div class="uh"><span class="pd" style="background:#3DCC7B;width:8px;height:8px"></span><span class="ut">Done</span><span class="un">0</span></div><div class="addt">+ Add task</div></div>
+            </div>
+            <div class="drawer el" data-s="11" id="drawer">
+              <div class="dh"><span>LA-3</span><span>✕</span></div>
+              <h4>確認發表會場地與報價</h4>
+              <span class="stpill" id="dr-st">In Progress ⌄</span>
+              <div class="fbox">
+                <div class="frow"><span class="k">▭ Project</span><span class="v">發表會</span></div>
+                <div class="frow"><span class="k">◎ Agent</span><span class="v" id="dr-ag">Claude Code</span></div>
+                <div class="frow"><span class="k">⚑ Priority</span><span class="v">High</span></div>
+                <div class="frow"><span class="k">▦ Due date</span><span class="v" style="color:#9599a3">No due date</span></div>
+                <div class="frow"><span class="k">↳ Parent</span><span class="v" style="color:#9599a3">— none —</span></div>
+              </div>
+              <div class="hand" id="hand">›_ Hand off to <span class="sl" id="hand-sel">Claude Code ▾</span><span class="cp" id="hand-cp">⧉ Copy launch command</span></div>
+              <div class="lab">Description</div>
+              <div class="desc" id="desc">預算上限 5 萬、要能容納 80 人<span class="el" data-s="11" id="h11"><span class="hl"></span><span class="caret"></span></span>
+<span class="el" data-s="11">[2026-10-08 10:30 · claude] remembered "準備發表會" → 發表會</span>
+<span class="el" data-s="17">[2026-10-08 10:33 · codex] agent: claude → codex
+[2026-10-08 10:33 · codex] 依預算 5 萬、80 人、要有投影設備，剩兩個場地，建議書已附
+[2026-10-08 10:34 · codex] status: in_progress → review</span></div>
+              <div class="dev">› ▤ DEVELOPMENT</div>
+              <div class="lab">Link</div><div class="frow" style="border:1px solid #e4e6eb;border-radius:6px;padding:5px 8px;color:#c7cbd4">repo / PR / issue URL</div>
+              <div class="dfoot"><b>⌫ Delete</b><span>Changes save automatically</span></div>
+            </div>
+            <svg class="pointer el" data-s="11" id="ptr" viewBox="0 0 16 18"><path d="M2 1l11 7-5 1.6L5.6 15z" fill="#1D2027" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="endcard el" data-s="18"><svg class="emk" viewBox="0 0 256 256"><use href="#ab-mark"/></svg><p class="e0">誰先動手都行，接棒不用重講一遍。</p><p class="e1">下一張單，<em>換你的 agent 來開。</em></p><p class="e2">$ npm install -g @limao.li.design/agent-board</p><p class="e3">一分鐘裝好 · 免註冊 · 資料留在你電腦 · 開源 MIT</p></div>
+          <div class="callout" id="co"></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="static" style="padding:12px 14px 0;font-size:13px;color:var(--dim)">你的系統關閉了動畫，這裡停在最後一幕。點下面任一步可以看那一刻的畫面。</p>
+    <div class="cap"><span class="n" id="cap-n">1/7</span><span class="t" id="cap-t">板上已經有兩張卡。你用人話交代第三張，agent 照你的字開單。</span></div>
+    <div class="seg" id="seg" role="tablist" aria-label="示範步驟"></div>
+  </div>
+  <p class="note" style="margin-top:10px">示意動畫：終端機文字取自真實 session，看板畫面照 Web UI 重繪，卡片內容為舉例。</p>
+</section>
+
+<section id="why">
+  <p class="eyebrow">為什麼不是 Jira、Notion 或 GitHub Issues</p>
+  <h2>無縫的人與 AI 協作：誰先動手都行</h2>
+  <p class="lede">不偏袒人或 agent 任何一邊，也不預設每件事最後都要交出 code。</p>
+  <div class="mapbox">
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs>
+      <symbol id="i-user" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="7" r="4.5"/><path d="M3.5 21a8.5 8.5 0 0 1 17 0z"/></symbol>
+      <symbol id="i-bot" viewBox="0 0 24 24" fill="currentColor"><path d="M11 2h2v3.2a9 9 0 0 1 7 5.8h2v6h-2a9 9 0 0 1-16 0H2v-6h2a9 9 0 0 1 7-5.8z"/><circle cx="9" cy="14" r="1.6" fill="var(--panel)"/><circle cx="15" cy="14" r="1.6" fill="var(--panel)"/></symbol>
+      <symbol id="i-box" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 2.5 6.6v10.8L12 22l9.5-4.6V6.6zM12 4.2l6.6 3.2L12 10.6 5.4 7.4zM4.5 9l6.6 3.2v7.3L4.5 16.3z"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24" fill="currentColor"><path d="M9 2h6a1.5 1.5 0 0 1 1.5 1.5V4H18a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1.5v-.5A1.5 1.5 0 0 1 9 2zm1.9 15.4 5.6-5.6-1.5-1.5-4.1 4.1-2-2-1.5 1.5z"/></symbol>
+      <path id="l-notion" fill="currentColor" d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/>
+      <path id="l-jira" fill="currentColor" d="M11.571 11.513H0a5.218 5.218 0 0 0 5.232 5.215h2.13v2.057A5.215 5.215 0 0 0 12.575 24V12.518a1.005 1.005 0 0 0-1.005-1.005zm5.723-5.756H5.736a5.215 5.215 0 0 0 5.215 5.214h2.129v2.058a5.218 5.218 0 0 0 5.215 5.214V6.758a1.001 1.001 0 0 0-1.001-1.001zM23.013 0H11.455a5.215 5.215 0 0 0 5.215 5.215h2.129v2.057A5.215 5.215 0 0 0 24 12.483V1.005A1.001 1.001 0 0 0 23.013 0Z"/>
+      <path id="l-linear" fill="currentColor" d="M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.624 0 24 5.376 24 12.009c0 3.64-1.62 6.903-4.18 9.105L2.887 4.18ZM1.817 5.626l16.556 16.556c-.524.33-1.075.62-1.65.866L.951 7.277c.247-.575.537-1.126.866-1.65ZM.322 9.163l14.515 14.515c-.71.172-1.443.282-2.195.322L0 11.358a12 12 0 0 1 .322-2.195Zm-.17 4.862 9.823 9.824a12.02 12.02 0 0 1-9.824-9.824Z"/>
+  </defs></svg>
+  <svg class="d" viewBox="0 0 640 350" role="img" aria-labelledby="mt md">
+    <title id="mt">定位示意圖</title><desc id="md">橫軸從人為主到 Agent 為主，縱軸從追蹤交付物到追蹤任何進度與決策。Agent Board 位於中央。</desc>
+    <rect x="60" y="30" width="540" height="270" fill="none" stroke="var(--line)"/>
+    <line x1="330" y1="30" x2="330" y2="300" stroke="var(--line)" stroke-dasharray="4 4"/>
+    <line x1="60" y1="165" x2="600" y2="165" stroke="var(--line)" stroke-dasharray="4 4"/>
+    <use href="#i-user" x="60" y="312" width="16" height="16" class="ic"/><text x="80" y="324" font-size="12">人為主</text>
+    <use href="#i-bot" x="584" y="310" width="16" height="16" class="ic"/><text x="580" y="324" font-size="12" text-anchor="end">Agent 為主</text>
+    <text x="330" y="324" font-size="11" text-anchor="middle" class="d">誰在執行</text>
+    <use href="#i-list" x="68" y="38" width="16" height="16" class="ic"/><text x="88" y="50" font-size="12">任何進度 / 決策</text>
+    <use href="#i-box" x="68" y="278" width="16" height="16" class="ic"/><text x="88" y="290" font-size="12">交付物（code、素材）</text>
+    <svg x="88" y="212" width="14" height="14" viewBox="0 0 24 24" class="ic"><use href="#l-jira"/></svg><svg x="108" y="212" width="14" height="14" viewBox="0 0 24 24" class="ic"><use href="#l-linear"/></svg>
+    <text x="130" y="224" font-size="13" font-weight="700">傳統看板</text>
+    <text x="88" y="242" font-size="11" class="d">Jira、Linear：人為主，以交付物為中心</text><text x="88" y="258" font-size="11" class="d">agent 進來要先查 ID、欄位、狀態</text>
+    <text x="572" y="224" font-size="13" font-weight="700" text-anchor="end">Agent 自治系統</text>
+    <text x="572" y="242" font-size="11" class="d" text-anchor="end">Agent 為主，以 code 為中心</text><text x="572" y="258" font-size="11" class="d" text-anchor="end">人變旁觀者，只追蹤 code</text>
+    <svg x="88" y="66" width="14" height="14" viewBox="0 0 24 24" class="ic"><use href="#l-notion"/></svg>
+    <text x="110" y="78" font-size="13" font-weight="700">通用筆記 / 知識工具</text>
+    <text x="88" y="96" font-size="11" class="d">Notion：人為主，什麼都能追蹤</text>
+    <g class="abcard"><rect x="222" y="128" width="216" height="74" rx="12" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/>
+    <svg x="236" y="149" width="32" height="32" viewBox="0 0 256 256" style="color:var(--ink)"><use href="#ab-mark"/></svg>
+    <text x="280" y="155" font-size="15" font-weight="800">Agent Board</text>
+    <text x="280" y="173" font-size="11" class="d">兩邊都能直接動手</text><text x="280" y="190" font-size="11" class="d">不確定就問，問過就記住</text></g>
+  </svg>
+  <svg class="m" viewBox="0 0 360 400" role="img" aria-labelledby="mt2 md2">
+    <title id="mt2">定位示意圖</title><desc id="md2">橫軸從人為主到 Agent 為主，縱軸從追蹤交付物到追蹤任何進度與決策。Agent Board 位於中央。</desc>
+    <rect x="28" y="28" width="304" height="312" fill="none" stroke="var(--line)"/>
+    <line x1="180" y1="28" x2="180" y2="340" stroke="var(--line)" stroke-dasharray="4 4"/>
+    <line x1="28" y1="184" x2="332" y2="184" stroke="var(--line)" stroke-dasharray="4 4"/>
+    <use href="#i-user" x="28" y="354" width="15" height="15" class="ic"/><text x="47" y="366" font-size="12">人為主</text>
+    <use href="#i-bot" x="317" y="352" width="15" height="15" class="ic"/><text x="313" y="366" font-size="12" text-anchor="end">Agent 為主</text>
+    <text x="180" y="388" font-size="11" text-anchor="middle" class="d">誰在執行</text>
+    <use href="#i-list" x="34" y="36" width="15" height="15" class="ic"/><text x="53" y="48" font-size="11.5">任何進度 / 決策</text>
+    <use href="#i-box" x="34" y="318" width="15" height="15" class="ic"/><text x="53" y="330" font-size="11.5">交付物（code、素材）</text>
+    <svg x="34" y="74" width="13" height="13" viewBox="0 0 24 24" class="ic"><use href="#l-notion"/></svg>
+    <text x="52" y="85" font-size="12.5" font-weight="700">通用筆記</text>
+    <text x="34" y="103" font-size="10.5" class="d">Notion：人為主，</text><text x="34" y="117" font-size="10.5" class="d">什麼都能追蹤</text>
+    <svg x="34" y="238" width="13" height="13" viewBox="0 0 24 24" class="ic"><use href="#l-jira"/></svg><svg x="52" y="238" width="13" height="13" viewBox="0 0 24 24" class="ic"><use href="#l-linear"/></svg>
+    <text x="70" y="249" font-size="12.5" font-weight="700">傳統看板</text>
+    <text x="34" y="264" font-size="10.5" class="d">Jira、Linear：人為主，</text><text x="34" y="278" font-size="10.5" class="d">以交付物為中心</text><text x="34" y="294" font-size="10.5" class="d">agent 進來要先查</text><text x="34" y="308" font-size="10.5" class="d">ID、欄位、狀態</text>
+    <text x="326" y="249" font-size="12.5" font-weight="700" text-anchor="end">Agent 自治系統</text>
+    <text x="326" y="264" font-size="10.5" class="d" text-anchor="end">Agent 為主，</text><text x="326" y="278" font-size="10.5" class="d" text-anchor="end">以 code 為中心</text><text x="326" y="294" font-size="10.5" class="d" text-anchor="end">人變旁觀者，</text><text x="326" y="308" font-size="10.5" class="d" text-anchor="end">只追蹤 code</text>
+    <g class="abcard"><rect x="88" y="146" width="184" height="76" rx="12" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/>
+    <svg x="100" y="169" width="30" height="30" viewBox="0 0 256 256" style="color:var(--ink)"><use href="#ab-mark"/></svg>
+    <text x="140" y="172" font-size="13.5" font-weight="800">Agent Board</text>
+    <text x="140" y="190" font-size="10" class="d">兩邊都能直接動手</text><text x="140" y="206" font-size="9.5" class="d">不確定就問，問過就記住</text></g>
+  </svg>
+  </div>
+</section>
+
+<section id="proof">
+  <p class="eyebrow">實測，不是形容詞</p>
+  <h2>開一張單，agent 少跑幾趟</h2>
+  <p class="lede">同一句任務，交給同一個模型的 subagent，分別用各家官方連接器開單。我們只量三件事：呼叫幾次、花幾秒、有沒有開錯。</p>
+  <div class="bench">
+    <div class="kpi">
+      <div><b>4.2<small>×</small></b><div class="l">開單比 Jira 快</div></div>
+      <div><b>2<small>次呼叫</small></b><div class="l">載入工具、建單，結束</div></div>
+      <div><b>100<small>%</small></b><div class="l">口語化開單，一次就對（19/19）</div></div>
+      <div><b>1.6<small>×</small></b><div class="l">接手比 Linear 快</div></div>
+    </div>
+    <div class="tog" role="tablist"><label><input type="radio" name="bt" id="bt1" checked><span>開一張單</span></label><label><input type="radio" name="bt" id="bt2"><span>接手一張單</span></label></div>
+    <div class="bars b1">
+      <h4><span>每組中位數秒數，越短越好。呼叫次數與 token 在右欄。</span></h4>
+      <div class="bar h"><span class="n"></span><span></span><span class="c">呼叫</span><span class="k">token 萬</span></div>
+      <div class="bar ab"><span class="n">Agent Board</span><span class="t" style="--w:17%"><i></i><span class="v">6.5<small>秒</small></span></span><span class="c">2</span><span class="k">28.5</span></div>
+      <div class="bar"><span class="n">Linear</span><span class="t" style="--w:32%"><i></i><span class="v">12.3<small>秒</small></span></span><span class="c">2</span><span class="k">46.3</span></div>
+      <div class="bar"><span class="n">Plane</span><span class="t" style="--w:45%"><i></i><span class="v">17.1<small>秒</small></span></span><span class="c">4</span><span class="k">56.2</span></div>
+      <div class="bar"><span class="n">Notion</span><span class="t" style="--w:49%"><i></i><span class="v">18.4<small>秒</small></span></span><span class="c">4</span><span class="k">59.0</span></div>
+      <div class="bar"><span class="n">Jira</span><span class="t" style="--w:72%"><i></i><span class="v">27.2<small>秒</small></span></span><span class="c">7</span><span class="k">105.9</span></div>
+    </div>
+    <div class="bars b2">
+      <h4><span>看狀態、改完成、留註記。Agent Board 走 CLI，一次 Bash 串幾個指令，所以呼叫次數對它有利。</span></h4>
+      <div class="bar h"><span class="n"></span><span></span><span class="c">呼叫</span><span class="k">token 萬</span></div>
+      <div class="bar ab"><span class="n">Agent Board</span><span class="t" style="--w:33%"><i></i><span class="v">10.0<small>秒</small></span></span><span class="c">2</span><span class="k">36.3</span></div>
+      <div class="bar"><span class="n">Linear</span><span class="t" style="--w:53%"><i></i><span class="v">16.0<small>秒</small></span></span><span class="c">5</span><span class="k">66.2</span></div>
+      <div class="bar"><span class="n">Jira</span><span class="t" style="--w:65%"><i></i><span class="v">19.8<small>秒</small></span></span><span class="c">5</span><span class="k">66.4</span></div>
+      <div class="bar"><span class="n">Plane</span><span class="t" style="--w:69%"><i></i><span class="v">21.0<small>秒</small></span></span><span class="c">6</span><span class="k">67.3</span></div>
+      <div class="bar"><span class="n">Notion</span><span class="t" style="--w:72%"><i></i><span class="v">21.9<small>秒</small></span></span><span class="c">5</span><span class="k">79.9</span></div>
+    </div>
+    <p class="f">token 多為快取讀取，不等於費用。Jira 建單前要取站台 ID、搜專案，建完才能轉狀態；Plane、Notion 要先查專案和狀態 ID。看板上的專案叫「發表會」，任務裡只說「準備發表會」，登記過這個稱呼之後 19 次有 19 次一次開進正確專案。</p>
+  </div>
+  <p class="cond">條件：同一句任務、同一個模型（Sonnet 5.5），各家用自己的 MCP 連接器；開單每組 15 次、接手每組 13 次，取中位數，2026 年 10 月實測。每一家最後開出的單都對，差在寫入前要先查幾次。<a href="bench.html">完整方法與每一次執行的資料 →</a></p>
+</section>
+
+<section id="honest">
+  <p class="eyebrow">先講清楚</p>
+  <h2>它很小，而且刻意很小</h2>
+  <div class="flat"><ul>
+    <li>單人、本機。沒有帳號、沒有雲端，預設只聽 127.0.0.1。</li>
+    <li>資料是你電腦上的 SQLite 檔，備份就是複製檔案。</li>
+    <li>只有任務、子任務兩層。沒有 Epic、Sprint、權限。</li>
+    <li>MIT 授權，不合用就改。</li>
+  </ul></div>
+</section>
+
+<section id="ways">
+  <p class="eyebrow">怎麼接進來</p>
+  <h2>人用網頁，agent 用 CLI 或 MCP，寫的是同一張卡</h2>
+  <p class="lede">每個入口一行指令就接上。背後只有一個 REST API 在寫資料，所以幾個 agent 同時動也不會互相蓋掉。</p>
+  <div class="ways">
+    <div class="way"><svg class="ill" viewBox="0 0 320 160" role="img" aria-label="人在網頁看板拖卡，寫進同一張卡"><rect x="16" y="30" width="120" height="100" rx="8" fill="var(--panel)" stroke="var(--line)"/><text x="28" y="46" font-size="7.5" font-family="var(--mono)" font-weight="700" fill="var(--dim)" letter-spacing=".06em">IN PROGRESS</text><rect x="28" y="54" width="96" height="22" rx="4" fill="var(--soft)"/><rect x="28" y="82" width="96" height="22" rx="4" fill="none" stroke="var(--line)" stroke-dasharray="3 2"/><g transform="rotate(-6 92 100)"><rect x="60" y="88" width="64" height="24" rx="4" fill="var(--panel)" stroke="var(--accent)" stroke-width="1.5"/><text x="68" y="98" font-size="7" font-family="var(--mono)" fill="var(--dim)">LA-3</text><rect x="68" y="102" width="40" height="4" rx="2" fill="var(--soft)"/></g><svg x="118" y="104" width="22" height="22" viewBox="0 0 24 24" style="color:var(--ink)"><use href="#i-user"/></svg><path d="M136 80 C 164 80, 164 80, 190 80" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-dasharray="4 3"/><path d="M190 80 l-6 -4 v8 z" fill="var(--accent)"/><g font-family="var(--sans)"><rect x="192" y="30" width="112" height="100" rx="8" fill="var(--panel)" stroke="var(--line)"/>
+<text x="204" y="48" font-size="8" font-family="var(--mono)" fill="var(--dim)">LA-3</text>
+<text x="204" y="64" font-size="10" font-weight="700" fill="var(--ink)">確認發表會場地</text><text x="204" y="77" font-size="10" font-weight="700" fill="var(--ink)">與報價</text>
+<rect x="204" y="86" width="34" height="14" rx="3" fill="var(--soft)"/><text x="221" y="96" font-size="8" text-anchor="middle" fill="var(--dim)">發表會</text>
+<rect x="242" y="86" width="40" height="14" rx="3" fill="#fff3d6"/><text x="262" y="96" font-size="8" text-anchor="middle" fill="#8a5a00">待確認</text>
+<rect x="204" y="108" width="52" height="4" rx="2" fill="var(--soft)"/><rect x="204" y="116" width="36" height="4" rx="2" fill="var(--soft)"/></g></svg><span class="tag">人</span><h3>網頁看板</h3><p>拖卡、改優先度、寫描述。每 3 秒自動更新，agent 改了你馬上看到。名字對不上時看板替你挑了專案？卡上會標「待確認」，按一下就好。</p></div>
+    <div class="way"><svg class="ill" viewBox="0 0 320 160" role="img" aria-label="agent 在終端機下一行指令，寫進同一張卡"><rect x="16" y="30" width="136" height="100" rx="8" fill="var(--term)"/><circle cx="28" cy="41" r="2.5" fill="#ff5f57"/><circle cx="36" cy="41" r="2.5" fill="#febc2e"/><circle cx="44" cy="41" r="2.5" fill="#28c840"/><g font-family="var(--mono)" font-size="7.6" fill="var(--term-fg)"><text x="26" y="62">$ agent-board create \</text><text x="26" y="74">  --title="確認發表會場地…" \</text><text x="26" y="86">  --project=準備發表會 \</text><text x="26" y="98">  --status=進行中</text><text x="26" y="116" fill="var(--accent)" font-weight="700">created LA-3</text></g><path d="M152 93 C 172 93, 172 93, 190 93" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-dasharray="4 3"/><path d="M190 93 l-6 -4 v8 z" fill="var(--accent)"/><g font-family="var(--sans)"><rect x="192" y="30" width="112" height="100" rx="8" fill="var(--panel)" stroke="var(--line)"/>
+<text x="204" y="48" font-size="8" font-family="var(--mono)" fill="var(--dim)">LA-3</text>
+<text x="204" y="64" font-size="10" font-weight="700" fill="var(--ink)">確認發表會場地</text><text x="204" y="77" font-size="10" font-weight="700" fill="var(--ink)">與報價</text>
+<rect x="204" y="86" width="34" height="14" rx="3" fill="var(--soft)"/><text x="221" y="96" font-size="8" text-anchor="middle" fill="var(--dim)">發表會</text>
+<rect x="242" y="86" width="26" height="14" rx="3" fill="var(--accent-soft)"/><text x="255" y="96" font-size="8" text-anchor="middle" fill="var(--accent)">高</text>
+<rect x="204" y="108" width="52" height="4" rx="2" fill="var(--soft)"/><rect x="204" y="116" width="36" height="4" rx="2" fill="var(--soft)"/></g></svg><span class="tag">任何 agent</span><h3>CLI</h3><p>會跑 shell 的 agent 都能用。狀態和優先度接受「進行中」「高」這類口語，專案可以用你叫它的名字。</p></div>
+    <div class="way"><svg class="ill" viewBox="0 0 320 160" role="img" aria-label="agent 透過 MCP 開單，看板不確定時先問你"><rect x="16" y="30" width="136" height="30" rx="6" fill="var(--term)"/><svg x="24" y="37" width="16" height="16" viewBox="0 0 24 24" style="color:#f0a273"><use href="#i-bot"/></svg><text x="46" y="49" font-size="8" font-family="var(--mono)" font-weight="700" fill="var(--term-fg)">Claude Code</text><text x="104" y="49" font-size="7" font-family="var(--mono)" fill="#8a97a6">mcp ✓</text><rect x="16" y="66" width="136" height="30" rx="6" fill="var(--term)"/><svg x="24" y="73" width="16" height="16" viewBox="0 0 24 24" style="color:#a9acff"><use href="#i-bot"/></svg><text x="46" y="85" font-size="8" font-family="var(--mono)" font-weight="700" fill="var(--term-fg)">Codex</text><text x="104" y="85" font-size="7" font-family="var(--mono)" fill="#8a97a6">mcp ✓</text><rect x="34" y="104" width="118" height="26" rx="6" fill="var(--panel)" stroke="var(--accent)" stroke-width="1.5"/><path d="M48 104 l5 -7 l5 7z" fill="var(--panel)" stroke="var(--accent)" stroke-width="1.5"/><rect x="47" y="100" width="12" height="6" fill="var(--panel)"/><text x="42" y="115" font-size="7" font-family="var(--mono)" font-weight="700" fill="var(--accent)">NEEDS USER INPUT</text><text x="42" y="125" font-size="7" fill="var(--dim)">放進既有「發表會」？ ❯ 是</text><path d="M152 80 C 172 80, 172 80, 190 80" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-dasharray="4 3"/><path d="M190 80 l-6 -4 v8 z" fill="var(--accent)"/><g font-family="var(--sans)"><rect x="192" y="30" width="112" height="100" rx="8" fill="var(--panel)" stroke="var(--line)"/>
+<text x="204" y="48" font-size="8" font-family="var(--mono)" fill="var(--dim)">LA-3</text>
+<text x="204" y="64" font-size="10" font-weight="700" fill="var(--ink)">確認發表會場地</text><text x="204" y="77" font-size="10" font-weight="700" fill="var(--ink)">與報價</text>
+<rect x="204" y="86" width="34" height="14" rx="3" fill="var(--soft)"/><text x="221" y="96" font-size="8" text-anchor="middle" fill="var(--dim)">發表會</text>
+<rect x="242" y="86" width="44" height="14" rx="3" fill="var(--accent-soft)"/><text x="264" y="96" font-size="8" text-anchor="middle" fill="var(--accent)">Codex</text>
+<rect x="204" y="108" width="52" height="4" rx="2" fill="var(--soft)"/><rect x="204" y="116" width="36" height="4" rx="2" fill="var(--soft)"/></g></svg><span class="tag">MCP</span><h3>10 個工具</h3><p>stdio 模式，server 沒開會自己帶起來。看板不確定你的意思時回「NEEDS USER INPUT」，agent 用自己的提問工具問你，不替你選。</p></div>
+    <div class="way new"><svg class="ill" viewBox="0 0 320 160" role="img" aria-label="Claude Code mod 自動認領卡片，每回合留一行 note"><rect x="16" y="30" width="136" height="100" rx="8" fill="var(--term)"/><rect x="26" y="40" width="116" height="20" rx="4" fill="#1a232d" stroke="var(--accent)" stroke-width="1"/><text x="33" y="53" font-size="7" font-family="var(--mono)" fill="var(--accent)" font-weight="700">📌 LA-3</text><text x="66" y="53" font-size="7" font-family="var(--mono)" fill="var(--term-fg)">確認發表會場地…</text><g font-family="var(--mono)" font-size="7" fill="var(--term-fg)"><text x="26" y="76">⏺ 比了三個場地，兩個符合</text><text x="26" y="90" fill="#8a97a6">  ⎿ note LA-3 "剩兩個場地"</text></g><rect x="26" y="102" width="116" height="18" rx="4" fill="#0c1116" stroke="#2a3542"/><text x="33" y="114" font-size="7.5" font-family="var(--mono)" fill="var(--term-fg)">❯ 繼續比報價<tspan fill="var(--accent)">▍</tspan></text><path d="M152 90 C 172 90, 172 112, 190 112" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-dasharray="4 3"/><path d="M190 112 l-6 -4 v8 z" fill="var(--accent)"/><g font-family="var(--sans)"><rect x="192" y="30" width="112" height="100" rx="8" fill="var(--panel)" stroke="var(--line)"/>
+<text x="204" y="48" font-size="8" font-family="var(--mono)" fill="var(--dim)">LA-3</text>
+<text x="204" y="64" font-size="10" font-weight="700" fill="var(--ink)">確認發表會場地</text><text x="204" y="77" font-size="10" font-weight="700" fill="var(--ink)">與報價</text>
+<rect x="204" y="86" width="34" height="14" rx="3" fill="var(--soft)"/><text x="221" y="96" font-size="8" text-anchor="middle" fill="var(--dim)">發表會</text>
+<rect x="242" y="86" width="52" height="14" rx="3" fill="#fbe9df"/><text x="268" y="96" font-size="8" text-anchor="middle" fill="#b5542b">Claude</text>
+<text x="204" y="115" font-size="6.5" font-family="var(--mono)" fill="var(--dim)">[10:31 · claude] 剩兩個場地</text><text x="204" y="124" font-size="6.5" font-family="var(--mono)" fill="var(--accent)">[10:33 · claude] 報價已附</text></g></svg><span class="tag">Claude Code mod</span><h3>自動回報</h3><p>開 session 自動認領對應的卡，每回合留一行 note，卡片釘在輸入框上方。沒裝也不影響 CLI 和 MCP。</p></div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="cta">
+    <p class="eyebrow" style="color:var(--term-dim)">開始</p>
+    <h2>先看到板子，再決定要不要裝</h2>
+    <p class="lede">第一次跑要下載套件，npm 這段不會印東西，等它一下。</p>
+    <div class="cmds">
+      <div class="row"><small>安裝</small><code id="c3">npm install -g @limao.li.design/agent-board</code></div>
+      <div class="row"><small>試用</small><code id="c2">npx @limao.li.design/agent-board</code></div>
+      <div class="row"><small>接 MCP</small><code id="c4">claude mcp add agent-board -s user -- npx -y @limao.li.design/agent-board mcp</code></div>
+      <div class="row"><small>Claude Code mod</small><code id="c5">/plugin marketplace add 111588004/agent-board · /plugin install agent-board@agent-board-mods</code></div>
+      <div class="row"><small>原始碼</small><a href="https://github.com/111588004/agent-board" target="_blank" rel="noopener">github.com/111588004/agent-board</a></div>
+    </div>
+  </div>
+</section>
+
+<section id="faq" class="faq">
+  <p class="eyebrow">你可能想問</p>
+  <h2>疑問</h2>
+  <details><summary>為什麼不直接用 Jira、Plane 或 GitHub Issues？</summary>
+    <p>它們各有適合的場景，而且很可能你已經在用，不必換。Agent Board 的設計立場不同：本機、輕量、人與 agent 用同一組動詞，並且不假設每件事最後都是 code。如果你的進度很大一部分靠溝通解決，或你想讓多個 CLI agent 在你自己的機器上共用一份看板，值得試一分鐘。</p></details>
+  <details><summary>資料存在哪？只能在本機嗎？</summary>
+    <p>存在你機器上的 SQLite 檔案，每個 workspace 一個檔案。目前的設計就是單人、本機，不是多人協作或雲端服務。</p></details>
+  <details><summary>安全嗎？</summary>
+    <p>原始碼公開，MIT 授權，你可以自己讀。從 0.4.1 起，server 預設只綁 127.0.0.1，同一個網路上的其他裝置連不到它（0.4.0 與更早的版本會監聽所有網路介面，請升級）。它仍然沒有帳號系統：要用 HOST 設定把它開放到區網，等於讓同網路的人都能讀寫你的看板，請不要這樣做，也不要開放到公網。我們還沒有防範惡意網頁對 localhost 發請求這類瀏覽器端的攻擊。</p></details>
+  <details><summary>怎麼跟 Claude Code、Codex 搭？</summary>
+    <p>MCP：在客戶端設定裡加 <code>npx -y @limao.li.design/agent-board mcp</code>（Claude Code 可直接用上方「開始」裡的 <code>claude mcp add</code> 指令）。server 沒開時會自動帶起。也可以直接讓 agent 呼叫 CLI。Claude Code 另有 mod，見上方「怎麼接進來」。</p></details>
+  <details><summary>多個 agent 同時改同一張卡會怎樣？</summary>
+    <p>卡片上的欄位是最後寫入的贏，但每次狀態、負責人、優先度的變更都會留在卡片歷史，碰撞看得見，不假裝能防止。程式碼本身不會撞：每張卡有 worktree 和 branch 欄位，慣例是一個 agent 一個 git worktree，各改各的分支，卡上記著誰在哪條分支，交接時下一個 agent 直接接著那條分支做。</p></details>
+  <footer><span>Agent Board · 本機執行 · MIT</span><a href="https://github.com/111588004/agent-board" target="_blank" rel="noopener">GitHub</a><a href="https://www.npmjs.com/package/@limao.li.design/agent-board" target="_blank" rel="noopener">npm</a><a href="bench.html">完整實測</a></footer>
+</section>
+</div>
+
+<script>
+document.querySelectorAll('button.copy').forEach(function(b){
+  b.addEventListener('click',function(){
+    var el=document.getElementById(b.dataset.copy);
+    var done=function(){b.textContent='已複製';setTimeout(function(){b.textContent='複製'},1500)};
+    var sel=function(){var r=document.createRange();r.selectNodeContents(el);var s=getSelection();s.removeAllRanges();s.addRange(r);b.textContent='已選取'};
+    try{navigator.clipboard.writeText(el.textContent).then(done,sel)}catch(e){sel()}
+  });
+});
+</script>
+<script>
+/* scrollspy: underline the nav link of the section currently under the sticky header */
+(function(){
+var links=[].slice.call(document.querySelectorAll('.top nav a[href^="#"]'));
+var tgt=links.map(function(a){return document.querySelector(a.getAttribute('href'))});
+function spy(){
+  var h=document.querySelector('.top').offsetHeight+24,cur=-1;
+  tgt.forEach(function(el,i){if(el&&el.getBoundingClientRect().top<=h)cur=i});
+  if(window.innerHeight+window.scrollY>=document.body.scrollHeight-2)cur=tgt.length-1;
+  links.forEach(function(a,i){if(i===cur)a.setAttribute('aria-current','true');else a.removeAttribute('aria-current')});
+}
+addEventListener('scroll',spy,{passive:true});addEventListener('resize',spy);spy();
+})();
+</script>
+<script>
+/* The demo is a pure function of time: render(t) sets everything from t, so playback and frame export agree. */
+(function(){
+var CAP=[
+ ['一句話，識別開單意圖','板上已經有兩張卡。你用人話交代第三張，agent 照你的字開單。'],
+ ['不確定就問你','看板沒有「準備發表會」：agent 把看板的四個選項直接問你，不自己猜。'],
+ ['記住你的稱呼','你選既有專案，單開好了；看板同時記住這個稱呼。'],
+ ['一次呼叫開單','下一張單直接開。一次呼叫，6 秒。'],
+ ['人補的話 agent 也讀','你在網頁補一句條件，存了就在描述裡。agent 下次讀就知道。'],
+ ['一鍵換手給 Codex','在卡上選 Codex、複製啟動指令，貼進終端機就接手。'],
+ ['歷程都在同一張卡','誰開的、誰改的、改了什麼，都在同一張卡上。']
+];
+// t, step, cam {el,pad,ay} (view fits the element's width + pad), callout {el,t,up,dx}, caption
+var K=[
+ [0,1,{x:0,y:0,s:1},null,0],
+ [2500,1,{el:'hdr1',pad:60,ay:.22},null,0],
+ [5000,2,{el:'l2',pad:60,ay:.3},null,0],
+ [6800,3,{el:'q1',pad:60,ay:.5},{el:'q1',t:'沒這個專案？問你，不亂開',up:false,dx:40},1],
+ [11000,4,{el:'q1',pad:60,ay:.5},null,2],
+ [12300,5,{el:'l5',pad:60,ay:.35},null,2],
+ [16500,6,{el:'card3',pad:330,ay:.3},{el:'card3',t:'LA-3 進了看板',up:true,dx:-10},2],
+ [19500,7,{el:'l7',pad:60,ay:.3},null,3],
+ [21200,8,{el:'l8',pad:60,ay:.3},null,3],
+ [23400,9,{el:'l9',pad:60,ay:.3},{el:'l9',t:'一次就對：1 次呼叫',up:false,dx:40},3],
+ [26400,10,{el:'card4',pad:330,ay:.3},{el:'card4',t:'LA-4 也開好了',up:true,dx:-10},3],
+ [28400,11,{el:'desc',pad:60,ay:.45},{el:'desc',t:'人在網頁補條件，存了就在卡上',up:false,dx:20},4],
+ [33400,12,{el:'hand',pad:60,ay:.5},{el:'hand',t:'選 Codex，按一下複製啟動指令',up:false,dx:20},5,1],
+ [36600,13,{el:'hdr2',pad:60,ay:.3},{el:'hdr2',t:'現在換 Codex 接手',up:false,dx:40},5],
+ [39400,14,{el:'l13',pad:60,ay:.35},null,5],
+ [42200,15,{el:'l14',pad:60,ay:.35},null,5],
+ [44700,16,{el:'l15',pad:60,ay:.4},null,5],
+ [47300,17,{el:'card3b',pad:330,ay:.3},{el:'card3b',t:'Codex 送審，卡片換手',up:true,dx:-10},6,0],
+ [50300,17,{el:'desc',pad:60,ay:.5},{el:'desc',t:'整段過程都在這張卡上',up:false,dx:20},6,1],
+ [53800,17,{x:0,y:0,s:1},null,6],
+ [55300,18,{x:0,y:0,s:1},null,6],
+];
+var END=59300;
+var cam=document.getElementById('cam'),stage=document.getElementById('stage'),co=document.getElementById('co');
+var els=[].slice.call(document.querySelectorAll('#stage .el'));
+var capN=document.getElementById('cap-n'),capT=document.getElementById('cap-t'),seg=document.getElementById('seg');
+var capStart=[];CAP.forEach(function(_,i){capStart.push(K.filter(function(k){return k[4]===i})[0][0])});
+seg.innerHTML=CAP.map(function(c,i){return '<button type="button" role="tab" data-i="'+i+'" aria-label="第 '+(i+1)+' 步：'+c[0]+'"><i><b></b></i></button>'}).join('');
+var segs=[].slice.call(seg.children);
+function ease(u){return u<.5?2*u*u:1-Math.pow(-2*u+2,2)/2}
+function lerp(a,b,u){return a+(b-a)*u}
+function fit(){return stage.clientWidth/1280}
+var sceneEl=document.querySelector('#stage .scene');
+function pos(el){var x=0,y=0;while(el&&el!==sceneEl){x+=el.offsetLeft;y+=el.offsetTop;el=el.offsetParent}return {x:x,y:y}}
+function camOf(c){if(!c.el)return c;var e=document.getElementById(c.el),p=pos(e),w=Math.min(1280,e.offsetWidth+c.pad),sc=1280/w,vh=720/sc;var cx=p.x+e.offsetWidth/2,ty=p.y+e.offsetHeight/2;return {x:cx-w/2,y:ty-vh*(c.ay==null?.5:c.ay),s:sc}}
+function render(t){
+  var i=0;for(var j=0;j<K.length;j++){if(t>=K[j][0])i=j}
+  var k=K[i];
+  els.forEach(function(e){e.classList.toggle('on',+e.dataset.s<=k[1])});
+  // window identity: Codex takes over the terminal from step 12
+  var codex=k[1]>=13;document.getElementById('tname').textContent=codex?'codex':'claude';document.getElementById('tdot').style.setProperty('--ac',codex?'#a9acff':'#f0a273');document.getElementById('tw').classList.toggle('codex',codex);
+  var hs=k[1]>=12;document.getElementById('hand-sel').textContent=hs?'Codex ▾':'Claude Code ▾';var cp=document.getElementById('hand-cp');cp.textContent=k[1]===12?'✓ Copied':'⧉ Copy launch command';cp.classList.toggle('done',k[1]===12);document.getElementById('hand').classList.toggle('focus',k[1]===12);
+  [].slice.call(document.querySelectorAll('#tbody .ln')).forEach(function(p){var s=+p.dataset.s;p.classList.toggle('on',codex?(s>=13&&s<=k[1]):(s<=k[1]))});
+  var prev=camOf(K[Math.max(0,i-1)][2]),c=camOf(k[2]),u=i===0?1:ease(Math.min(1,(t-k[0])/900));
+  var x=lerp(prev.x,c.x,u),y=lerp(prev.y,c.y,u),s=lerp(prev.s,c.s,u);
+  var f=fit();
+  x=Math.max(0,Math.min(1280-1280/s,x));y=Math.max(0,Math.min(720-720/s,y));
+  cam.style.transform='scale('+(f*s)+') translate('+(-x)+'px,'+(-y)+'px)';
+  // board state
+  document.getElementById('n-ip').textContent=k[1]>=17?1:(k[1]>=6?2:1);
+  document.getElementById('n-bl').textContent=k[1]>=10?2:1;
+  document.getElementById('n-rv').textContent=k[1]>=17?1:0;
+  document.getElementById('card3').style.display=k[1]>=17?'none':'';
+  document.getElementById('drawer').classList.toggle('on',k[1]>=11&&k[5]!==0);
+  var st=document.getElementById('dr-st');st.textContent=k[1]>=17?'Review ⌄':'In Progress ⌄';st.classList.toggle('rv',k[1]>=17);
+  document.getElementById('dr-ag').textContent=k[1]>=13?'Codex':'Claude Code';
+  var editing=k[1]===11;document.getElementById('desc').classList.toggle('focus',editing);
+  // human typing: uneven pace, deterministic in t (so the frame export matches playback)
+  var TYPED='，場地要有投影設備',GAP=[0,260,140,210,120,380,160,230,190],T0=k[1]===11?k[0]+1400:0,n=TYPED.length;
+  if(k[1]===11){var acc=0;n=0;for(var c=0;c<TYPED.length;c++){acc+=GAP[c];if(t-T0>=acc)n=c+1;else break}}
+  var h11=document.getElementById('h11');h11.firstChild.textContent=TYPED.slice(0,n);h11.lastChild.style.opacity=(Math.floor(t/480)%2)?0:1;
+  var ptr=document.getElementById('ptr');ptr.classList.toggle('on',editing);
+  if(editing){var pd=pos(document.getElementById('h11'));ptr.style.left=(pd.x+150-648)+'px';ptr.style.top=(pd.y+8-24)+'px'}
+  // callout
+  var cal=k[3],age=t-k[0];
+  if(cal&&age>700){var e=document.getElementById(cal.el),p=pos(e);co.textContent=cal.t;co.classList.toggle('up',!!cal.up);co.style.left=Math.max(8,Math.min(1280-co.offsetWidth-8,p.x+(cal.dx||0)))+'px';co.style.top=(cal.up?p.y+e.offsetHeight+14:p.y-co.offsetHeight-14)+'px';co.classList.add('on')}else co.classList.remove('on');
+  var ttl=document.getElementById('chap'),dt=t-capStart[k[4]],first=k[4]===0,hold=first?3200:2600;ttl.querySelector('span').textContent=CAP[k[4]][0];ttl.querySelector('small').textContent=('0'+(k[4]+1))+' / 0'+CAP.length;ttl.classList.toggle('lt',!first);ttl.classList.toggle('on',dt>=0&&dt<hold);
+  capN.textContent=(k[4]+1)+'/'+CAP.length;capT.textContent=CAP[k[4]][1];
+  segs.forEach(function(b,ci){var st2=capStart[ci],en=ci+1<CAP.length?capStart[ci+1]:END;var w=Math.max(0,Math.min(1,(t-st2)/(en-st2)));b.firstChild.firstChild.style.setProperty('--w',(w*100)+'%');b.setAttribute('aria-current',ci===k[4])});
+}
+var t0=null,paused=false,offset=0,raf=null;
+var playBtn=document.getElementById('play');
+function frame(now){if(paused)return;var t=now-t0+offset;if(t>=END){t=END;render(t);paused=true;playBtn.textContent='重播';return}render(t);raf=requestAnimationFrame(frame)}
+function start(from){cancelAnimationFrame(raf);offset=from||0;t0=performance.now();paused=false;playBtn.textContent='暫停';raf=requestAnimationFrame(frame)}
+playBtn.addEventListener('click',function(){if(paused){var cur=offset+(t0?performance.now()-t0:0);start(cur>=END?0:cur)}else{paused=true;offset+=performance.now()-t0;t0=null;playBtn.textContent='播放'}});
+document.getElementById('restart').addEventListener('click',function(){start(0)});
+segs.forEach(function(b){b.addEventListener('click',function(){start(capStart[+b.dataset.i])})});
+window.addEventListener('resize',function(){if(paused)render(offset)});
+var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+if(location.search.indexOf('render=1')>=0){window.seek=function(t){render(t)};window.DEMO_END=END;render(0)}
+else if(reduce){render(END);paused=true;playBtn.textContent='播放'}
+else if('IntersectionObserver' in window){render(0);var started=false;new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting&&!started){started=true;start(0)}})},{threshold:.4}).observe(stage)}
+else start(0);
+})();
+</script>
+</body>
+</html>
