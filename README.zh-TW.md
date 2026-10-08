@@ -11,8 +11,6 @@
 
 <p align="center"><a href="https://111588004.github.io/agent-board/"><b>官方網站</b></a> · <a href="https://111588004.github.io/agent-board/bench.html">實測</a> · <a href="https://www.npmjs.com/package/@limao.li.design/agent-board">npm</a></p>
 
-<p align="center"><a href="https://111588004.github.io/agent-board/"><img src="docs/demo.gif" alt="60 秒示範：Claude Code 開單，看板問要放哪個專案，有人在網頁看板上補了一個條件，接著 Codex 接手這張單並送去審查" width="720"></a></p>
-
 Agent Board 追蹤多個 CLI coding agent（Claude Code、Codex CLI、Gemini CLI、Pi Agent 等）在多個專案和 worktree 之間的任務進度。人用網頁看板，agent 用 CLI 或 MCP，大家寫的都是同一批卡。
 
 唯一的資料來源是一個 Express + SQLite 伺服器。CLI、MCP 伺服器和網頁 UI 都只是它 REST API 的 client，正因如此，多個 agent session 同時讀寫看板才是安全的。

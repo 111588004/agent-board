@@ -11,8 +11,6 @@
 
 <p align="center"><a href="https://111588004.github.io/agent-board/"><b>Website</b></a> · <a href="https://111588004.github.io/agent-board/bench.html">Benchmarks</a> · <a href="https://www.npmjs.com/package/@limao.li.design/agent-board">npm</a></p>
 
-<p align="center"><a href="https://111588004.github.io/agent-board/"><img src="docs/demo.gif" alt="60-second demo: Claude Code opens a ticket, the board asks which project, a person adds a condition on the web board, and Codex picks the ticket up and sends it to review" width="720"></a></p>
-
 Agent Board tracks task progress across multiple CLI coding agents (Claude Code, Codex CLI, Gemini CLI, Pi Agent, etc.) working across multiple projects and worktrees. People use the web board, agents use the CLI or MCP, and everyone writes to the same cards.
 
 A single Express + SQLite server is the source of truth. The CLI, an MCP server, and a web UI are all just clients of its REST API — this is what makes it safe for several agent sessions to read/write the board concurrently.
