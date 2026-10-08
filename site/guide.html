@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Agent Board 功能指南：接上 MCP、看板的四層資料與增查改刪、看板什麼時候會問你。">
+<style>[hidden]{display:none!important}</style>
+<title>Agent Board 功能指南</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+/* Layout: doc page, sticky breadcrumb bar, one centered column. Tokens copied from site/index.html. */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --ink:#0f1a24; --dim:#5a6a79; --line:#d5dce4; --soft:#e2e8ee;
+  --accent:#0b6e8a; --accent-soft:#d8eef4;
+  --c-create:#1f8a4c; --c-read:#2563c9; --c-update:#b86e00; --c-delete:#c8372d; --on-c:#ffffff; --warn:#9a5b00; --warn-soft:#fbefd9;
+  --term:#101820; --term-fg:#dde5ec; --term-dim:#7f8fa0; --term-line:#223040; --term-acc:#7fd3e6;
+  --sans:"Noto Sans TC","IBM Plex Sans",system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+  --en:"IBM Plex Sans","Noto Sans TC",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0d1319; --panel:#151d26; --ink:#e7edf3; --dim:#97a6b5; --line:#263340; --soft:#1c2733;
+  --accent:#4fc0dc; --accent-soft:#12303a; --c-create:#4cc77f; --c-read:#6ea2ff; --c-update:#f0b357; --c-delete:#ff7a6e; --on-c:#0d1319; --warn:#f0b357; --warn-soft:#33270f;
+  --term:#0a0f14; --term-line:#1b2733; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1319; --panel:#151d26; --ink:#e7edf3; --dim:#97a6b5; --line:#263340; --soft:#1c2733;
+  --accent:#4fc0dc; --accent-soft:#12303a; --c-create:#4cc77f; --c-read:#6ea2ff; --c-update:#f0b357; --c-delete:#ff7a6e; --on-c:#0d1319; --warn:#f0b357; --warn-soft:#33270f;
+  --term:#0a0f14; --term-line:#1b2733; color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:70px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.75 var(--sans);padding-inline:16px;padding-block:0 64px;overflow-x:clip}
+a{color:var(--accent)}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3{line-height:1.25;text-wrap:balance;margin:0}
+p{margin:0}
+code{font-family:var(--mono);font-size:.88em;background:var(--soft);padding:.1em .35em;border-radius:4px}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:10;display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:12px calc(50vw - 50%);margin-inline:calc(50% - 50vw);background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);font:500 13px var(--en)}
+.top b{font-weight:700}
+.top nav{display:flex;gap:16px}
+.top nav a{color:var(--dim);text-decoration:none}
+.top nav a[aria-current="page"]{color:var(--ink);font-weight:600}
+.layout{max-width:760px;margin-inline:auto;padding-top:32px}
+main{min-width:0}
+.eyebrow{font:500 12px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+h1{font-size:clamp(28px,5vw,40px);font-weight:900;margin-bottom:14px}
+.lede{color:var(--dim);font-size:17px;max-width:62ch}
+section{padding-top:52px;display:grid;gap:16px}
+section>*{min-width:0}
+h2{font-size:24px;font-weight:700}
+h3{font-size:17px;font-weight:700;margin-top:6px}
+.step{font:600 13px var(--mono);color:var(--accent);margin-right:8px}
+pre{margin:0;background:var(--term);color:var(--term-fg);font:13.5px/1.65 var(--mono);padding:14px 16px;border-radius:10px;overflow-x:auto}
+pre .c{color:var(--term-dim)} pre .a{color:var(--term-acc)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tabs button{font:500 13px var(--en);padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.panel{display:grid;gap:10px}
+.note{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:12px 14px;font-size:15px}
+.warn{border-color:color-mix(in srgb,var(--warn) 40%,var(--line));background:var(--warn-soft)}
+.warn b{color:var(--warn)}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:560px}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}
+th{font:600 12px var(--en);letter-spacing:.04em;color:var(--dim);background:var(--soft)}
+tr:last-child td{border-bottom:0}
+td.say{width:36%}
+td.tool code{background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.group td{background:var(--soft);font:600 13px var(--sans);color:var(--ink);padding-block:6px}
+.chat{background:var(--term);color:var(--term-fg);border-radius:10px;padding:14px 16px;font:13.5px/1.7 var(--mono);display:grid;gap:8px;overflow-x:auto}
+.chat .u{color:var(--term-acc)} .chat .d{color:var(--term-dim)}
+.chat .q{border:1px solid var(--term-line);border-radius:8px;padding:8px 12px}
+.modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media(max-width:600px){.modes{grid-template-columns:minmax(0,1fr)}}
+.mode{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:12px 14px;display:grid;gap:4px;align-content:start}
+.mode code{justify-self:start;font-weight:600}
+.mode p{font-size:14.5px;color:var(--dim)}
+dl{margin:0;display:grid;gap:12px}
+dt{font-weight:700}
+dd{margin:2px 0 0;color:var(--dim)}
+.next{margin-top:52px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:20px;font-size:15px}
+.ftree,.ftree ul{list-style:none;margin:0;padding:0}
+.ftree{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:10px 8px;font-size:15px}
+.ftree ul{margin-left:13px;padding-left:12px;border-left:1px solid var(--line)}
+.ftree .row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;line-height:1.5;min-width:0}
+.ftree .row:hover{background:var(--soft)}
+.ftree i{font-style:normal;color:var(--dim);width:10px;font-size:12px;flex:none}
+.ftree .type{font:500 11.5px/1.6 var(--mono);color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 6px;flex:none;min-width:6.6em;text-align:center}
+.ftree small{font:500 12px var(--mono);color:var(--dim)}
+.caption{font-size:14.5px;color:var(--dim)}
+@media(max-width:600px){.ftree ul{margin-left:9px;padding-left:8px}.ftree .type{min-width:0}}
+table.cmp{min-width:0;table-layout:fixed}
+table.cmp col.op{width:8em}
+table.cmp th,table.cmp td{padding:7px 14px;vertical-align:middle;overflow-wrap:anywhere}
+table.cmp thead th{position:sticky;top:0}
+table.cmp tbody th{font:500 14px var(--sans);color:var(--ink);background:none}
+table.cmp td code{background:none;padding:0;font-size:13px}
+table.cmp td:nth-child(2) code{color:var(--accent)}
+table.cmp tr.group th{background:var(--soft);font:600 12px var(--en);letter-spacing:.04em;color:var(--dim);padding-block:5px;border-bottom:1px solid var(--line)}
+table.cmp tr:not(.group) + tr.group th{border-top:1px solid var(--line)}
+table.cmp td,table.cmp tbody th{border-bottom:1px solid var(--soft)}
+.none{color:var(--line);font-weight:600}
+@media(max-width:600px){table.cmp{min-width:520px}}
+.crudmap{display:grid;gap:10px;background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:16px}
+.crudmap svg{display:block;width:100%;height:auto}
+.crudmap svg.mb{display:none;max-width:420px;margin-inline:auto}
+@media(max-width:600px){.crudmap{padding:8px}.crudmap svg.dk{display:none}.crudmap svg.mb{display:block}}
+.crudmap .caption{padding-inline:4px}
+.crudmap text{fill:var(--ink);font-family:var(--sans)}
+.crudmap .cd{fill:var(--panel);stroke:var(--line)}
+.crudmap .cd.tk{stroke:var(--accent);stroke-width:1.5}
+.crudmap .h{font-size:13.5px;font-weight:700}
+.crudmap .tool{font:500 10.5px var(--mono)}
+.crudmap .dd{font-size:11px;fill:var(--dim)}
+.crudmap .id{font:500 10px var(--mono);fill:var(--dim)}
+.crudmap .ct{font-size:13.5px;font-weight:700}
+.crudmap .chip{fill:var(--warn-soft)} .crudmap .cx{font-size:9px;font-weight:600;fill:var(--warn)}
+.crudmap .chip2{fill:var(--soft)} .crudmap .cx2{font-size:9px;font-weight:600;fill:var(--ink)}
+.crudmap .g{fill:none;stroke:var(--on-c);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.crudmap .gf{fill:var(--on-c)}
+.crudmap .ln{fill:none;stroke-width:1.6;stroke-dasharray:4 3}
+.crudmap .bd.c{fill:var(--c-create)} .crudmap .tool.c{fill:var(--c-create)} .crudmap .ln.c{stroke:var(--c-create)}
+.crudmap .bd.r{fill:var(--c-read)} .crudmap .tool.r{fill:var(--c-read)} .crudmap .ln.r{stroke:var(--c-read)}
+.crudmap .bd.u{fill:var(--c-update)} .crudmap .tool.u{fill:var(--c-update)} .crudmap .ln.u{stroke:var(--c-update)}
+.crudmap .bd.d{fill:var(--c-delete)} .crudmap .tool.d{fill:var(--c-delete)} .crudmap .ln.d{stroke:var(--c-delete)}
+details.full{border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+details.full summary{cursor:pointer;padding:10px 14px;font-weight:600}
+details.full[open] summary{border-bottom:1px solid var(--line)}
+details.full .legend{padding:10px 14px 12px;font-size:14px;color:var(--dim)}
+details.full .tw{border:0;border-radius:0}
+table.crud{min-width:720px}
+table.crud tbody th{font:700 14px var(--en);color:var(--ink);background:var(--panel);white-space:nowrap}
+table.crud td{display:table-cell}
+table.crud td .k{display:block;width:max-content;margin-bottom:4px}
+td.same{color:var(--dim);font-size:14px}
+.k{font:500 12px/1.5 var(--mono);padding:1px 7px;border-radius:5px;border:1px solid transparent}
+.k.mcp{background:var(--accent-soft);color:var(--accent)}
+.k.cli{background:var(--soft);color:var(--ink);border-color:var(--line)}
+.k.web{background:transparent;color:var(--dim);border-color:var(--line);border-style:dashed}
+.k.mod{background:var(--warn-soft);color:var(--warn)}
+.k.no{background:transparent;color:var(--dim);text-decoration:line-through}
+
+.modebar{display:inline-flex;flex-wrap:wrap;gap:4px;padding:4px;background:var(--soft);border:1px solid var(--line);border-radius:10px;justify-self:start}
+.modebar button{font:500 14px var(--sans);padding:6px 12px;border:0;border-radius:7px;background:transparent;color:var(--dim);cursor:pointer}
+.modebar button code{background:none;padding:0;font-weight:600}
+.modebar button[aria-checked="true"]{background:var(--panel);color:var(--ink);box-shadow:0 1px 3px rgb(15 26 36 / .12)}
+.modebar button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.modedesc{font-size:14.5px;color:var(--dim);min-height:1.75em}
+.flow{display:grid;grid-template-columns:210px 44px minmax(0,1fr);align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:20px;position:relative;isolation:isolate}
+.flow::before{content:"";position:absolute;z-index:-1;left:calc(20px + 105px - 1px);top:48px;bottom:48px;border-left:2px dashed var(--dim);opacity:.7}
+.flow>.fnode,.flow>.vl,.flow>.dia{grid-column:1}
+.fnode{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;display:grid;gap:2px;box-shadow:0 3px 8px rgb(15 26 36 / .08)}
+.fnode small{font-size:11.5px;color:var(--dim)}
+.fnode code{font-size:11.5px;background:none;padding:0;color:var(--accent);overflow-wrap:anywhere}
+.fnode.end{border-color:var(--c-create);text-align:center}
+.fnode.end b{color:var(--c-create)}
+.vl{justify-self:center;width:0;height:44px;position:relative}
+.vl span{position:absolute;left:10px;top:50%;transform:translateY(-50%);white-space:nowrap;font:600 12px var(--sans);color:var(--c-create)}
+.dia{justify-self:center;width:190px;height:104px;display:grid;place-items:center;text-align:center;position:relative}
+.dia::before,.dia::after{content:"";position:absolute;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
+.dia::before{inset:0;background:var(--dim);opacity:.55}
+.dia::after{inset:2px 3px;background:var(--panel)}
+.dia span{position:relative;z-index:1;font:600 13px/1.45 var(--sans);padding:0 30px}
+.ha{grid-column:2;height:0;border-top:2px dashed var(--dim);opacity:.7}
+.outs{grid-column:3;display:grid;gap:10px}
+.flow>.dia+.ha+.outs{grid-row:span 1}
+.out{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--k);border-radius:10px;padding:12px 14px;display:grid;gap:6px;align-content:start;box-shadow:0 3px 8px rgb(15 26 36 / .08);transition:border-color .2s}
+.out .when{display:grid;justify-items:start;gap:6px;font:600 12.5px var(--sans);color:var(--dim)}
+.out .res{font-size:14.5px}
+.out .ex{font:12px/1.6 var(--mono);color:var(--dim);overflow-wrap:anywhere}
+.pill{flex:none;white-space:nowrap;font:600 12px var(--sans);padding:1px 8px;border-radius:99px;color:var(--on-c);background:var(--k)}
+.k-ask{--k:var(--accent)} .k-pick{--k:var(--c-update)} .k-err{--k:var(--c-delete)}
+.pill.pick{--k:var(--c-update)}
+.howto{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.howto>div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;gap:8px;align-content:start;min-width:0}
+.howto h3{margin:0;font-size:15px}
+.howto p{font-size:14px;color:var(--dim)}
+.howto pre{padding:8px 12px;font-size:12.5px;white-space:pre-wrap}
+@media(max-width:820px){.howto{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){
+  .flow{grid-template-columns:minmax(0,1fr);padding:12px}
+  .flow::before{left:calc(50% - 1px)}
+  .outs{position:relative;margin-left:28px}
+  .flow>*{grid-column:1!important}
+  .ha{justify-self:center;width:0;height:22px;border-top:0;border-left:2px dashed var(--dim)}
+  .vl{height:36px}
+}
+.flowwrap{container-type:inline-size}
+@container (min-width:660px){
+  .flow{grid-template-columns:130px minmax(20px,1fr) 150px minmax(64px,1fr) 130px minmax(28px,1fr) 110px;grid-template-rows:auto 30px auto;padding:22px}
+  .flow::before{display:none}
+  .flow>.x-start{grid-area:1/1}.flow>.x-v1{grid-area:1/2}.flow>.x-d1{grid-area:1/3}.flow>.x-v2{grid-area:1/4}.flow>.x-d2{grid-area:1/5}.flow>.x-v3{grid-area:1/6}.flow>.x-end{grid-area:1/7}
+  .flow>.x-h1{grid-area:2/3}.flow>.x-h2{grid-area:2/5}
+  .flow>.x-o1{grid-area:3/1/4/5;grid-template-columns:1fr 1fr;gap:12px;align-self:stretch;margin-right:6px}
+  .flow>.x-o2{grid-area:3/5/4/8;align-self:stretch;margin-left:6px}
+  .flow .outs{grid-auto-rows:1fr}
+  .flow>.vl{justify-self:stretch;width:auto;height:0;border-top:2px dashed color-mix(in srgb,var(--dim) 70%,transparent)}
+  .flow>.vl span{left:50%;top:-20px;transform:translateX(-50%)}
+  .flow>.ha{justify-self:center;align-self:stretch;width:0;height:auto;border-top:0;border-left:2px dashed color-mix(in srgb,var(--dim) 70%,transparent);opacity:1}
+  .flow>.dia{width:100%;max-width:150px;height:92px}
+  .flow>.x-d2{max-width:130px}
+  .dia span{padding:0 20px;font-size:12.5px}
+  .fnode{font-size:13px}
+  .out .res{font-size:13.5px}
+}
+@media (prefers-reduced-motion:reduce){.out{transition:none}}
+.crumb{display:flex;gap:6px;flex-wrap:wrap;font-size:13px;color:var(--dim);margin-bottom:14px}
+.crumb a{color:var(--dim);text-decoration:none}.crumb a:hover{color:var(--accent)}
+.hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:24px;align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:16px;padding:28px}
+.hero .lede{margin-top:0;font-size:16px}
+.hero h1{font-size:clamp(26px,3.4vw,32px);word-break:keep-all}
+.hero-art .ill{width:100%;height:auto;display:block}
+@media(max-width:820px){.hero{grid-template-columns:minmax(0,1fr);padding:20px}}
+.steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:26px}
+.steps li{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:8px;align-content:start;min-width:0;box-shadow:0 3px 8px rgb(15 26 36 / .06)}
+.steps li:not(:last-child)::after{content:"";position:absolute;right:-24px;top:26px;width:22px;border-top:2px dashed var(--accent)}
+.steps .n{width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--panel);display:grid;place-items:center;font:700 13px var(--en)}
+.steps h3{margin:0;font-size:15.5px}
+.steps p{font-size:13.5px;color:var(--dim)}
+.term{background:var(--term);color:var(--term-fg);border-radius:8px;padding:10px 12px;font:12px/1.6 var(--mono);white-space:pre;overflow-x:auto}
+.term .pr{color:var(--term-dim)} .term .ok{color:#6fd18f} .term .a{color:var(--term-acc)}
+@media(max-width:820px){.steps{grid-template-columns:minmax(0,1fr);gap:20px}.steps li:not(:last-child)::after{right:auto;left:26px;top:auto;bottom:-20px;width:0;height:18px;border-top:0;border-left:2px dashed var(--accent)}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+.hcrumb{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-width:0}
+.hcrumb a{color:var(--dim);text-decoration:none}
+.hcrumb a:first-child{color:var(--ink)}
+.hcrumb a:hover{color:var(--accent)}
+.hcrumb [aria-current]{color:var(--ink);font-weight:600}
+.hcrumb>span[aria-hidden]{color:var(--dim);opacity:.6}
+.top .gh{color:var(--dim);text-decoration:none}.top .gh:hover{color:var(--ink)}
+</style>
+
+</head><body>
+<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs><symbol id="i-bot" viewBox="0 0 24 24" fill="currentColor"><path d="M11 2h2v3.2a9 9 0 0 1 7 5.8h2v6h-2a9 9 0 0 1-16 0H2v-6h2a9 9 0 0 1 7-5.8z"/><circle cx="9" cy="14" r="1.6" fill="var(--panel)"/><circle cx="15" cy="14" r="1.6" fill="var(--panel)"/></symbol></defs></svg>
+<header class="top">
+  <nav class="hcrumb" aria-label="位置"><a href="./"><b>Agent Board</b></a><span aria-hidden="true">›</span><span aria-current="page">功能指南</span></nav>
+  <a class="gh" href="https://github.com/111588004/agent-board">GitHub</a>
+</header>
+
+<div class="layout">
+  <main>
+    <div class="hero">
+      <div class="hero-txt">
+        <p class="eyebrow">MCP · 0.4.4</p>
+        <h1>讓 agent 自己管看板</h1>
+        <p class="lede">接上 MCP 之後，你用平常講話的方式交代工作，Claude Code 或 Codex 會自己開單、改狀態、留進度。這頁說明怎麼接、它會做哪些事，以及它什麼時候會回頭問你。</p>
+      </div>
+      <div class="hero-art"><svg class="ill" viewBox="10 24 300 112" role="img" aria-label="agent 透過 MCP 開單，看板不確定時先問你"><rect x="16" y="30" width="136" height="30" rx="6" fill="var(--term)"/><svg x="24" y="37" width="16" height="16" viewBox="0 0 24 24" style="color:#f0a273"><use href="#i-bot"/></svg><text x="46" y="49" font-size="8" font-family="var(--mono)" font-weight="700" fill="var(--term-fg)">Claude Code</text><text x="104" y="49" font-size="7" font-family="var(--mono)" fill="#8a97a6">mcp ✓</text><rect x="16" y="66" width="136" height="30" rx="6" fill="var(--term)"/><svg x="24" y="73" width="16" height="16" viewBox="0 0 24 24" style="color:#a9acff"><use href="#i-bot"/></svg><text x="46" y="85" font-size="8" font-family="var(--mono)" font-weight="700" fill="var(--term-fg)">Codex</text><text x="104" y="85" font-size="7" font-family="var(--mono)" fill="#8a97a6">mcp ✓</text><rect x="34" y="104" width="118" height="26" rx="6" fill="var(--panel)" stroke="var(--accent)" stroke-width="1.5"/><rect x="48.5" y="103" width="9" height="2.5" fill="var(--panel)"/><path d="M48 104.6 L53 97 L58 104.6" fill="var(--panel)" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/><text x="42" y="115" font-size="7" font-family="var(--mono)" font-weight="700" fill="var(--accent)">NEEDS USER INPUT</text><text x="42" y="125" font-size="7" fill="var(--dim)">放進既有「專案管理」？ ❯ 是</text><path d="M152 80 C 172 80, 172 80, 190 80" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-dasharray="4 3"/><path d="M190 80 l-6 -4 v8 z" fill="var(--accent)"/><g font-family="var(--sans)"><rect x="192" y="30" width="112" height="100" rx="8" fill="var(--panel)" stroke="var(--line)"/>
+<text x="204" y="48" font-size="8" font-family="var(--mono)" fill="var(--dim)">PRJ-3</text>
+<text x="204" y="64" font-size="10" font-weight="700" fill="var(--ink)">確認場地</text><text x="204" y="77" font-size="10" font-weight="700" fill="var(--ink)">與報價</text>
+<rect x="204" y="86" width="44" height="14" rx="3" fill="var(--soft)"/><text x="226" y="96" font-size="8" text-anchor="middle" fill="var(--dim)">專案管理</text>
+<rect x="252" y="86" width="44" height="14" rx="3" fill="var(--accent-soft)"/><text x="274" y="96" font-size="8" text-anchor="middle" fill="var(--accent)">Codex</text>
+<rect x="204" y="108" width="52" height="4" rx="2" fill="var(--soft)"/><rect x="204" y="116" width="36" height="4" rx="2" fill="var(--soft)"/></g></svg></div>
+    </div>
+
+    <section id="setup">
+      <h2>接上 MCP</h2>
+      <p>三步就接好。不需要先安裝 Agent Board，也不需要先開 server。</p>
+      <ol class="steps">
+        <li><span class="n">1</span><h3>貼一行設定</h3>
+          <div class="term"><span class="pr">$</span> claude mcp add \
+    agent-board …</div>
+          <p>完整指令在下面，Claude Code、Codex、桌面版各一段，直接複製。</p></li>
+        <li><span class="n">2</span><h3>確認連上了</h3>
+          <div class="term"><span class="pr">❯</span> /mcp
+  agent-board
+  <span class="ok">✔ connected</span>
+  10 tools</div>
+          <p>開一個新的 session，輸入 <code>/mcp</code>。畫面為示意。</p></li>
+        <li><span class="n">3</span><h3>第一次叫它做事</h3>
+          <div class="term"><span class="a">agent-board:</span>
+  auto-started server
+  (pid 48213)</div>
+          <p>不是錯誤。server 在背景啟動，留給網頁看板、CLI 和其他 agent 共用。打開 <a href="http://localhost:4317">localhost:4317</a> 就看得到板子。</p></li>
+      </ol>
+      <h3>各家 agent 的設定</h3>
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="cc">Claude Code</button>
+        <button role="tab" aria-selected="false" data-tab="codex">Codex</button>
+        <button role="tab" aria-selected="false" data-tab="desk">Claude 桌面版</button>
+        <button role="tab" aria-selected="false" data-tab="http">HTTP</button>
+      </div>
+      <div class="panel" data-panel="cc">
+        <pre>claude mcp add agent-board -s user -- npx -y @limao.li.design/agent-board mcp</pre>
+      </div>
+      <div class="panel" data-panel="codex" hidden>
+        <pre><span class="c"># ~/.codex/config.toml</span>
+[mcp_servers.agent-board]
+command = "npx"
+args = ["-y", "@limao.li.design/agent-board", "mcp"]
+startup_timeout_sec = 60   <span class="c"># 第一次要下載套件，約 20 秒</span></pre>
+      </div>
+      <div class="panel" data-panel="desk" hidden>
+        <pre><span class="c">// ~/Library/Application Support/Claude/claude_desktop_config.json</span>
+{ "mcpServers": { "agent-board": {
+    "command": "npx",
+    "args": ["-y", "@limao.li.design/agent-board", "mcp"] } } }</pre>
+        <p class="note">這個方式還沒在桌面版實測過。從 Dock 開的 app 可能找不到用 nvm 裝的 <code>npx</code>，遇到時把 <code>command</code> 換成 <code>which npx</code> 印出的絕對路徑。</p>
+      </div>
+      <div class="panel" data-panel="http" hidden>
+        <pre><span class="c"># server 要先開著（終端機跑 agent-board）</span>
+claude mcp add --transport http agent-board http://localhost:4317/mcp</pre>
+        <p>HTTP 模式不會自動啟動 server。適合 server 一直開著、或 client 只吃網址的情況。</p>
+      </div>
+
+    </section>
+
+    <section id="map">
+      <h2>全貌：從一個看板到一張單</h2>
+      <p>一層裝一層，跟資料夾一樣。</p>
+      <ul class="ftree" role="tree" aria-label="資料階層">
+        <li role="treeitem" aria-expanded="true"><span class="row"><i>▾</i><span class="type">Workspace</span>個人</span>
+          <ul role="group">
+            <li role="treeitem" aria-expanded="true"><span class="row"><i>▾</i><span class="type">Project</span>專案管理<small>PRJ</small></span>
+              <ul role="group">
+                <li role="treeitem" aria-expanded="true"><span class="row"><i>▾</i><span class="type">Task</span>PRJ-3 確認場地與報價</span>
+                  <ul role="group">
+                    <li role="treeitem"><span class="row"><i></i><span class="type">Subtask</span>PRJ-4 比三家報價</span></li>
+                  </ul>
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </li>
+      </ul>
+      <p class="caption">Workspace 是一整個板子，Project 是一件事或一個 repo，Task 是一張卡，Subtask 是卡底下的小卡，也是最小單位。</p>
+      <p>agent 透過 MCP 可以增查改刪 Project 和 Task。Workspace 是你決定要開哪個板子，agent 工作時用不到，所以它只能指定用哪個板子，不能建立或刪除。</p>
+      <div class="crudmap">
+        <svg class="dk" viewBox="0 0 700 330" role="img" aria-labelledby="cm1t cm1d"><title id="cm1t">以一張單為例的增查改刪</title><desc id="cm1d">中間是卡片 PRJ-3，用虛線連到四張行為卡：增（create_task）、查（list_tasks）、改（update_task、add_task_note）、刪（delete_task）。</desc><defs><filter id="crsh1" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f1a24" flood-opacity=".10"/></filter></defs><path d="M275 144 C 261.5 144, 261.5 55, 248 55" class="ln c"/><path d="M425 144 C 438.5 144, 438.5 55, 452 55" class="ln r"/><path d="M275 186 C 261.5 186, 261.5 275, 248 275" class="ln u"/><path d="M425 186 C 438.5 186, 438.5 275, 452 275" class="ln d"/><g filter="url(#crsh1)"><rect x="16" y="16" width="232" height="78" rx="10" class="cd"/></g><rect x="28" y="28" width="28" height="28" rx="7" class="bd c"/><path d="M42 36v12M36 42h12" class="g"/><text x="66" y="41" class="h">增 Create</text><text x="66" y="56" class="tool c">create_task</text><text x="28" y="80" class="dd">「開一張：確認場地報價」</text><g filter="url(#crsh1)"><rect x="452" y="16" width="232" height="78" rx="10" class="cd"/></g><rect x="464" y="28" width="28" height="28" rx="7" class="bd r"/><circle cx="476.5" cy="40.5" r="4.6" class="g"/><path d="M479.9 43.9l3.8 3.8" class="g"/><text x="502" y="41" class="h">查 Read</text><text x="502" y="56" class="tool r">list_tasks</text><text x="464" y="80" class="dd">「還有哪些沒做完？」</text><g filter="url(#crsh1)"><rect x="16" y="236" width="232" height="78" rx="10" class="cd"/></g><rect x="28" y="248" width="28" height="28" rx="7" class="bd u"/><path d="M36 268l1-4 7.5-7.5 3 3-7.5 7.5z" class="gf"/><text x="66" y="261" class="h">改 Update</text><text x="66" y="276" class="tool u">update_task · add_task_note</text><text x="28" y="300" class="dd">「開始做了」「記一下進度」</text><g filter="url(#crsh1)"><rect x="452" y="236" width="232" height="78" rx="10" class="cd"/></g><rect x="464" y="248" width="28" height="28" rx="7" class="bd d"/><path d="M472 258h12M476 258v-1.8h4v1.8M473.4 260.5l.8 8h7.6l.8-8" class="g"/><text x="502" y="261" class="h">刪 Delete</text><text x="502" y="276" class="tool d">delete_task</text><text x="464" y="300" class="dd">「開錯了，刪掉」</text><g filter="url(#crsh1)"><rect x="275" y="122" width="150" height="86" rx="10" class="cd tk"/></g><text x="287" y="142" class="id">PRJ-3</text><text x="413" y="142" class="id" text-anchor="end">claude</text><text x="287" y="163" class="ct">確認場地與報價</text><text x="287" y="178" class="dd">專案管理</text><rect x="287" y="186" width="44" height="14" rx="7" class="chip"/><text x="309" y="196.5" class="cx" text-anchor="middle">進行中</text><rect x="335" y="186" width="24" height="14" rx="7" class="chip2"/><text x="347" y="196.5" class="cx2" text-anchor="middle">高</text></svg>
+        <svg class="mb" viewBox="0 0 360 470" role="img" aria-labelledby="cm2t cm2d"><title id="cm2t">以一張單為例的增查改刪</title><desc id="cm2d">中間是卡片 PRJ-3，用虛線連到增、查、改、刪四張行為卡。</desc><defs><filter id="crsh2" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f1a24" flood-opacity=".10"/></filter></defs><path d="M135 192 C 135 141.0, 94.0 141.0, 94.0 90" class="ln c"/><path d="M225 192 C 225 141.0, 266.0 141.0, 266.0 90" class="ln r"/><path d="M135 278 C 135 329.0, 94.0 329.0, 94.0 380" class="ln u"/><path d="M225 278 C 225 329.0, 266.0 329.0, 266.0 380" class="ln d"/><g filter="url(#crsh2)"><rect x="12" y="12" width="164" height="78" rx="10" class="cd"/></g><rect x="24" y="24" width="28" height="28" rx="7" class="bd c"/><path d="M38 32v12M32 38h12" class="g"/><text x="62" y="37" class="h">增 Create</text><text x="62" y="52" class="tool c">create_task</text><text x="24" y="76" class="dd">「開一張新單」</text><g filter="url(#crsh2)"><rect x="184" y="12" width="164" height="78" rx="10" class="cd"/></g><rect x="196" y="24" width="28" height="28" rx="7" class="bd r"/><circle cx="208.5" cy="36.5" r="4.6" class="g"/><path d="M211.9 39.9l3.8 3.8" class="g"/><text x="234" y="37" class="h">查 Read</text><text x="234" y="52" class="tool r">list_tasks</text><text x="196" y="76" class="dd">「還有哪些沒做完？」</text><g filter="url(#crsh2)"><rect x="12" y="380" width="164" height="78" rx="10" class="cd"/></g><rect x="24" y="392" width="28" height="28" rx="7" class="bd u"/><path d="M32 412l1-4 7.5-7.5 3 3-7.5 7.5z" class="gf"/><text x="62" y="405" class="h">改 Update</text><text x="62" y="420" class="tool u">update_task</text><text x="24" y="444" class="dd">「開始做了」</text><g filter="url(#crsh2)"><rect x="184" y="380" width="164" height="78" rx="10" class="cd"/></g><rect x="196" y="392" width="28" height="28" rx="7" class="bd d"/><path d="M204 402h12M208 402v-1.8h4v1.8M205.4 404.5l.8 8h7.6l.8-8" class="g"/><text x="234" y="405" class="h">刪 Delete</text><text x="234" y="420" class="tool d">delete_task</text><text x="196" y="444" class="dd">「開錯了，刪掉」</text><g filter="url(#crsh2)"><rect x="105" y="192" width="150" height="86" rx="10" class="cd tk"/></g><text x="117" y="212" class="id">PRJ-3</text><text x="243" y="212" class="id" text-anchor="end">claude</text><text x="117" y="233" class="ct">確認場地與報價</text><text x="117" y="248" class="dd">專案管理</text><rect x="117" y="256" width="44" height="14" rx="7" class="chip"/><text x="139" y="266.5" class="cx" text-anchor="middle">進行中</text><rect x="165" y="256" width="24" height="14" rx="7" class="chip2"/><text x="177" y="266.5" class="cx2" text-anchor="middle">高</text></svg>
+        <p class="caption">Subtask 也用同一組工具，多帶一個 <code>parentId</code>。</p>
+      </div>
+      <details class="full">
+        <summary>完整對照：MCP 的 10 個工具、CLI、網頁各能做什麼</summary>
+        <div class="tw">
+        <table class="cmp">
+          <colgroup><col class="op"><col><col><col></colgroup>
+          <thead><tr><th scope="col">操作</th><th scope="col">MCP（agent）</th><th scope="col">CLI（終端機）</th><th scope="col">網頁看板</th></tr></thead>
+          <tbody>
+            <tr class="group"><th colspan="4" scope="rowgroup">Workspace</th></tr>
+            <tr><th scope="row">建立</th><td></td><td><code>workspace create</code></td><td>切換選單</td></tr>
+            <tr><th scope="row">查看</th><td></td><td><code>workspace list</code></td><td>切換選單</td></tr>
+            <tr><th scope="row">切換</th><td><code>workspace</code> 參數</td><td><code>workspace use</code></td><td>切換選單</td></tr>
+            <tr><th scope="row">改名</th><td></td><td><code>workspace rename</code></td><td>切換選單</td></tr>
+            <tr><th scope="row">刪除</th><td></td><td><code>workspace delete</code></td><td>切換選單</td></tr>
+            <tr class="group"><th colspan="4" scope="rowgroup">Project</th></tr>
+            <tr><th scope="row">建立</th><td><code>create_project</code></td><td><code>project create</code></td><td>New project</td></tr>
+            <tr><th scope="row">查看</th><td><code>list_projects</code></td><td><code>project list</code></td><td>看板</td></tr>
+            <tr><th scope="row">改名、改前綴</th><td><code>rename_project</code></td><td><code>project rename</code></td><td>⋯ 選單</td></tr>
+            <tr><th scope="row">加別名</th><td><code>rename_project</code></td><td><code>project alias</code></td><td>⋯ 選單</td></tr>
+            <tr><th scope="row">取消別名</th><td></td><td><code>project forget</code></td><td>⋯ 選單</td></tr>
+            <tr><th scope="row">刪除</th><td><code>delete_project</code></td><td><code>project delete</code></td><td>⋯ 選單</td></tr>
+            <tr class="group"><th colspan="4" scope="rowgroup">Task</th></tr>
+            <tr><th scope="row">建立</th><td><code>create_task</code></td><td><code>create</code></td><td>+ New task</td></tr>
+            <tr><th scope="row">查看</th><td><code>list_tasks</code></td><td><code>list</code></td><td>看板</td></tr>
+            <tr><th scope="row">改狀態、欄位</th><td><code>update_task</code></td><td><code>update</code></td><td>拖卡、側欄</td></tr>
+            <tr><th scope="row">追加一行進度</th><td><code>add_task_note</code></td><td><code>note</code></td><td></td></tr>
+            <tr><th scope="row">刪除</th><td><code>delete_task</code></td><td><code>delete</code></td><td>側欄</td></tr>
+            <tr class="group"><th colspan="4" scope="rowgroup">Subtask</th></tr>
+            <tr><th scope="row">建立</th><td><code>create_task</code> 帶 <code>parentId</code></td><td><code>create --parent=</code></td><td>側欄 Add subtask</td></tr>
+            <tr><th scope="row">查看</th><td><code>list_tasks</code> 帶 <code>parentId</code></td><td><code>list --parent=</code></td><td>看板</td></tr>
+            <tr class="group"><th colspan="4" scope="rowgroup">看板設定</th></tr>
+            <tr><th scope="row">提問模式</th><td><code>set_ask_mode</code></td><td><code>config ask</code></td><td></td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="legend">空白表示這個入口做不到。Claude Code mod 的 <code>/board-sync ask</code> 也能改提問模式。</p>
+      </details>
+    </section>
+
+
+    <section id="ask">
+      <h2>看板什麼時候會問你</h2>
+      <p>看板對不上你的意思時，不會自己亂猜。它會依照「提問模式」決定：問你、自己挑一個並標上待確認，或直接回錯誤。切換下面的模式，看同一句話會走到哪裡。</p>
+      <div class="modebar" role="radiogroup" aria-label="提問模式">
+        <button role="radio" aria-checked="true" data-mode="on"><code>on</code> 都問</button>
+        <button role="radio" aria-checked="false" data-mode="new"><code>new</code> 只問新專案</button>
+        <button role="radio" aria-checked="false" data-mode="off"><code>off</code> 都不問</button>
+      </div>
+      <p class="modedesc" id="modedesc"></p>
+      <div class="flowwrap"><div class="flow">
+        <div class="fnode start x-start"><small>你說</small>「在專案開一張：確認場地報價」<code>create_task(project: "專案")</code></div>
+        <div class="vl x-v1"></div>
+        <div class="dia x-d1"><span>「專案」這個詞<br>對得上一個專案嗎？</span></div>
+        <div class="ha x-h1" aria-hidden="true"></div>
+        <div class="outs x-o1">
+          <div class="out" data-case="many"></div>
+          <div class="out" data-case="none"></div>
+        </div>
+        <div class="vl x-v2"><span>剛好一個</span></div>
+        <div class="dia x-d2"><span>有標題嗎？</span></div>
+        <div class="ha x-h2" aria-hidden="true"></div>
+        <div class="outs x-o2"><div class="out" data-case="notitle"></div></div>
+        <div class="vl x-v3"><span>有</span></div>
+        <div class="fnode end x-end"><b>✓ 開單</b> PRJ-3 確認場地與報價</div>
+      </div>
+      </div>
+      <p class="caption">「對得上」依序比對：完全相同的專案名稱 → 你之前答過、被記住的別名 → 不分大小寫的名稱或前綴。建專案時沒給前綴也一樣：<code>on</code>、<code>new</code> 會問你，<code>off</code> 回錯誤，看板從不自己編前綴。</p>
+      <div class="howto">
+        <div><h3>改模式</h3><pre>agent-board config ask new</pre><p>或對 agent 說「把看板的提問改成只問新專案」（<code>set_ask_mode</code>）。CLI、MCP 和 Claude Code mod 共用同一個設定，改了立刻生效。</p></div>
+        <div><h3>處理「待確認」</h3><p>看板自己挑的卡會標 <span class="pill pick">⚠ 待確認</span>。在網頁看板按 Confirm，或對 agent 說「PRJ-3 的專案沒錯」（<code>update_task</code> 帶 <code>confirm</code>）。</p></div>
+        <div><h3>答錯了想重來</h3><p>答過的詞會被記成別名。記錯了用 <code>agent-board project forget 專案</code> 取消。</p></div>
+      </div>
+    </section>
+
+    <section id="trouble">
+      <h2>疑難排解</h2>
+      <dl>
+        <dt>Codex 說 MCP 啟動逾時</dt>
+        <dd>第一次執行要下載套件。把 <code>startup_timeout_sec</code> 調到 60。</dd>
+        <dt>工具回 connection refused</dt>
+        <dd>HTTP 模式不會自己開 server。在終端機跑 <code>agent-board</code>，或改用 stdio 設定。</dd>
+        <dt>想確認連到的是哪一個 server</dt>
+        <dd>打開 <code>http://localhost:4317/api/meta</code>，會看到版本、pid 和資料目錄。</dd>
+        <dt>想停掉背景的 server</dt>
+        <dd>用第一次呼叫時印出的 <code>kill &lt;pid&gt;</code>。</dd>
+        <dt>卡片的描述整段不見了</dt>
+        <dd>你可能說了「把描述改成…」，agent 用 <code>update_task</code> 帶 <code>notes</code> 整段覆蓋。只想補一句時說「記一下…」，它會用 <code>add_task_note</code> 追加一行，原本的內容不動。</dd>
+      </dl>
+    </section>
+
+    <div class="next"><a href="./#ways">← 回首頁</a><a href="mod.html">只用 Claude Code？讓 session 自動回報進度 →</a></div>
+  </main>
+</div>
+
+<script>
+document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== b.dataset.tab);
+}));
+const ASK = {
+  many: { when: "對到好幾個專案（例：ops 同時是 A 的名稱、B 的前綴）",
+    on: ["ask", "問你", "問你是哪一個。選了之後，「ops」會被記成那個專案的別名，下次直接開。", '"ops" matches 2 projects — which one?'],
+    new: ["pick", "自己挑", "挑卡片最多的那個（一樣多就挑最早建的），卡片標 ⚠ 待確認。"],
+    off: ["pick", "自己挑", "挑卡片最多的那個（一樣多就挑最早建的），卡片標 ⚠ 待確認。"] },
+  none: { when: "一個都對不上",
+    on: ["ask", "問你", "放進名字相近的既有專案，或建一個新專案並選前綴。", "Use 專案管理 · New project 專案 (PJ) · …"],
+    new: ["ask", "問你", "放進名字相近的既有專案，或建一個新專案並選前綴。", "Use 專案管理 · New project 專案 (PJ) · …"],
+    off: ["err", "回錯誤", "列出現有的專案，不建立任何東西。agent 要換一個名字再試。"] },
+  notitle: { when: "沒有標題",
+    on: ["ask", "問你", "問你標題，建議用描述的第一行。", "What should the ticket's title be?"],
+    new: ["pick", "自己填", "用描述的第一行當標題（沒有描述就是 (untitled)），卡片標 ⚠ 待確認。"],
+    off: ["pick", "自己填", "用描述的第一行當標題（沒有描述就是 (untitled)），卡片標 ⚠ 待確認。"] },
+};
+const MODE_DESC = { on: "預設。每次對不上都問你。", new: "只有要建新專案時才問；其他情況看板自己決定，並標上待確認。", off: "從不問。看板能挑就挑並標待確認，挑不了就回錯誤。" };
+const esc = (t) => t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+function setMode(mode) {
+  document.querySelectorAll(".modebar button").forEach((b) => b.setAttribute("aria-checked", b.dataset.mode === mode));
+  document.getElementById("modedesc").textContent = MODE_DESC[mode];
+  document.querySelectorAll(".out").forEach((el) => {
+    const c = ASK[el.dataset.case], [k, label, text, ex] = c[mode];
+    el.className = "out k-" + k;
+    el.innerHTML = `<span class="when"><span class="pill">${label}</span>${esc(c.when)}</span><span class="res">${esc(text)}</span>` + (ex ? `<span class="ex">${esc(ex)}</span>` : "");
+  });
+}
+document.querySelectorAll(".modebar button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
+setMode("on");
+</script>
+
+<script>
+/* land at the top: the artifact frame keeps the previous page's scroll position */
+if('scrollRestoration' in history)history.scrollRestoration='manual';
+(function(){function top(){if(location.hash)return;document.documentElement.style.scrollBehavior='auto';window.scrollTo(0,0);try{document.body.scrollIntoView({block:'start',behavior:'instant'})}catch(e){document.body.scrollIntoView(true)}}
+top();addEventListener('load',top);addEventListener('pageshow',top);})();
+</script>
+</body></html>

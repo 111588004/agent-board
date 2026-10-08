@@ -125,11 +125,24 @@ pre{margin:12px 0 0;background:var(--panel);border:1px solid var(--line);border-
 .foot{font-size:13px;color:var(--dim)}
 .back{font:500 13px var(--mono);text-decoration:none;align-self:flex-start}
 body{padding-top:env(safe-area-inset-top,0px)}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:10;display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:12px calc(50vw - 50%);margin-inline:calc(50% - 50vw);background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);font:500 13px var(--sans)}
+.top b{font-weight:700}
+.hcrumb{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-width:0}
+.hcrumb a{color:var(--dim);text-decoration:none}
+.hcrumb a:first-child{color:var(--ink)}
+.hcrumb a:hover{color:var(--accent)}
+.hcrumb [aria-current]{color:var(--ink);font-weight:600}
+.hcrumb>span[aria-hidden]{color:var(--dim);opacity:.6}
+.top .gh{color:var(--dim);text-decoration:none}.top .gh:hover{color:var(--ink)}
+.next{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:20px;font-size:15px}
 </style>
 </head><body>
+<header class="top">
+  <nav class="hcrumb" aria-label="位置"><a href="./"><b>Agent Board</b></a><span aria-hidden="true">›</span><span aria-current="page">實測</span></nav>
+  <a class="gh" href="https://github.com/111588004/agent-board">GitHub</a>
+</header>
 <main>
   <header style="display:flex;flex-direction:column;gap:14px">
-    <a href="./" class="back">← 回 Agent Board 首頁</a>
     <p class="eyebrow">Agent Board · 實測詳細說明</p>
     <h1>首頁的數字，是這樣測出來的</h1>
     <p class="lede">同一句話交給 AI agent，請它在五個看板工具上開單、接手單。下面每一節先講答案，再給你看每一次執行的資料。結論摘要在<a href="./">首頁</a>。</p>
@@ -201,7 +214,7 @@ body{padding-top:env(safe-area-inset-top,0px)}
 
   <section aria-labelledby="h-alias">
     <p class="eyebrow">口語開單</p>
-    <h2 id="h-alias">說「準備發表會」也能開對專案：<em>19 次中 19 次</em></h2>
+    <h2 id="h-alias">說「準備發表會」也能開對專案：正確率 <em>100%</em>（19/19）</h2>
     <div class="panel" style="display:flex;flex-direction:column;gap:14px">
       <div class="waffle" role="img" aria-label="30 次開單中，19 次用口語名且一次開對，11 次直接用正式名稱"><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf on"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i><i class="wf off"></i></div>
       <div class="legend"><span><i class="lg-on"></i>用口語名，一次就進對專案（19）</span><span><i class="lg-off"></i>agent 直接用正式名稱，不計入（11）</span></div>
@@ -332,6 +345,7 @@ body{padding-top:env(safe-area-inset-top,0px)}
     </div>
   </section>
 
+  <div class="next"><a href="./#proof">← 回首頁</a><a href="guide.html">功能指南 →</a></div>
   <p class="foot">Agent Board 是開源的本機看板，MIT 授權：<a href="https://github.com/111588004/agent-board" target="_blank" rel="noopener">github.com/111588004/agent-board</a></p>
 </main>
 <script>

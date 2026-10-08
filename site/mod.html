@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Agent Board 的 Claude Code mod：session 自動認領卡片、每回合回報進度、輸入框上方顯示目前的卡。">
+<style>[hidden]{display:none!important}</style>
+<title>Agent Board 自動回報</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+/* Layout: doc page, sticky breadcrumb bar, one centered column. Tokens copied from site/index.html. */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --ink:#0f1a24; --dim:#5a6a79; --line:#d5dce4; --soft:#e2e8ee;
+  --accent:#0b6e8a; --accent-soft:#d8eef4;
+  --c-create:#1f8a4c; --c-read:#2563c9; --c-update:#b86e00; --c-delete:#c8372d; --on-c:#ffffff; --warn:#9a5b00; --warn-soft:#fbefd9;
+  --term:#101820; --term-fg:#dde5ec; --term-dim:#7f8fa0; --term-line:#223040; --term-acc:#7fd3e6;
+  --sans:"Noto Sans TC","IBM Plex Sans",system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+  --en:"IBM Plex Sans","Noto Sans TC",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0d1319; --panel:#151d26; --ink:#e7edf3; --dim:#97a6b5; --line:#263340; --soft:#1c2733;
+  --accent:#4fc0dc; --accent-soft:#12303a; --c-create:#4cc77f; --c-read:#6ea2ff; --c-update:#f0b357; --c-delete:#ff7a6e; --on-c:#0d1319; --warn:#f0b357; --warn-soft:#33270f;
+  --term:#0a0f14; --term-line:#1b2733; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1319; --panel:#151d26; --ink:#e7edf3; --dim:#97a6b5; --line:#263340; --soft:#1c2733;
+  --accent:#4fc0dc; --accent-soft:#12303a; --c-create:#4cc77f; --c-read:#6ea2ff; --c-update:#f0b357; --c-delete:#ff7a6e; --on-c:#0d1319; --warn:#f0b357; --warn-soft:#33270f;
+  --term:#0a0f14; --term-line:#1b2733; color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:70px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.75 var(--sans);padding-inline:16px;padding-block:0 64px;overflow-x:clip}
+a{color:var(--accent)}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3{line-height:1.25;text-wrap:balance;margin:0}
+p{margin:0}
+code{font-family:var(--mono);font-size:.88em;background:var(--soft);padding:.1em .35em;border-radius:4px}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:10;display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:12px calc(50vw - 50%);margin-inline:calc(50% - 50vw);background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);font:500 13px var(--en)}
+.top b{font-weight:700}
+.top nav{display:flex;gap:16px}
+.top nav a{color:var(--dim);text-decoration:none}
+.top nav a[aria-current="page"]{color:var(--ink);font-weight:600}
+.layout{max-width:760px;margin-inline:auto;padding-top:32px}
+main{min-width:0}
+.eyebrow{font:500 12px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+h1{font-size:clamp(28px,5vw,40px);font-weight:900;margin-bottom:14px}
+.lede{color:var(--dim);font-size:17px;max-width:62ch}
+section{padding-top:52px;display:grid;gap:16px}
+section>*{min-width:0}
+h2{font-size:24px;font-weight:700}
+h3{font-size:17px;font-weight:700;margin-top:6px}
+.step{font:600 13px var(--mono);color:var(--accent);margin-right:8px}
+pre{margin:0;background:var(--term);color:var(--term-fg);font:13.5px/1.65 var(--mono);padding:14px 16px;border-radius:10px;overflow-x:auto}
+pre .c{color:var(--term-dim)} pre .a{color:var(--term-acc)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tabs button{font:500 13px var(--en);padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.panel{display:grid;gap:10px}
+.note{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:12px 14px;font-size:15px}
+.warn{border-color:color-mix(in srgb,var(--warn) 40%,var(--line));background:var(--warn-soft)}
+.warn b{color:var(--warn)}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:560px}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}
+th{font:600 12px var(--en);letter-spacing:.04em;color:var(--dim);background:var(--soft)}
+tr:last-child td{border-bottom:0}
+td.say{width:36%}
+td.tool code{background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.group td{background:var(--soft);font:600 13px var(--sans);color:var(--ink);padding-block:6px}
+.chat{background:var(--term);color:var(--term-fg);border-radius:10px;padding:14px 16px;font:13.5px/1.7 var(--mono);display:grid;gap:8px;overflow-x:auto}
+.chat .u{color:var(--term-acc)} .chat .d{color:var(--term-dim)}
+.chat .q{border:1px solid var(--term-line);border-radius:8px;padding:8px 12px}
+.modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media(max-width:600px){.modes{grid-template-columns:minmax(0,1fr)}}
+.mode{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:12px 14px;display:grid;gap:4px;align-content:start}
+.mode code{justify-self:start;font-weight:600}
+.mode p{font-size:14.5px;color:var(--dim)}
+dl{margin:0;display:grid;gap:12px}
+dt{font-weight:700}
+dd{margin:2px 0 0;color:var(--dim)}
+.next{margin-top:52px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:20px;font-size:15px}
+.ftree,.ftree ul{list-style:none;margin:0;padding:0}
+.ftree{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:10px 8px;font-size:15px}
+.ftree ul{margin-left:13px;padding-left:12px;border-left:1px solid var(--line)}
+.ftree .row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;line-height:1.5;min-width:0}
+.ftree .row:hover{background:var(--soft)}
+.ftree i{font-style:normal;color:var(--dim);width:10px;font-size:12px;flex:none}
+.ftree .type{font:500 11.5px/1.6 var(--mono);color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 6px;flex:none;min-width:6.6em;text-align:center}
+.ftree small{font:500 12px var(--mono);color:var(--dim)}
+.caption{font-size:14.5px;color:var(--dim)}
+@media(max-width:600px){.ftree ul{margin-left:9px;padding-left:8px}.ftree .type{min-width:0}}
+table.cmp{min-width:0;table-layout:fixed}
+table.cmp col.op{width:8em}
+table.cmp th,table.cmp td{padding:7px 14px;vertical-align:middle;overflow-wrap:anywhere}
+table.cmp thead th{position:sticky;top:0}
+table.cmp tbody th{font:500 14px var(--sans);color:var(--ink);background:none}
+table.cmp td code{background:none;padding:0;font-size:13px}
+table.cmp td:nth-child(2) code{color:var(--accent)}
+table.cmp tr.group th{background:var(--soft);font:600 12px var(--en);letter-spacing:.04em;color:var(--dim);padding-block:5px;border-bottom:1px solid var(--line)}
+table.cmp tr:not(.group) + tr.group th{border-top:1px solid var(--line)}
+table.cmp td,table.cmp tbody th{border-bottom:1px solid var(--soft)}
+.none{color:var(--line);font-weight:600}
+@media(max-width:600px){table.cmp{min-width:520px}}
+.crudmap{display:grid;gap:10px;background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:16px}
+.crudmap svg{display:block;width:100%;height:auto}
+.crudmap svg.mb{display:none;max-width:420px;margin-inline:auto}
+@media(max-width:600px){.crudmap{padding:8px}.crudmap svg.dk{display:none}.crudmap svg.mb{display:block}}
+.crudmap .caption{padding-inline:4px}
+.crudmap text{fill:var(--ink);font-family:var(--sans)}
+.crudmap .cd{fill:var(--panel);stroke:var(--line)}
+.crudmap .cd.tk{stroke:var(--accent);stroke-width:1.5}
+.crudmap .h{font-size:13.5px;font-weight:700}
+.crudmap .tool{font:500 10.5px var(--mono)}
+.crudmap .dd{font-size:11px;fill:var(--dim)}
+.crudmap .id{font:500 10px var(--mono);fill:var(--dim)}
+.crudmap .ct{font-size:13.5px;font-weight:700}
+.crudmap .chip{fill:var(--warn-soft)} .crudmap .cx{font-size:9px;font-weight:600;fill:var(--warn)}
+.crudmap .chip2{fill:var(--soft)} .crudmap .cx2{font-size:9px;font-weight:600;fill:var(--ink)}
+.crudmap .g{fill:none;stroke:var(--on-c);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.crudmap .gf{fill:var(--on-c)}
+.crudmap .ln{fill:none;stroke-width:1.6;stroke-dasharray:4 3}
+.crudmap .bd.c{fill:var(--c-create)} .crudmap .tool.c{fill:var(--c-create)} .crudmap .ln.c{stroke:var(--c-create)}
+.crudmap .bd.r{fill:var(--c-read)} .crudmap .tool.r{fill:var(--c-read)} .crudmap .ln.r{stroke:var(--c-read)}
+.crudmap .bd.u{fill:var(--c-update)} .crudmap .tool.u{fill:var(--c-update)} .crudmap .ln.u{stroke:var(--c-update)}
+.crudmap .bd.d{fill:var(--c-delete)} .crudmap .tool.d{fill:var(--c-delete)} .crudmap .ln.d{stroke:var(--c-delete)}
+details.full{border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+details.full summary{cursor:pointer;padding:10px 14px;font-weight:600}
+details.full[open] summary{border-bottom:1px solid var(--line)}
+details.full .legend{padding:10px 14px 12px;font-size:14px;color:var(--dim)}
+details.full .tw{border:0;border-radius:0}
+table.crud{min-width:720px}
+table.crud tbody th{font:700 14px var(--en);color:var(--ink);background:var(--panel);white-space:nowrap}
+table.crud td{display:table-cell}
+table.crud td .k{display:block;width:max-content;margin-bottom:4px}
+td.same{color:var(--dim);font-size:14px}
+.k{font:500 12px/1.5 var(--mono);padding:1px 7px;border-radius:5px;border:1px solid transparent}
+.k.mcp{background:var(--accent-soft);color:var(--accent)}
+.k.cli{background:var(--soft);color:var(--ink);border-color:var(--line)}
+.k.web{background:transparent;color:var(--dim);border-color:var(--line);border-style:dashed}
+.k.mod{background:var(--warn-soft);color:var(--warn)}
+.k.no{background:transparent;color:var(--dim);text-decoration:line-through}
+
+.modebar{display:inline-flex;flex-wrap:wrap;gap:4px;padding:4px;background:var(--soft);border:1px solid var(--line);border-radius:10px;justify-self:start}
+.modebar button{font:500 14px var(--sans);padding:6px 12px;border:0;border-radius:7px;background:transparent;color:var(--dim);cursor:pointer}
+.modebar button code{background:none;padding:0;font-weight:600}
+.modebar button[aria-checked="true"]{background:var(--panel);color:var(--ink);box-shadow:0 1px 3px rgb(15 26 36 / .12)}
+.modebar button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.modedesc{font-size:14.5px;color:var(--dim);min-height:1.75em}
+.flow{display:grid;grid-template-columns:210px 44px minmax(0,1fr);align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:20px;position:relative;isolation:isolate}
+.flow::before{content:"";position:absolute;z-index:-1;left:calc(20px + 105px - 1px);top:48px;bottom:48px;border-left:2px dashed var(--dim);opacity:.7}
+.flow>.fnode,.flow>.vl,.flow>.dia{grid-column:1}
+.fnode{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;display:grid;gap:2px;box-shadow:0 3px 8px rgb(15 26 36 / .08)}
+.fnode small{font-size:11.5px;color:var(--dim)}
+.fnode code{font-size:11.5px;background:none;padding:0;color:var(--accent);overflow-wrap:anywhere}
+.fnode.end{border-color:var(--c-create);text-align:center}
+.fnode.end b{color:var(--c-create)}
+.vl{justify-self:center;width:0;height:44px;position:relative}
+.vl span{position:absolute;left:10px;top:50%;transform:translateY(-50%);white-space:nowrap;font:600 12px var(--sans);color:var(--c-create)}
+.dia{justify-self:center;width:190px;height:104px;display:grid;place-items:center;text-align:center;position:relative}
+.dia::before,.dia::after{content:"";position:absolute;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
+.dia::before{inset:0;background:var(--dim);opacity:.55}
+.dia::after{inset:2px 3px;background:var(--panel)}
+.dia span{position:relative;z-index:1;font:600 13px/1.45 var(--sans);padding:0 30px}
+.ha{grid-column:2;height:0;border-top:2px dashed var(--dim);opacity:.7}
+.outs{grid-column:3;display:grid;gap:10px}
+.flow>.dia+.ha+.outs{grid-row:span 1}
+.out{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--k);border-radius:10px;padding:12px 14px;display:grid;gap:6px;align-content:start;box-shadow:0 3px 8px rgb(15 26 36 / .08);transition:border-color .2s}
+.out .when{display:grid;justify-items:start;gap:6px;font:600 12.5px var(--sans);color:var(--dim)}
+.out .res{font-size:14.5px}
+.out .ex{font:12px/1.6 var(--mono);color:var(--dim);overflow-wrap:anywhere}
+.pill{flex:none;white-space:nowrap;font:600 12px var(--sans);padding:1px 8px;border-radius:99px;color:var(--on-c);background:var(--k)}
+.k-ask{--k:var(--accent)} .k-pick{--k:var(--c-update)} .k-err{--k:var(--c-delete)}
+.pill.pick{--k:var(--c-update)}
+.howto{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.howto>div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;gap:8px;align-content:start;min-width:0}
+.howto h3{margin:0;font-size:15px}
+.howto p{font-size:14px;color:var(--dim)}
+.howto pre{padding:8px 12px;font-size:12.5px;white-space:pre-wrap}
+@media(max-width:820px){.howto{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){
+  .flow{grid-template-columns:minmax(0,1fr);padding:12px}
+  .flow::before{left:calc(50% - 1px)}
+  .outs{position:relative;margin-left:28px}
+  .flow>*{grid-column:1!important}
+  .ha{justify-self:center;width:0;height:22px;border-top:0;border-left:2px dashed var(--dim)}
+  .vl{height:36px}
+}
+.flowwrap{container-type:inline-size}
+@container (min-width:660px){
+  .flow{grid-template-columns:130px minmax(20px,1fr) 150px minmax(64px,1fr) 130px minmax(28px,1fr) 110px;grid-template-rows:auto 30px auto;padding:22px}
+  .flow::before{display:none}
+  .flow>.x-start{grid-area:1/1}.flow>.x-v1{grid-area:1/2}.flow>.x-d1{grid-area:1/3}.flow>.x-v2{grid-area:1/4}.flow>.x-d2{grid-area:1/5}.flow>.x-v3{grid-area:1/6}.flow>.x-end{grid-area:1/7}
+  .flow>.x-h1{grid-area:2/3}.flow>.x-h2{grid-area:2/5}
+  .flow>.x-o1{grid-area:3/1/4/5;grid-template-columns:1fr 1fr;gap:12px;align-self:stretch;margin-right:6px}
+  .flow>.x-o2{grid-area:3/5/4/8;align-self:stretch;margin-left:6px}
+  .flow .outs{grid-auto-rows:1fr}
+  .flow>.vl{justify-self:stretch;width:auto;height:0;border-top:2px dashed color-mix(in srgb,var(--dim) 70%,transparent)}
+  .flow>.vl span{left:50%;top:-20px;transform:translateX(-50%)}
+  .flow>.ha{justify-self:center;align-self:stretch;width:0;height:auto;border-top:0;border-left:2px dashed color-mix(in srgb,var(--dim) 70%,transparent);opacity:1}
+  .flow>.dia{width:100%;max-width:150px;height:92px}
+  .flow>.x-d2{max-width:130px}
+  .dia span{padding:0 20px;font-size:12.5px}
+  .fnode{font-size:13px}
+  .out .res{font-size:13.5px}
+}
+@media (prefers-reduced-motion:reduce){.out{transition:none}}
+.crumb{display:flex;gap:6px;flex-wrap:wrap;font-size:13px;color:var(--dim);margin-bottom:14px}
+.crumb a{color:var(--dim);text-decoration:none}.crumb a:hover{color:var(--accent)}
+.hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:24px;align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:16px;padding:28px}
+.hero .lede{margin-top:0;font-size:16px}
+.hero h1{font-size:clamp(26px,3.4vw,32px);word-break:keep-all}
+.hero-art .ill{width:100%;height:auto;display:block}
+@media(max-width:820px){.hero{grid-template-columns:minmax(0,1fr);padding:20px}}
+.steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:26px}
+.steps li{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:8px;align-content:start;min-width:0;box-shadow:0 3px 8px rgb(15 26 36 / .06)}
+.steps li:not(:last-child)::after{content:"";position:absolute;right:-24px;top:26px;width:22px;border-top:2px dashed var(--accent)}
+.steps .n{width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--panel);display:grid;place-items:center;font:700 13px var(--en)}
+.steps h3{margin:0;font-size:15.5px}
+.steps p{font-size:13.5px;color:var(--dim)}
+.term{background:var(--term);color:var(--term-fg);border-radius:8px;padding:10px 12px;font:12px/1.6 var(--mono);white-space:pre;overflow-x:auto}
+.term .pr{color:var(--term-dim)} .term .ok{color:#6fd18f} .term .a{color:var(--term-acc)}
+@media(max-width:820px){.steps{grid-template-columns:minmax(0,1fr);gap:20px}.steps li:not(:last-child)::after{right:auto;left:26px;top:auto;bottom:-20px;width:0;height:18px;border-top:0;border-left:2px dashed var(--accent)}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+.lanes{display:grid;grid-template-columns:5.5em minmax(0,1.1fr) 36px minmax(0,1fr);border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--soft)}
+.lanes .lh,.lanes .lr{display:contents}
+.lanes .lh span{padding:10px 14px;font:600 12px var(--sans);color:var(--dim);letter-spacing:.03em}
+.lanes .lh span:nth-child(2){background:var(--term);color:var(--term-dim)}
+.lanes .lh span:nth-child(4){background:var(--panel);border-left:1px solid var(--line)}
+.lanes .when{padding:14px 10px 14px 14px;font:600 13px var(--sans);color:var(--ink);border-top:1px solid var(--line)}
+.lanes .tl{background:var(--term);color:var(--term-fg);font:12.5px/1.7 var(--mono);white-space:pre-wrap;padding:12px 14px;border-top:1px solid var(--term-line);min-width:0}
+.lanes .tl .pr{color:var(--term-dim)} .lanes .tl .ok{color:#6fd18f} .lanes .tl .bar{color:var(--term-acc)}
+.lanes .arr{position:relative;border-top:1px solid var(--line)}
+.lanes .arr::before{content:"";position:absolute;left:4px;right:10px;top:50%;border-top:2px dashed var(--accent)}
+.lanes .arr::after{content:"";position:absolute;right:4px;top:calc(50% - 4px);border:5px solid transparent;border-left:7px solid var(--accent);border-right:0}
+.lanes .cl{background:var(--panel);border-left:1px solid var(--line);border-top:1px solid var(--line);padding:12px 14px;display:grid;gap:2px;align-content:center;font-size:13.5px;min-width:0}
+.lanes .cl b{color:var(--c-create)}
+.lanes .cl code{background:none;padding:0;font-size:12px;color:var(--ink);overflow-wrap:anywhere}
+.ip{color:#f0b357}.er{color:#ff7a7a}.dm{color:var(--term-dim)}.rv{color:#c79bff}.ok{color:#6fd18f}
+.strip{background:var(--term);color:var(--term-fg);font:12.5px/1.6 var(--mono);padding:9px 14px;border-radius:8px;white-space:pre;overflow-x:auto}
+.strip .bar{color:var(--term-acc)}
+@media(max-width:700px){
+  .lanes{grid-template-columns:minmax(0,1fr)}
+  .lanes .lh{display:none}
+  .lanes .when{border-top:1px solid var(--line);padding-bottom:6px}
+  .lanes .arr{height:22px;border-top:0}
+  .lanes .arr::before{left:24px;right:auto;top:2px;bottom:6px;border-top:0;border-left:2px dashed var(--accent)}
+  .lanes .arr::after{left:19px;right:auto;top:auto;bottom:0;border:5px solid transparent;border-top:7px solid var(--accent);border-bottom:0}
+  .lanes .cl{border-left:0;border-top:0}
+}
+.anat{background:var(--term);color:var(--term-fg);border-radius:10px;padding:14px 16px 10px;display:flex;flex-wrap:wrap;gap:6px 14px;font:13px/1.5 var(--mono)}
+.anat .seg{display:grid;gap:6px;justify-items:start}
+.anat .lab{font:500 11px var(--sans);color:var(--term-dim);border-top:1px solid var(--term-line);padding-top:4px;width:100%}
+.anat .bar{color:var(--term-acc)}
+.groups{display:grid;gap:14px}
+.grp{background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:14px;display:grid;gap:10px}
+.gh{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.gh b{font-size:15px;display:inline-flex;align-items:center;gap:8px}
+.gh b::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--g)}
+.gh span{font-size:13.5px;color:var(--dim)}
+.g-act{--g:var(--accent)} .g-off{--g:var(--c-delete)}
+.it{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px;align-items:center}
+.it p{font-size:13.5px;color:var(--dim)}
+.it .strip{white-space:pre-wrap}
+@media(max-width:700px){.it{grid-template-columns:minmax(0,1fr);gap:4px}}
+.cc{position:relative;background:var(--term);border-radius:12px;padding:14px;display:grid;gap:10px;font:12.5px/1.65 var(--mono);color:var(--term-fg);box-shadow:0 8px 24px rgb(15 26 36 / .18);margin-bottom:26px}
+.cc-body{white-space:pre-wrap}
+.cc .pr{color:var(--term-dim)} .cc .ok{color:#6fd18f} .cc .bar{color:var(--term-acc)}
+.cc-line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;outline:2px solid var(--term-acc);outline-offset:3px;border-radius:2px}
+.cc-input{border:1px solid var(--term-line);border-radius:8px;padding:6px 10px}
+.cc .cur{color:var(--term-acc)}
+.cc-callout{position:absolute;left:14px;bottom:-24px;font:600 12px var(--sans);color:var(--accent)}
+.cc-callout::before{content:"↑ "}
+.aboutd{background:var(--panel);border:1px solid var(--line);border-radius:14px}
+.aboutd summary{cursor:pointer;padding:14px 18px;font-size:16px;font-weight:700;list-style:none;display:flex;align-items:center;gap:10px}
+.aboutd summary::-webkit-details-marker{display:none}
+.aboutd summary::before{content:"";width:8px;height:8px;border-right:2px solid var(--dim);border-bottom:2px solid var(--dim);transform:rotate(-45deg);transition:transform .15s}
+.aboutd[open] summary::before{transform:rotate(45deg)}
+.aboutd summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:14px}
+.about{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:24px;align-items:start;padding:4px 22px 22px}
+.about-txt{display:grid;gap:10px}
+.about-txt p{font-size:15px}
+.facts{display:grid;gap:12px;margin:0}
+.facts>div{display:grid;gap:2px;border-left:3px solid var(--accent);padding-left:12px}
+.facts dt{font:600 12px var(--sans);color:var(--dim);letter-spacing:.04em}
+.facts dd{margin:0;font-size:14px}
+@media(max-width:700px){.about{grid-template-columns:minmax(0,1fr);padding:4px 16px 16px}}
+section.tight{padding-top:28px}
+@media (prefers-reduced-motion:reduce){.aboutd summary::before{transition:none}}
+.hcrumb{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-width:0}
+.hcrumb a{color:var(--dim);text-decoration:none}
+.hcrumb a:first-child{color:var(--ink)}
+.hcrumb a:hover{color:var(--accent)}
+.hcrumb [aria-current]{color:var(--ink);font-weight:600}
+.hcrumb>span[aria-hidden]{color:var(--dim);opacity:.6}
+.top .gh{color:var(--dim);text-decoration:none}.top .gh:hover{color:var(--ink)}
+</style>
+
+</head><body>
+<header class="top">
+  <nav class="hcrumb" aria-label="位置"><a href="./"><b>Agent Board</b></a><span aria-hidden="true">›</span><span aria-current="page">MOD 自動回報</span></nav>
+  <a class="gh" href="https://github.com/111588004/agent-board">GitHub</a>
+</header>
+
+<div class="layout">
+  <main>
+    <div class="hero">
+      <div class="hero-txt">
+        <p class="eyebrow">Claude Code mod · 2.1.287+</p>
+        <h1>讓 Claude&nbsp;Code 自動回報進度</h1>
+        <p class="lede">裝了這個 mod，session 一打開就認領對應的卡，每回合留一行進度，卡片一直顯示在輸入框上方。你不用打任何更新指令。沒裝也沒關係，CLI 和 MCP 照常能用。</p>
+      </div>
+      <div class="hero-art"><div class="cc" aria-label="Claude Code 畫面示意：輸入框上方顯示目前接手的卡 PRJ-3">
+          <div class="cc-body"><span class="pr">❯</span> 比較三個場地的報價
+<span class="ok">⏺</span> 比了三個場地，兩個符合預算。
+  報價表已存成 quotes.md。</div>
+          <div class="cc-line"><span class="bar">▌</span> PRJ-3 <span class="ip">◐ doing</span> <span class="er">▲</span> 確認場地與報價  <span class="dm">claude</span></div>
+          <div class="cc-input"><span class="pr">&gt;</span> 繼續整理合約<span class="cur">▍</span></div>
+          <span class="cc-callout">目前接手的卡，一直留在輸入框上方</span>
+        </div></div>
+    </div>
+
+    <section id="about" class="tight">
+      <details class="aboutd">
+        <summary>什麼是 Claude Code mod？</summary>
+        <div class="about">
+        <div class="about-txt">
+          <p>mod 是 Claude Code 的一種外掛，用 JavaScript 或 TypeScript 寫成，直接跑在 Claude Code 裡面。它可以在輸入框上方畫東西、在每回合結束時做事，這些是 MCP 和一般 hooks 做不到的。Agent Board 的 mod 就是用這兩點：把目前接手的卡顯示出來，並在每回合自動回報。</p>
+          <p><a href="https://code.claude.com/docs/en/plugins/mods/overview">看官方說明：Mods overview →</a></p>
+        </div>
+        <dl class="facts">
+          <div><dt>版本</dt><dd>終端機 2.1.287 以上，桌面版 Code 分頁 2.1.286 以上</dd></div>
+          <div><dt>預設</dt><dd>開啟。不想用時在 <code>/plugin</code> 停用</dd></div>
+          <div><dt>權限</dt><dd>mod 以你的身分執行，只裝信任的來源。這個 mod 只連你設定的看板網址</dd></div>
+        </dl>
+        </div>
+      </details>
+    </section>
+
+    <section id="what">
+      <h2>它做什麼：你照常工作，卡片自己長出紀錄</h2>
+      <p>左邊是你的 Claude Code session，右邊是看板上同一張卡。你什麼都不用多打，mod 在這四個時間點替你寫進去。</p>
+      <div class="lanes" role="table" aria-label="session 與卡片的對照">
+        <div class="lh" role="row"><span role="columnheader"></span><span role="columnheader">你的 Claude Code session</span><span role="columnheader" aria-hidden="true"></span><span role="columnheader">看板上的 PRJ-3</span></div>
+        <div class="lr" role="row">
+          <span class="when" role="rowheader">開 session</span>
+          <div class="tl" role="cell"><span class="pr">$</span> claude
+<span class="bar">▌</span> PRJ-3 <span class="ip">◐ in_progress</span> 確認場地與報價</div>
+          <span class="arr" aria-hidden="true"></span>
+          <div class="cl" role="cell"><b>認領</b>負責人改成 claude，填上目錄和分支</div>
+        </div>
+        <div class="lr" role="row">
+          <span class="when" role="rowheader">第 1 回合</span>
+          <div class="tl" role="cell"><span class="pr">❯</span> 比較三個場地
+<span class="ok">⏺</span> 比了三個場地，兩個符合</div>
+          <span class="arr" aria-hidden="true"></span>
+          <div class="cl" role="cell"><code>[10:31 · claude] 比了三個場地，兩個符合 (2 Bash)</code></div>
+        </div>
+        <div class="lr" role="row">
+          <span class="when" role="rowheader">第 2 回合</span>
+          <div class="tl" role="cell"><span class="pr">❯</span> 整理報價表
+<span class="ok">⏺</span> 報價表已存成 quotes.md</div>
+          <span class="arr" aria-hidden="true"></span>
+          <div class="cl" role="cell"><code>[10:48 · claude] 報價表已存成 quotes.md (edited 1 file)</code></div>
+        </div>
+        <div class="lr" role="row">
+          <span class="when" role="rowheader">關 session</span>
+          <div class="tl" role="cell"><span class="pr">❯</span> /exit</div>
+          <span class="arr" aria-hidden="true"></span>
+          <div class="cl" role="cell"><code>[11:02 · claude] claude session ended</code></div>
+        </div>
+      </div>
+      <p class="caption">卡片的狀態從頭到尾都沒變。打開 session 不代表開始做，關掉也不代表做完，所以 mod 不碰狀態，也不換負責人、不自己建卡。</p>
+    </section>
+
+    <section id="install">
+      <h2>安裝</h2>
+      <ol class="steps">
+        <li><span class="n">1</span><h3>確認版本</h3>
+          <div class="term"><span class="pr">$</span> claude --version
+  2.1.292</div>
+          <p>終端機要 2.1.287 以上，桌面版 Code 分頁 2.1.286 以上。版本太舊時 mod 不會載入，也不會報錯。</p></li>
+        <li><span class="n">2</span><h3>安裝 mod</h3>
+          <div class="term"><span class="pr">❯</span> /plugin install
+  agent-board@…</div>
+          <p>在 Claude Code 裡貼下面三行。</p></li>
+        <li><span class="n">3</span><h3>綁一張卡</h3>
+          <div class="term"><span class="pr">❯</span> /board-sync new
+  "修登入頁"</div>
+          <p>建卡並綁定目前的目錄和分支。已經有卡就打 <code>/board-sync link PRJ-3</code>。</p></li>
+      </ol>
+      <pre>/plugin marketplace add 111588004/agent-board
+/plugin install agent-board@agent-board-mods
+/reload-plugins</pre>
+      <p class="caption">只想試一個 session：在 repo 目錄下跑 <code>claude --plugin-dir mods/agent-board</code>。</p>
+    </section>
+
+    <section id="line">
+      <h2>輸入框上方那一行</h2>
+      <p>綁定卡片後，輸入框上方會一直留著一行，跟著你的主題配色。從左到右是這些欄位：</p>
+      <div class="anat" aria-label="狀態列各欄位">
+        <span class="seg"><span class="tok"><span class="bar">▌</span> PRJ-3</span><span class="lab">卡號</span></span>
+        <span class="seg"><span class="tok ip">◐ in_progress</span><span class="lab">狀態</span></span>
+        <span class="seg"><span class="tok er">▲ high</span><span class="lab">優先度</span></span>
+        <span class="seg grow"><span class="tok">確認場地與報價</span><span class="lab">標題</span></span>
+        <span class="seg"><span class="tok dm">claude</span><span class="lab">負責人</span></span>
+        <span class="seg"><span class="tok dm">⎇ feat/venue</span><span class="lab">分支</span></span>
+        <span class="seg"><span class="tok dm">3 notes</span><span class="lab">note 數</span></span>
+      </div>
+      <p class="caption">終端機太窄時會從右邊開始收起來。這一行是快照，有人在網頁上移動卡片，下一回合結束才會更新。</p>
+
+      <h3>需要你處理的時候</h3>
+      <div class="groups">
+        <div class="grp g-act">
+          <div class="gh"><b>等你決定綁哪張卡</b><span>mod 不會替你選，也不會自己建卡</span></div>
+          <div class="it"><div class="strip"><span class="bar">▌</span> <span class="dm">?</span> no card for this branch → /board-sync new | link &lt;ID&gt;</div><p>這個分支沒有卡。<code>new</code> 開一張，或 <code>link</code> 綁現有的。</p></div>
+          <div class="it"><div class="strip"><span class="bar">▌</span> <span class="dm">≡</span> 3 cards match: PRJ-1 PRJ-4 PRJ-7 → /board-sync link &lt;ID&gt;</div><p>好幾張卡都對得上。用 <code>link</code> 選一張。</p></div>
+          <div class="it"><div class="strip"><span class="bar">▌</span> <span class="rv">⊘</span> PRJ-3 is held by codex → /board-sync link PRJ-3 to take over</div><p>卡在別的 agent 手上。真的要接手才打 <code>link</code>。</p></div>
+        </div>
+        <div class="grp g-off">
+          <div class="gh"><b>看板沒在跑</b><span>重開 <code>agent-board</code> 就會接回來</span></div>
+          <div class="it"><div class="strip"><span class="bar">▌</span> <span class="er">✗ board offline</span> → PRJ-3 last known, retrying</div><p>綁好之後 server 停了，會自己重試。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="cmd">
+      <h2><code>/board-sync</code> 指令</h2>
+      <div class="tw">
+        <table class="cmp">
+          <colgroup><col style="width:13em"><col></colgroup>
+          <thead><tr><th scope="col">指令</th><th scope="col">做什麼</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>/board-sync</code></th><td>目前狀況：開關、server、綁的卡、下一步。這個 repo 還沒有專案時會問你。</td></tr>
+            <tr><th scope="row"><code>new ["標題"]</code></th><td>建一張卡（進行中、claude、目前目錄和分支）並綁定。沒給標題會給你選：對話第一句或分支名。</td></tr>
+            <tr><th scope="row"><code>link &lt;ID&gt;</code></th><td>綁定並認領這張卡，把目錄和分支寫回卡上，記住這個 repo 對應的專案。</td></tr>
+            <tr><th scope="row"><code>open</code></th><td>在瀏覽器打開綁定的卡，沒綁就開看板。</td></tr>
+            <tr><th scope="row"><code>status</code></th><td>跟不帶參數一樣，但不問問題、不發請求。</td></tr>
+            <tr><th scope="row"><code>on</code> / <code>off</code></th><td>開關回報。<code>off</code> 的範圍看 <code>offScope</code> 設定。</td></tr>
+            <tr><th scope="row"><code>ask [on|new|off]</code></th><td>看板的提問模式，跟 MCP 的 <code>set_ask_mode</code> 是同一個設定（見 <a href="guide.html#ask">MCP 指南</a>）。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="settings">
+      <h2>設定</h2>
+      <p>在 <code>/config</code> 裡改。大多數人不用動。</p>
+      <div class="tw">
+        <table class="cmp">
+          <colgroup><col style="width:10em"><col style="width:6em"><col></colgroup>
+          <thead><tr><th scope="col">選項</th><th scope="col">預設</th><th scope="col">說明</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>enabled</code></th><td><code>true</code></td><td>總開關。</td></tr>
+            <tr><th scope="row"><code>agentBoardUrl</code></th><td></td><td>server 網址。空的話用 <code>AGENT_BOARD_URL</code>，再來是 <code>localhost:4317</code>。</td></tr>
+            <tr><th scope="row"><code>workspace</code></th><td></td><td>要寫到哪個 workspace。</td></tr>
+            <tr><th scope="row"><code>project</code></th><td></td><td><code>new</code> 開卡用的專案。空的話用這個 repo 上次綁的專案，再來是跟資料夾同名的專案，都沒有就問你。</td></tr>
+            <tr><th scope="row"><code>offScope</code></th><td><code>session</code></td><td><code>off</code> 的範圍：本 session、本 repo，或全部。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="limits">
+      <h2>已知限制</h2>
+      <dl>
+        <dt>對話框多出來的選項</dt>
+        <dd>Claude Code 的選項對話框一定會附「Type something」和「Chat about this」，mod 無法隱藏。選它們一律當成取消。</dd>
+        <dt>server 卡住不回</dt>
+        <dd>每次請求最多等 1.5 秒，失敗後 15 秒內不再發請求，之後加倍，最長 10 分鐘。server 沒開則立刻失敗，不會拖慢 session。</dd>
+        <dt>worktree 要用絕對路徑</dt>
+        <dd>卡上的 <code>worktree</code> 不會展開 <code>~</code>。</dd>
+        <dt>還沒驗證</dt>
+        <dd>淺色主題、把符號畫成兩格寬的終端機、真實中文字型下的寬度。</dd>
+      </dl>
+    </section>
+
+    <div class="next"><a href="guide.html">← 功能指南</a><a href="./#ways">回首頁</a></div>
+  </main>
+</div>
+
+<script>
+/* land at the top: the artifact frame keeps the previous page's scroll position */
+if('scrollRestoration' in history)history.scrollRestoration='manual';
+(function(){function top(){if(location.hash)return;document.documentElement.style.scrollBehavior='auto';window.scrollTo(0,0);try{document.body.scrollIntoView({block:'start',behavior:'instant'})}catch(e){document.body.scrollIntoView(true)}}
+top();addEventListener('load',top);addEventListener('pageshow',top);})();
+</script>
+</body></html>
