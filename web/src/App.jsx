@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil, Copy, Check, HelpCircle, BookOpen } from "lucide-react";
+import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil, Copy, Check, HelpCircle, BookOpen, Palette } from "lucide-react";
+import { THEMES, readTheme, applyTheme, BrandMark } from "./theme.jsx";
 import * as api from "./api.js";
 import { LAUNCH_TARGETS, buildLaunchText, defaultLaunchTarget } from "./launch.js";
 import Tour, { TOUR_SEEN_KEY, readStore, writeStore, demoTicket, isSeedProject, guideUrl } from "./Tour.jsx";
@@ -136,6 +137,7 @@ export default function AgentBoard() {
   const [sortKey, setSortKey] = useState("updatedAt");
   const [sortDir, setSortDir] = useState("desc");
   const [workspace, setWorkspace] = useState(api.getWorkspace());
+  const [theme, setTheme] = useState(readTheme());
   const [workspaces, setWorkspaces] = useState([]);
   const [meta, setMeta] = useState(null); // {version, source: "dev"|"npm", root, pid}
   const [tourOpen, setTourOpen] = useState(false);
@@ -542,7 +544,7 @@ export default function AgentBoard() {
       {/* Header */}
       <div
         style={{
-          background: "#181B21",
+          background: "var(--ab-chrome)",
           color: "#fff",
           padding: "14px 22px",
           display: "flex",
@@ -552,7 +554,7 @@ export default function AgentBoard() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Terminal size={18} color="#D97757" />
+          {theme === "brand" ? <BrandMark size={20} /> : <Terminal size={18} color="var(--ab-accent-on-dark)" />}
           <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: 0.2 }}>
             Agent Board
           </span>
@@ -590,6 +592,18 @@ export default function AgentBoard() {
 
         <div style={{ flex: 1 }} />
 
+        <button
+          className="card-btn"
+          onClick={() => {
+            const next = theme === "brand" ? "classic" : "brand";
+            setTheme(next);
+            applyTheme(next, true);
+          }}
+          title="Switch board theme (Classic / Brand)"
+          style={headerLinkStyle}
+        >
+          <Palette size={14} /> {THEMES[theme].label}
+        </button>
         <button className="card-btn" onClick={startTour} title="Replay the first-visit tour" style={headerLinkStyle}>
           <HelpCircle size={14} /> Tour
         </button>
@@ -604,7 +618,7 @@ export default function AgentBoard() {
             display: "flex",
             alignItems: "center",
             gap: 6,
-            background: "#D97757",
+            background: "var(--ab-accent)",
             color: "#fff",
             border: "none",
             borderRadius: 7,
@@ -1066,7 +1080,7 @@ function WorkspaceSwitcher({ workspace, workspaces, onSwitch, onRename, onDelete
           display: "flex",
           alignItems: "center",
           gap: 6,
-          background: "#22262F",
+          background: "var(--ab-menu)",
           border: "none",
           borderRadius: 7,
           padding: "6px 10px",
@@ -1881,7 +1895,7 @@ function FilterSelect({ value, onChange, options, icon, light }) {
             display: "flex",
             alignItems: "center",
             gap: 6,
-            background: light ? "#fff" : "#22262F",
+            background: light ? "#fff" : "var(--ab-menu)",
             border: light ? "1px solid #E4E6EB" : "none",
             borderRadius: 7,
             padding: "6px 10px",
@@ -2292,7 +2306,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                   <button
                     onClick={saveNotes}
                     style={{
-                      background: "#D97757", color: "#fff", border: "none", borderRadius: 6,
+                      background: "var(--ab-accent)", color: "#fff", border: "none", borderRadius: 6,
                       padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
                     }}
                   >
@@ -2437,7 +2451,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
               disabled={!form.title.trim() || !form.project}
               onClick={() => onSave(form)}
               style={{
-                background: form.title.trim() && form.project ? "#D97757" : "#E4E6EB",
+                background: form.title.trim() && form.project ? "var(--ab-accent)" : "#E4E6EB",
                 color: form.title.trim() && form.project ? "#fff" : "#9599A3",
                 border: "none",
                 borderRadius: 7,
