@@ -1,4 +1,4 @@
-// Board themes. "classic" is the original look; "brand" uses the Agent Board logo palette
+// Board themes. "brand" (the default) uses the Agent Board logo palette; "classic" is the original orange look
 // (study/brand/v3/final/GUIDELINES.md): ink #0f1a24 and teal #0b6e8a (#4fc0dc on dark).
 // Colours are CSS variables on <html>, so App, Tour and the Guide page all follow. The agent colours
 // (e.g. the orange "Claude Code" chip) identify agents, not the brand, and stay the same in every theme.
@@ -22,11 +22,11 @@ const KEY = "agent-board-theme";
 export function readTheme() {
   const q = new URLSearchParams(window.location.search).get("theme");
   const name = q || readStore(KEY);
-  return THEMES[name] ? name : "classic";
+  return THEMES[name] ? name : "brand";
 }
 
 export function applyTheme(name, persist = false) {
-  const theme = THEMES[name] || THEMES.classic;
+  const theme = THEMES[name] || THEMES.brand;
   const root = document.documentElement;
   for (const [k, v] of Object.entries(theme.vars)) root.style.setProperty(k, v);
   root.dataset.boardTheme = name;
