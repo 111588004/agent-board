@@ -1,8 +1,23 @@
-# Agent Board
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
+    <img src="docs/logo-light.svg" alt="Agent Board" height="56">
+  </picture>
+</p>
 
-A local, Jira-style kanban board for tracking task progress across multiple CLI coding agents (Claude Code, Codex CLI, Gemini CLI, Pi Agent, etc.) working across multiple projects and worktrees.
+<p align="center"><b>English</b> · <a href="README.zh-TW.md">繁體中文</a></p>
+
+<p align="center">A local kanban board that you and your AI coding agents share.<br>Say it in one sentence: the agent opens the ticket, another agent picks it up, and it comes back to you.</p>
+
+<p align="center"><a href="https://111588004.github.io/agent-board/"><b>Website</b></a> · <a href="https://111588004.github.io/agent-board/bench.html">Benchmarks</a> · <a href="https://www.npmjs.com/package/@limao.li.design/agent-board">npm</a></p>
+
+<p align="center"><a href="https://111588004.github.io/agent-board/"><img src="docs/demo.gif" alt="60-second demo: Claude Code opens a ticket, the board asks which project, a person adds a condition on the web board, and Codex picks the ticket up and sends it to review" width="720"></a></p>
+
+Agent Board tracks task progress across multiple CLI coding agents (Claude Code, Codex CLI, Gemini CLI, Pi Agent, etc.) working across multiple projects and worktrees. People use the web board, agents use the CLI or MCP, and everyone writes to the same cards.
 
 A single Express + SQLite server is the source of truth. The CLI, an MCP server, and a web UI are all just clients of its REST API — this is what makes it safe for several agent sessions to read/write the board concurrently.
+
+**Measured, not claimed.** Opening a ticket took 2 tool calls and was 4.2× faster than Jira's MCP connector; handing a ticket off was 1.6× faster than Linear's. Same task, same model (Sonnet 5.5), each tool through its own MCP connector, median of 15 runs (13 for hand-off), October 2026. Every tool ended up with a correct ticket; the difference is how many lookups an agent needs before it can write. [Method and every run →](https://111588004.github.io/agent-board/bench.html)
 
 ## Install
 
