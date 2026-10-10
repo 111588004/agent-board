@@ -3,7 +3,7 @@ import {
   createTask, appendNote, insertProject, getConfig, getTask, TASK_SELECT, checkParent, subtaskIds, allDoneHint,
   resolveTaskId, movedHint, moveTask, forgetTaskAliases,
 } from "../db.js";
-import { normalizeEnum, normalizeDueDate, needsInput, resolveProject } from "../normalize.js";
+import { normalizeEnum, normalizeDueDate, needsInput, resolveProject, rememberAnswer } from "../normalize.js";
 
 const router = Router();
 
@@ -147,9 +147,8 @@ router.post("/", (req, res) => {
   let out = row;
   if (unconfirmed.length) out = appendNote(req.db, row.id, `⚠ unconfirmed — ${unconfirmed.join("; ")}`, agent);
   // the user's answer to "which project?" — remember the word they used
-  const word = typeof rememberAs === "string" ? rememberAs.trim().toLowerCase() : "";
-  if (word && word !== projectRow.name.toLowerCase()) {
-    req.db.prepare("INSERT OR REPLACE INTO project_aliases (alias, project) VALUES (?, ?)").run(word, projectRow.name);
+  const word = rememberAnswer(req.db, rememberAs, projectRow.name);
+  if (word) {
     out = appendNote(req.db, row.id, `remembered "${word}" → ${projectRow.name} (undo: agent-board project forget "${word}")`, agent);
   }
   res.status(201).json(withHint(out, allDoneHint(req.db, out.parentId)));
@@ -308,10 +307,7 @@ router.post("/:id/move", (req, res) => {
     if (e.reply) return res.status(e.reply.status).json(e.reply.body);
     throw e;
   }
-  const word = typeof rememberAs === "string" ? rememberAs.trim().toLowerCase() : "";
-  if (word && word !== target.name.toLowerCase()) {
-    req.db.prepare("INSERT OR REPLACE INTO project_aliases (alias, project) VALUES (?, ?)").run(word, target.name);
-  }
+  rememberAnswer(req.db, rememberAs, target.name);
 
   const [self, ...subs] = moved;
   const subsText = subs.length ? ` Its subtask${subs.length === 1 ? "" : "s"} moved too: ${subs.map((m) => `${m.from} → ${m.to}`).join(", ")}.` : "";

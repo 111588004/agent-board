@@ -12,7 +12,9 @@ let child, base, dir;
 
 async function startOn(port) {
   child = spawn(process.execPath, [path.join(src, "server.js")], {
-    env: { ...process.env, PORT: String(port), AGENT_BOARD_DIR: dir, AGENT_BOARD_URL: `http://localhost:${port}` },
+    // AGENT_BOARD_URL names a port nothing listens on: the server's own HTTP /mcp must never follow it
+    // (it used to, so every MCP test below would fail with "fetch failed")
+    env: { ...process.env, PORT: String(port), AGENT_BOARD_DIR: dir, AGENT_BOARD_URL: "http://127.0.0.1:9" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let exited = false;
@@ -253,6 +255,30 @@ test("an answer is remembered: the same word resolves next time; forget undoes i
   assert.deepEqual((await api("GET", "/api/w/mem/projects")).body.find((p) => p.name === "Operations").aliases, ["ops"]);
   assert.equal((await api("DELETE", "/api/w/mem/projects/aliases/OPS")).status, 204);
   assert.equal((await create({ project: "ops" }, "mem")).status, 422);
+});
+
+test("an answer that is the project's own name, ignoring case, is still remembered (#21)", async () => {
+  await api("POST", "/api/workspaces", { name: "mem2" });
+  await api("POST", "/api/w/mem2/projects", { name: "Beta", prefix: "BE" });
+  await api("POST", "/api/w/mem2/projects", { name: "Other", prefix: "BETA" });
+  const q = await create({ project: "beta" }, "mem2"); // Beta's name and Other's prefix
+  assert.equal(q.status, 422);
+  const pick = q.body.options.find((o) => o.args.project === "Beta");
+  const ok = await create({ project: "beta", ...pick.args }, "mem2");
+  assert.equal(ok.status, 201);
+  assert.match(ok.body.notes, /remembered "beta" → Beta/);
+  assert.equal((await create({ project: "beta" }, "mem2")).body.project, "Beta"); // no second question
+  assert.equal((await create({ project: "Beta" }, "mem2")).body.notes, null); // exact name: nothing to remember
+
+  // the same through move
+  await api("POST", "/api/w/mem2/projects", { name: "Gamma", prefix: "GA" });
+  await api("POST", "/api/w/mem2/projects", { name: "Misc", prefix: "GAMMA" });
+  const t = (await create({ project: "Beta" }, "mem2")).body;
+  const mq = await api("POST", `/api/w/mem2/tasks/${t.id}/move`, { project: "gamma" });
+  assert.equal(mq.status, 422);
+  const mpick = mq.body.options.find((o) => o.args.project === "Gamma");
+  assert.equal((await api("POST", `/api/w/mem2/tasks/${t.id}/move`, { project: "gamma", ...mpick.args })).status, 200);
+  assert.deepEqual((await api("GET", "/api/w/mem2/projects")).body.find((p) => p.name === "Gamma").aliases, ["gamma"]);
 });
 
 test("ask new/off: the board picks the busiest project and marks the ticket unconfirmed", async () => {
@@ -731,4 +757,32 @@ test("CLI --confirm: bare, =true and =false read the same way everywhere; any ot
   assert.equal(r.code, 1);
   assert.match(r.err, /--confirm is on or off: --confirm, --confirm=true or --confirm=false/);
   assert.equal(await unconfirmed(), "picked a project");
+});
+
+test("an unknown workspace is a 404, never created by a read; workspace use checks the name (#22)", async () => {
+  const r = await api("GET", "/api/w/typo/tasks");
+  assert.equal(r.status, 404);
+  assert.equal(r.body.code, "unknown_workspace");
+  assert.match(r.body.error, /no workspace "typo" — workspaces: .*\bt\b/);
+  assert.equal((await api("POST", "/api/w/typo/tasks", { title: "x", project: "BM" })).status, 404);
+  assert.equal((await api("GET", "/api/w/typo/projects")).status, 404);
+  assert.ok(!(await api("GET", "/api/workspaces")).body.includes("typo"));
+  assert.ok(!fs.existsSync(path.join(dir, "workspaces", "typo")));
+  assert.equal((await api("GET", "/api/w/t/config")).status, 200); // global settings don't open a workspace
+  assert.equal((await api("POST", "/api/workspaces", { name: "typo" })).status, 201); // creating one still works
+  assert.equal((await api("GET", "/api/w/typo/tasks")).status, 200);
+
+  const run = (...argv) => new Promise((resolve) => {
+    const p = spawn(process.execPath, [path.join(src, "cli.js"), ...argv], { env: { ...process.env, AGENT_BOARD_URL: base, AGENT_BOARD_DIR: dir } });
+    let err = "";
+    p.stderr.on("data", (d) => (err += d));
+    p.on("exit", (code) => resolve({ code, err }));
+  });
+  const list = await run("list", "--workspace=nope");
+  assert.equal(list.code, 1);
+  assert.match(list.err, /404 no workspace "nope".*agent-board workspace create "nope"/);
+  const use = await run("workspace", "use", "ghost");
+  assert.equal(use.code, 1);
+  assert.match(use.err, /no workspace "ghost"/);
+  assert.ok(!fs.existsSync(path.join(dir, "current-workspace")), "a bad name isn't written");
 });

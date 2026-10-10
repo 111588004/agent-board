@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { buildLaunchText, launchPromptLines, defaultLaunchTarget, shellQuote } from "../web/src/launch.js";
+
+// the launch lines are POSIX shell; checking them takes a real `sh`, which Windows usually lacks
+const hasSh = spawnSync("sh", ["-c", "true"]).status === 0;
 
 const card = { id: "AB-42", title: `Fix "it's" bug`, project: "My App", projectPrefix: "AB", worktree: null, branch: null };
 
@@ -23,6 +26,12 @@ test("named agents get their own launch command, quoted so the shell passes the 
     assert.ok(text.startsWith(`${cmd} '`), text);
     assert.ok(!text.includes("\n"));
     assert.match(text, new RegExp(`--agent=${target}`));
+  }
+});
+
+test("the launch lines survive a real shell parse", { skip: !hasSh && "no POSIX sh on this machine" }, () => {
+  for (const [target, cmd] of [["claude", "claude"], ["codex", "codex"], ["gemini", "gemini -i"], ["pi", "pi"]]) {
+    const text = buildLaunchText({ card, target });
     // swap the CLI for printf and let a real shell parse the line
     const echoed = execFileSync("sh", ["-c", text.replace(cmd, "printf %s")], { encoding: "utf8" });
     assert.equal(echoed, launchPromptLines({ card, target }).join(" "));

@@ -119,3 +119,14 @@ export function resolveProject(db, input, { offerNew = false, ask = "on" } = {})
     : `unknown project "${s}", and this workspace has no projects yet. Create a project first, then retry.`;
   return { status: 404, body: { error, code: "unknown_project", input: s } };
 }
+
+// the user's answer to "which project?" (rememberAs): store word -> project so the same word
+// resolves next time. Skipped only when the word already resolves to that project by itself —
+// not merely because it equals the project's name ignoring case: "beta" for Beta was asked about
+// because it is also project Other's prefix BETA, so it has to be remembered. -> the stored word or null
+export function rememberAnswer(db, rememberAs, projectName) {
+  const word = typeof rememberAs === "string" ? rememberAs.trim().toLowerCase() : "";
+  if (!word || resolveProject(db, word).project?.name === projectName) return null;
+  db.prepare("INSERT OR REPLACE INTO project_aliases (alias, project) VALUES (?, ?)").run(word, projectName);
+  return word;
+}
