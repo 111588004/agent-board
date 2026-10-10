@@ -12,7 +12,9 @@ let child, base, dir;
 
 async function startOn(port) {
   child = spawn(process.execPath, [path.join(src, "server.js")], {
-    env: { ...process.env, PORT: String(port), AGENT_BOARD_DIR: dir, AGENT_BOARD_URL: `http://localhost:${port}` },
+    // AGENT_BOARD_URL names a port nothing listens on: the server's own HTTP /mcp must never follow it
+    // (it used to, so every MCP test below would fail with "fetch failed")
+    env: { ...process.env, PORT: String(port), AGENT_BOARD_DIR: dir, AGENT_BOARD_URL: "http://127.0.0.1:9" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let exited = false;
