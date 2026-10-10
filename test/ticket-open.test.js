@@ -39,8 +39,9 @@ before(async () => {
   await api("POST", "/api/w/t/projects", { name: "發表會", prefix: "PR" });
 });
 
-after(() => {
-  child?.kill();
+after(async () => {
+  // wait for the server to exit before removing its data dir: on Windows its open SQLite files can't be deleted
+  if (child && child.exitCode === null) await new Promise((r) => { child.once("exit", r); child.kill(); });
   if (dir) fs.rmSync(dir, { recursive: true, force: true });
 });
 
