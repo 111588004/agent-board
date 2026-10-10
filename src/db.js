@@ -147,14 +147,20 @@ export function setConfig(patch) {
 
 const connections = new Map();
 
-// lazily opens (or creates) a workspace's SQLite file, caches the connection
+// lazily opens a workspace's SQLite file, caches the connection
 // for the process lifetime — no pooling/eviction, a handful of open handles
-// costs nothing for a low-traffic local tool.
-export function getDb(workspaceName) {
+// costs nothing for a low-traffic local tool. Only `create` (createWorkspace)
+// and "default" make a new one: any other name that doesn't exist is a 404, so
+// a typo in --workspace= or a stale link no longer starts a new, empty board.
+export function getDb(workspaceName, { create = false } = {}) {
   const name = workspaceName || "default";
   if (connections.has(name)) return connections.get(name);
   requireValidWorkspaceName(name);
   const dir = path.join(workspacesDir, name);
+  if (!create && name !== "default" && !fs.existsSync(path.join(dir, "tasks.db"))) {
+    const err = new Error(`no workspace "${name}" — workspaces: ${listWorkspaces().join(", ")}`);
+    throw Object.assign(err, { status: 404, code: "unknown_workspace", input: name });
+  }
   fs.mkdirSync(dir, { recursive: true });
   const db = new Database(path.join(dir, "tasks.db"));
   // parentId REFERENCES tasks(id) has to hold whatever SQLite build better-sqlite3 ships with
@@ -248,7 +254,7 @@ export function listWorkspaces() {
 
 export function createWorkspace(name) {
   requireValidWorkspaceName(name);
-  getDb(name); // opens + initializes schema as a side effect
+  getDb(name, { create: true }); // opens + initializes schema as a side effect
   return name;
 }
 

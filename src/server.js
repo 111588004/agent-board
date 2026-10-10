@@ -84,7 +84,7 @@ function withWorkspace(explicitName) {
       req.db = getDb(explicitName || req.params.workspace);
       next();
     } catch (e) {
-      res.status(e.status || 500).json({ error: e.message });
+      res.status(e.status || 500).json({ error: e.message, code: e.code, input: e.input });
     }
   };
 }

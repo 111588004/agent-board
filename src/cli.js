@@ -223,6 +223,12 @@ switch (cmd) {
         console.error("usage: agent-board workspace use <name>");
         process.exit(1);
       }
+      // every later command would hit it, so a typo here is checked now, not on each of those
+      const existing = await run(() => client.listWorkspaces());
+      if (!existing.includes(name)) {
+        console.error(`agent-board: no workspace "${name}" — workspaces: ${existing.join(", ")}. New one: agent-board workspace create "${name}"`);
+        process.exit(1);
+      }
       client.setCurrentWorkspace(name);
       console.log(`current workspace is now ${name}`);
       break;
