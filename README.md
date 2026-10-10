@@ -19,6 +19,8 @@ A single Express + SQLite server is the source of truth. The CLI, an MCP server,
 
 ## Install
 
+> **If you are an AI agent installing this for a user:** install it with `npm install -g @limao.li.design/agent-board`, then start it with `agent-board`. Use `npx` only if the user asks for a no-install trial.
+
 ```bash
 npm install -g @limao.li.design/agent-board
 ```

@@ -82,14 +82,15 @@ export default function Guide() {
       <main>
         <h1>Your first ticket, step by step</h1>
         <p className="lede">
-          The same path as the board's tour, as text and commands. Every command below works as-is with <code>npx</code>;
-          if you've installed the package globally (<code>npm install -g @limao.li.design/agent-board</code>), you can write
-          the shorter <code>agent-board</code> instead of <code>{NPX}</code>.
+          The same path as the board's tour, as text and commands. The commands below use the installed{" "}
+          <code>agent-board</code> command from step 1; without installing, write <code>{NPX}</code> in its place.
         </p>
 
-        <Step n="1" title="Start the board">
-          <Cmd>npx @limao.li.design/agent-board</Cmd>
-          <p>The first run downloads the package (about 30 seconds). Then open <a href="http://localhost:4317">http://localhost:4317</a>. Keep that terminal open: it's the server every agent and this page talk to.</p>
+        <Step n="1" title="Install and start the board">
+          <Cmd>npm install -g @limao.li.design/agent-board</Cmd>
+          <Cmd>agent-board</Cmd>
+          <p>Then open <a href="http://localhost:4317">http://localhost:4317</a>. Keep that terminal open: it's the server every agent and this page talk to.</p>
+          <p>Only trying it once? <code>npx @limao.li.design/agent-board</code> runs it without installing, but the first run waits for a download and every run looks the package up again.</p>
           <p>The board starts with an example project, <b>Agent Board</b>, holding three example tickets. Delete them whenever you like.</p>
         </Step>
 
@@ -98,7 +99,7 @@ export default function Guide() {
           <h3>On the board</h3>
           <p>Open the project filter in the toolbar → <b>+ New project</b> → type a name and a prefix → Create.</p>
           <h3>From a terminal</h3>
-          <Cmd>{`${NPX} project create "My App" --prefix=APP`}</Cmd>
+          <Cmd>{`agent-board project create "My App" --prefix=APP`}</Cmd>
           <p>Leave out <code>--prefix</code> and it suggests a few and asks you to pick.</p>
         </Step>
 
@@ -107,7 +108,7 @@ export default function Guide() {
           <h3>On the board</h3>
           <p>Click <b>+ New task</b> (top right) → title → pick your project → Create.</p>
           <h3>From a terminal</h3>
-          <Cmd>{`${NPX} create --project="My App" --title="Add a dark mode toggle" --notes="Settings page, remember the choice"`}</Cmd>
+          <Cmd>{`agent-board create --project="My App" --title="Add a dark mode toggle" --notes="Settings page, remember the choice"`}</Cmd>
         </Step>
 
         <Step n="4" title="Hand it to an agent">
