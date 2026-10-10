@@ -42,5 +42,4 @@ Wordmark: IBM Plex Sans SemiBold, tracking −12/1000, outlined. Licence: SIL Op
 - Don't close the gap between the two boards; it is what tells person and agent apart in one colour.
 
 ## In the web UI
-The board's **Brand** theme (header toggle, or `?theme=brand`) uses this palette and mark: `web/src/theme.jsx`,
-`web/public/favicon-brand.svg`. **Classic** stays the default.
+The board always uses this palette and mark: `web/src/theme.jsx`, `web/public/favicon-brand.svg`.
