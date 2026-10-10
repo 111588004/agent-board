@@ -255,6 +255,30 @@ test("an answer is remembered: the same word resolves next time; forget undoes i
   assert.equal((await create({ project: "ops" }, "mem")).status, 422);
 });
 
+test("an answer that is the project's own name, ignoring case, is still remembered (#21)", async () => {
+  await api("POST", "/api/workspaces", { name: "mem2" });
+  await api("POST", "/api/w/mem2/projects", { name: "Beta", prefix: "BE" });
+  await api("POST", "/api/w/mem2/projects", { name: "Other", prefix: "BETA" });
+  const q = await create({ project: "beta" }, "mem2"); // Beta's name and Other's prefix
+  assert.equal(q.status, 422);
+  const pick = q.body.options.find((o) => o.args.project === "Beta");
+  const ok = await create({ project: "beta", ...pick.args }, "mem2");
+  assert.equal(ok.status, 201);
+  assert.match(ok.body.notes, /remembered "beta" → Beta/);
+  assert.equal((await create({ project: "beta" }, "mem2")).body.project, "Beta"); // no second question
+  assert.equal((await create({ project: "Beta" }, "mem2")).body.notes, null); // exact name: nothing to remember
+
+  // the same through move
+  await api("POST", "/api/w/mem2/projects", { name: "Gamma", prefix: "GA" });
+  await api("POST", "/api/w/mem2/projects", { name: "Misc", prefix: "GAMMA" });
+  const t = (await create({ project: "Beta" }, "mem2")).body;
+  const mq = await api("POST", `/api/w/mem2/tasks/${t.id}/move`, { project: "gamma" });
+  assert.equal(mq.status, 422);
+  const mpick = mq.body.options.find((o) => o.args.project === "Gamma");
+  assert.equal((await api("POST", `/api/w/mem2/tasks/${t.id}/move`, { project: "gamma", ...mpick.args })).status, 200);
+  assert.deepEqual((await api("GET", "/api/w/mem2/projects")).body.find((p) => p.name === "Gamma").aliases, ["gamma"]);
+});
+
 test("ask new/off: the board picks the busiest project and marks the ticket unconfirmed", async () => {
   await api("POST", "/api/workspaces", { name: "auto" });
   await api("POST", "/api/w/auto/projects", { name: "OPS", prefix: "OP" });
