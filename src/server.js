@@ -6,6 +6,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import tasksRouter from "./routes/tasks.js";
 import projectsRouter from "./routes/projects.js";
 import { createMcpServer } from "./mcp/tools.js";
+import { withBase } from "./client.js";
 import { getDb, listWorkspaces, createWorkspace, deleteWorkspace, renameWorkspace, getConfig, setConfig, ASK_MODES } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -97,12 +98,16 @@ app.use("/api/projects", withWorkspace("default"), projectsRouter);
 // MCP — http transport (not stdio), so multiple agent sessions can share
 // this one server instance. Stateless: no session to track between
 // requests, so each call gets its own short-lived server+transport pair.
+// The tools are REST clients (mcp/tools.js); they call back into this server through the address
+// the request came in on, not AGENT_BOARD_URL — that names whichever server the CLI uses, often another one.
 app.post("/mcp", async (req, res) => {
   try {
     const mcpServer = createMcpServer();
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     await mcpServer.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    const { localAddress, localPort } = req.socket;
+    const self = `http://${localAddress.includes(":") ? `[${localAddress}]` : localAddress}:${localPort}`;
+    await withBase(self, () => transport.handleRequest(req, res, req.body));
     res.on("close", () => {
       transport.close();
       mcpServer.close();

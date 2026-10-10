@@ -3,8 +3,17 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 const BASE = process.env.AGENT_BOARD_URL || "http://localhost:4317";
+
+// the server's own HTTP /mcp runs these same calls, and they must reach that server — not whatever
+// AGENT_BOARD_URL (or :4317) names in its environment. withBase(url, fn) points every call made
+// while fn runs at url; the CLI and stdio MCP never use it.
+const baseOverride = new AsyncLocalStorage();
+export function withBase(url, fn) {
+  return baseOverride.run(url, fn);
+}
 
 const baseDir = process.env.AGENT_BOARD_DIR || path.join(os.homedir(), ".agent-board");
 const currentWorkspaceFile = path.join(baseDir, "current-workspace");
@@ -30,7 +39,7 @@ export function setCurrentWorkspace(name) {
 }
 
 export async function apiRequest(method, path, body) {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${baseOverride.getStore() || BASE}${path}`, {
     method,
     headers: body ? { "content-type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
