@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil, Copy, Check, HelpCircle, BookOpen, Palette } from "lucide-react";
-import { THEMES, readTheme, applyTheme, BrandMark } from "./theme.jsx";
+import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil, Copy, Check, HelpCircle, BookOpen } from "lucide-react";
+import { BrandMark } from "./theme.jsx";
 import * as api from "./api.js";
 import { LAUNCH_TARGETS, buildLaunchText, defaultLaunchTarget } from "./launch.js";
 import Tour, { TOUR_SEEN_KEY, readStore, writeStore, demoTicket, isSeedProject, guideUrl } from "./Tour.jsx";
@@ -137,7 +137,6 @@ export default function AgentBoard() {
   const [sortKey, setSortKey] = useState("updatedAt");
   const [sortDir, setSortDir] = useState("desc");
   const [workspace, setWorkspace] = useState(api.getWorkspace());
-  const [theme, setTheme] = useState(readTheme());
   const [workspaces, setWorkspaces] = useState([]);
   const [meta, setMeta] = useState(null); // {version, source: "dev"|"npm", root, pid}
   const [tourOpen, setTourOpen] = useState(false);
@@ -554,7 +553,7 @@ export default function AgentBoard() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {theme === "brand" ? <BrandMark size={20} /> : <Terminal size={18} color="var(--ab-accent-on-dark)" />}
+          <BrandMark size={20} />
           <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: 0.2 }}>
             Agent Board
           </span>
@@ -592,18 +591,6 @@ export default function AgentBoard() {
 
         <div style={{ flex: 1 }} />
 
-        <button
-          className="card-btn"
-          onClick={() => {
-            const next = theme === "brand" ? "classic" : "brand";
-            setTheme(next);
-            applyTheme(next, true);
-          }}
-          title="Switch board theme (Classic / Brand)"
-          style={headerLinkStyle}
-        >
-          <Palette size={14} /> {THEMES[theme].label}
-        </button>
         <button className="card-btn" onClick={startTour} title="Replay the first-visit tour" style={headerLinkStyle}>
           <HelpCircle size={14} /> Tour
         </button>

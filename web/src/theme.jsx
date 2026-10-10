@@ -1,38 +1,11 @@
-// Board themes. "brand" (the default) uses the Agent Board logo palette; "classic" is the original orange look
-// (study/brand/v3/final/GUIDELINES.md): ink #0f1a24 and teal #0b6e8a (#4fc0dc on dark).
-// Colours are CSS variables on <html>, so App, Tour and the Guide page all follow. The agent colours
-// (e.g. the orange "Claude Code" chip) identify agents, not the brand, and stay the same in every theme.
-import { readStore, writeStore } from "./Tour.jsx";
+// Board colours: the Agent Board logo palette (study/brand/v3/final/GUIDELINES.md): ink #0f1a24 and
+// teal #0b6e8a (#4fc0dc on dark). Colours are CSS variables on <html>, so App, Tour and the Guide page all
+// follow. The agent colours (e.g. the orange "Claude Code" chip) identify agents, not the brand, and stay as they are.
+const VARS = { "--ab-chrome": "#0f1a24", "--ab-menu": "#1a2733", "--ab-accent": "#0b6e8a", "--ab-accent-on-dark": "#4fc0dc" };
 
-export const THEMES = {
-  classic: {
-    label: "Classic",
-    favicon: "/favicon.svg",
-    vars: { "--ab-chrome": "#181B21", "--ab-menu": "#22262F", "--ab-accent": "#D97757", "--ab-accent-on-dark": "#D97757" },
-  },
-  brand: {
-    label: "Brand",
-    favicon: "/favicon-brand.svg",
-    vars: { "--ab-chrome": "#0f1a24", "--ab-menu": "#1a2733", "--ab-accent": "#0b6e8a", "--ab-accent-on-dark": "#4fc0dc" },
-  },
-};
-
-const KEY = "agent-board-theme";
-
-export function readTheme() {
-  const q = new URLSearchParams(window.location.search).get("theme");
-  const name = q || readStore(KEY);
-  return THEMES[name] ? name : "brand";
-}
-
-export function applyTheme(name, persist = false) {
-  const theme = THEMES[name] || THEMES.brand;
+export function applyTheme() {
   const root = document.documentElement;
-  for (const [k, v] of Object.entries(theme.vars)) root.style.setProperty(k, v);
-  root.dataset.boardTheme = name;
-  const icon = document.querySelector('link[rel="icon"]');
-  if (icon) icon.href = theme.favicon;
-  if (persist) writeStore(KEY, name);
+  for (const [k, v] of Object.entries(VARS)) root.style.setProperty(k, v);
 }
 
 // The logo mark (two boards forming ">_"), colours for dark backgrounds.

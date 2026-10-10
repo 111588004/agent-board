@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Terminal, Copy, Check, ArrowLeft } from "lucide-react";
-import { readTheme, BrandMark } from "./theme.jsx";
+import { Copy, Check, ArrowLeft } from "lucide-react";
+import { BrandMark } from "./theme.jsx";
 import { buildLaunchText } from "./launch.js";
 import template from "../../templates/CLAUDE.md.example?raw";
 
@@ -72,7 +72,7 @@ export default function Guide() {
       `}</style>
 
       <header>
-        {readTheme() === "brand" ? <BrandMark size={20} /> : <Terminal size={18} color="var(--ab-accent-on-dark)" />}
+        <BrandMark size={20} />
         <span style={{ fontWeight: 700, fontSize: 15 }}>Agent Board</span>
         <span style={{ fontSize: 13, color: "#8B8D98" }}>First ticket guide</span>
         <span style={{ flex: 1 }} />
