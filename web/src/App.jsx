@@ -152,10 +152,12 @@ const POLL_MS = 3000; // live-update interval, see the polling effect in AgentBo
 // errors go to the board's toast (set by AgentBoard), not window.alert: some embedded browsers don't
 // implement the native dialogs, so an alert there fails silently and the user never learns why
 let showErrorToast = null;
+let pendingError = null; // an error from before the board mounted, shown once its toast exists
 function reportError(action, err) {
   console.error(action, err);
-  if (showErrorToast) showErrorToast(`${action} failed: ${err.message}`);
-  else window.alert(`${action} failed: ${err.message}`);
+  const message = `${action} failed: ${err.message}`;
+  if (showErrorToast) showErrorToast(message);
+  else pendingError = message;
 }
 
 export default function AgentBoard() {
@@ -168,11 +170,15 @@ export default function AgentBoard() {
   const [toast, setToast] = useState(null); // {key, message, card?, tone?}
   useEffect(() => {
     showErrorToast = (message) => setToast({ key: Date.now(), message, tone: "error" });
+    if (pendingError) { showErrorToast(pendingError); pendingError = null; }
     return () => { showErrorToast = null; };
   }, []);
   // a server note on a write ("all subtasks of AB-4 are done") — shown, never acted on
   const toastHint = (task) => { if (task && task.hint) setToast({ key: Date.now(), message: task.hint }); };
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  // in-app stand-ins for window.prompt / window.confirm, which some embedded browsers don't implement
+  const [askText, setAskText] = useState(null); // TextFieldsDialog props: {title, fields, submitLabel, hint, onSubmit}
+  const [askDelete, setAskDelete] = useState(null); // ConfirmDeleteDialog props: {title, body, confirmLabel, onConfirm}
   const [dragId, setDragId] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null);
   const [view, setView] = useState("board"); // "board" | "list"
@@ -317,6 +323,7 @@ export default function AgentBoard() {
     closeDrawer: () => setModalCard(null),
     openNewProject: () => { setModalCard(null); setNewProjectOpen(true); },
     deleteCard,
+    showError: (message) => setToast({ key: Date.now(), message, tone: "error" }),
   };
 
   useEffect(() => {
@@ -327,20 +334,26 @@ export default function AgentBoard() {
     window.history.replaceState(null, "", url);
   }, [modalCard?.id]);
 
-  async function switchWorkspace(name) {
+  function switchWorkspace(name) {
     if (name === workspace) return;
     if (name === "__new__") {
-      const newName = window.prompt("New workspace name");
-      if (!newName) return;
-      try {
-        await api.createWorkspace(newName);
-        setWorkspaces((prev) => Array.from(new Set([...prev, newName])).sort());
-      } catch (e) {
-        reportError("Create workspace", e);
-        return;
-      }
-      name = newName;
+      // a server refusal shows in the dialog, under the field, and the dialog stays open
+      setAskText({
+        title: "New workspace",
+        fields: [{ key: "name", label: "Name", placeholder: "What are you calling this workspace?" }],
+        submitLabel: "Create",
+        onSubmit: async ({ name: newName }) => {
+          await api.createWorkspace(newName);
+          setWorkspaces((prev) => Array.from(new Set([...prev, newName])).sort());
+          enterWorkspace(newName);
+        },
+      });
+      return;
     }
+    enterWorkspace(name);
+  }
+
+  function enterWorkspace(name) {
     api.setWorkspace(name);
     setWorkspace(name);
     setProjectFilter("all");
@@ -350,23 +363,33 @@ export default function AgentBoard() {
   // target defaults to the currently-open workspace, but the hover "..." in
   // the switcher's own list can rename/delete a workspace without first
   // switching into it.
-  async function renameWorkspaceByName(target) {
-    const newName = window.prompt(`Rename workspace "${target}" to:`, target);
-    if (!newName || newName === target) return;
-    try {
-      await api.renameWorkspace(target, newName);
-      setWorkspaces((prev) => prev.map((w) => (w === target ? newName : w)).sort());
-      if (target === workspace) {
-        api.setWorkspace(newName);
-        setWorkspace(newName);
-      }
-    } catch (e) {
-      reportError("Rename workspace", e);
-    }
+  function renameWorkspaceByName(target) {
+    setAskText({
+      title: `Rename workspace "${target}"`,
+      fields: [{ key: "name", label: "Name", initial: target }],
+      submitLabel: "Rename",
+      onSubmit: async ({ name: newName }) => {
+        if (newName === target) return;
+        await api.renameWorkspace(target, newName);
+        setWorkspaces((prev) => prev.map((w) => (w === target ? newName : w)).sort());
+        if (target === workspace) {
+          api.setWorkspace(newName);
+          setWorkspace(newName);
+        }
+      },
+    });
   }
 
-  async function deleteWorkspaceByName(target) {
-    if (!window.confirm(`Delete workspace "${target}" and everything on it? This can't be undone.`)) return;
+  function deleteWorkspaceByName(target) {
+    setAskDelete({
+      title: `Delete workspace "${target}"?`,
+      body: "Everything on it — its projects and tickets — will be deleted. This can't be undone.",
+      confirmLabel: "Delete workspace",
+      onConfirm: () => deleteWorkspace(target),
+    });
+  }
+
+  async function deleteWorkspace(target) {
     try {
       await api.deleteWorkspace(target);
       setWorkspaces((prev) => prev.filter((w) => w !== target));
@@ -526,15 +549,17 @@ export default function AgentBoard() {
   }
 
   // other words the user calls a project — those words open tickets there without the board asking
-  async function addAliasesByName(target) {
-    const words = window.prompt(`Other names you use for "${target}" (comma-separated), e.g. 發表會, launch:`);
-    if (!words?.trim()) return;
-    try {
-      await api.addAliases(target, words);
-      setProjects(await api.listProjects());
-    } catch (e) {
-      reportError("Add name", e);
-    }
+  function addAliasesByName(target) {
+    setAskText({
+      title: `Other names for "${target}"`,
+      fields: [{ key: "words", label: "Also called", placeholder: "發表會, launch" }],
+      hint: "Other words you'd use for this project, comma-separated. Agents that use them land here without asking.",
+      submitLabel: "Add",
+      onSubmit: async ({ words }) => {
+        await api.addAliases(target, words);
+        setProjects(await api.listProjects());
+      },
+    });
   }
 
   async function forgetAliasWord(word) {
@@ -546,25 +571,37 @@ export default function AgentBoard() {
     }
   }
 
-  async function renameProjectByName(target) {
+  // name and prefix side by side, like the New project dialog
+  function renameProjectByName(target) {
     const current = projects.find((p) => p.name === target);
-    const newName = window.prompt(`Rename project "${target}" to:`, target);
-    if (!newName) return;
-    const newPrefix = window.prompt(`Ticket prefix for "${newName}":`, current?.prefix ?? "");
-    if (!newPrefix) return;
-    if (newName === target && newPrefix === current?.prefix) return;
-    try {
-      const updated = await api.renameProject(target, { name: newName, prefix: newPrefix });
-      setProjects((prev) => prev.map((p) => (p.name === target ? updated : p)));
-      setCards((prev) => prev.map((c) => (c.project === target ? { ...c, project: updated.name, projectPrefix: updated.prefix } : c)));
-      if (projectFilter === target) setProjectFilter(updated.name);
-    } catch (e) {
-      reportError("Rename project", e);
-    }
+    setAskText({
+      title: `Rename project "${target}"`,
+      fields: [
+        { key: "prefix", label: "Prefix", initial: current?.prefix ?? "", mono: true, uppercase: true, maxLength: 6, width: "96px" },
+        { key: "name", label: "Name", initial: target },
+      ],
+      hint: `The prefix shows up in ticket ids, e.g. ${current?.prefix || "AB"}-1.`,
+      submitLabel: "Rename",
+      onSubmit: async ({ name: newName, prefix: newPrefix }) => {
+        if (newName === target && newPrefix === current?.prefix) return;
+        const updated = await api.renameProject(target, { name: newName, prefix: newPrefix });
+        setProjects((prev) => prev.map((p) => (p.name === target ? updated : p)));
+        setCards((prev) => prev.map((c) => (c.project === target ? { ...c, project: updated.name, projectPrefix: updated.prefix } : c)));
+        if (projectFilter === target) setProjectFilter(updated.name);
+      },
+    });
   }
 
-  async function deleteProjectByName(target) {
-    if (!window.confirm(`Delete project "${target}"? Only works if it has no tasks left.`)) return;
+  function deleteProjectByName(target) {
+    setAskDelete({
+      title: `Delete project "${target}"?`,
+      body: "Only works if it has no tasks left.",
+      confirmLabel: "Delete project",
+      onConfirm: () => deleteProject(target),
+    });
+  }
+
+  async function deleteProject(target) {
     try {
       await api.deleteProject(target);
       setProjects((prev) => prev.filter((p) => p.name !== target));
@@ -971,6 +1008,19 @@ export default function AgentBoard() {
 
       {newProjectOpen && (
         <NewProjectDialog onClose={() => setNewProjectOpen(false)} onCreate={createProject} />
+      )}
+
+      {askText && <TextFieldsDialog {...askText} onClose={() => setAskText(null)} />}
+
+      {askDelete && (
+        <ConfirmDeleteDialog
+          title={askDelete.title}
+          confirmLabel={askDelete.confirmLabel}
+          onCancel={() => setAskDelete(null)}
+          onConfirm={() => { setAskDelete(null); askDelete.onConfirm(); }}
+        >
+          {askDelete.body}
+        </ConfirmDeleteDialog>
       )}
 
       {tourOpen && (
@@ -1589,11 +1639,27 @@ function ProjectFilterSelect({ value, projects, onChange, onRequestCreate, onRen
 // focused form, not a persistent editing surface) with the name/prefix
 // fields side by side so picking a project's ticket-id prefix isn't a
 // separate prompt() step.
-// asks before a task is deleted. In-app, not window.confirm: some embedded browsers don't implement the native
-// dialogs, and the board's own look is clearer about what goes away. A task with subtasks can't be deleted (the
-// server refuses), so that case says so up front instead of letting the request fail.
-function ConfirmDeleteDialog({ card, subtasks, onCancel, onConfirm }) {
-  const blocked = subtasks > 0;
+// Escape closes a dialog. On document, with preventDefault, so the drawer's own Escape (on window, runs after
+// this) leaves the drawer open under it — same as the Dropdown menus.
+function useEscape(onEscape) {
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      onEscape();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  });
+}
+
+// asks before something is deleted (a task, a project, a workspace). In-app, not window.confirm: some embedded
+// browsers don't implement the native dialogs, and the board's own look is clearer about what goes away. With no
+// confirmLabel it only explains why it can't be deleted yet (a task with subtasks — the server would refuse), so
+// that case is said up front instead of letting the request fail.
+function ConfirmDeleteDialog({ title, children, confirmLabel, onCancel, onConfirm }) {
+  const blocked = !confirmLabel;
+  useEscape(onCancel);
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div onClick={onCancel} style={{ position: "absolute", inset: 0, background: "rgba(15,16,20,0.32)" }} />
@@ -1609,22 +1675,10 @@ function ConfirmDeleteDialog({ card, subtasks, onCancel, onConfirm }) {
         }}
       >
         <div id="confirm-delete-title" style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>
-          {blocked
-            ? <><span className="mono">{card.id}</span> can't be deleted yet</>
-            : <>Delete <span className="mono">{card.id}</span>?</>}
+          {title}
         </div>
         <div id="confirm-delete-body" style={{ fontSize: 13, lineHeight: 1.5, color: "#31343B", marginBottom: 18 }}>
-          {blocked ? (
-            <>
-              <b>{card.title}</b> has {subtasks} subtask{subtasks === 1 ? "" : "s"}. Delete {subtasks === 1 ? "it" : "them"}, or open{" "}
-              {subtasks === 1 ? "it" : "each one"} and choose Change → Remove parent, first.
-            </>
-          ) : (
-            <>
-              <b>{card.title}</b> and its notes will be deleted for everyone on this board, and agents that have{" "}
-              <span className="mono">{card.id}</span> won't find it any more. This can't be undone.
-            </>
-          )}
+          {children}
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button
@@ -1644,11 +1698,105 @@ function ConfirmDeleteDialog({ card, subtasks, onCancel, onConfirm }) {
                 fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
               }}
             >
-              Delete task
+              {confirmLabel}
             </button>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// a short form in a centered dialog, for what used to be window.prompt (some embedded browsers don't implement
+// it): naming a workspace, renaming a project, its other names, a link's URL. Looks and behaves like the New
+// project dialog — first field focused, Enter submits, Escape or a click outside cancels, and a server refusal
+// shows under the fields with the dialog left open. fields: [{key, label, initial, placeholder, mono, uppercase,
+// maxLength, width}]; onSubmit gets {key: trimmed value} once every field has one.
+function TextFieldsDialog({ title, fields, hint, submitLabel = "Save", onSubmit, onClose }) {
+  const [values, setValues] = useState(() => Object.fromEntries(fields.map((f) => [f.key, f.initial ?? ""])));
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const firstRef = useRef(null);
+  useEscape(onClose);
+
+  useEffect(() => {
+    firstRef.current?.focus();
+    firstRef.current?.select(); // a prefilled name is usually replaced, as window.prompt's default was
+  }, []);
+
+  const ready = fields.every((f) => values[f.key].trim());
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!ready || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onSubmit(Object.fromEntries(fields.map((f) => [f.key, values[f.key].trim()])));
+      onClose();
+    } catch (err) {
+      setError(err.message);
+      setSaving(false);
+    }
+  }
+
+  const inputStyle = { border: "1px solid #E4E6EB", borderRadius: 6, padding: "7px 8px", fontSize: 13, fontFamily: "inherit" };
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(15,16,20,0.32)" }} />
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onSubmit={submit}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "relative", background: "#fff", borderRadius: 10, boxShadow: "0 16px 48px rgba(9,10,12,0.28)",
+          width: 420, maxWidth: "92vw", padding: 20,
+        }}
+      >
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>{title}</div>
+
+        <div style={{ display: "grid", gridTemplateColumns: fields.map((f) => f.width || "1fr").join(" "), gap: 10, marginBottom: 4 }}>
+          {fields.map((f, i) => (
+            <label key={f.key} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: "#8B8D98" }}>{f.label}</span>
+              <input
+                ref={i === 0 ? firstRef : undefined}
+                className={f.mono ? "mono" : undefined}
+                value={values[f.key]}
+                onChange={(e) => setValues((v) => ({ ...v, [f.key]: f.uppercase ? e.target.value.toUpperCase() : e.target.value }))}
+                placeholder={f.placeholder}
+                maxLength={f.maxLength}
+                style={f.uppercase ? { ...inputStyle, textTransform: "uppercase" } : inputStyle}
+              />
+            </label>
+          ))}
+        </div>
+        <div style={{ fontSize: 11, color: "#B7BAC2", marginBottom: error ? 12 : 18 }}>{hint}</div>
+
+        {error && <div style={{ color: "#E5484D", fontSize: 12, marginBottom: 10 }}>{error}</div>}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: "none", border: "1px solid #E4E6EB", borderRadius: 7, padding: "7px 14px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!ready || saving}
+            style={{
+              background: "#1D2027", color: "#fff", border: "none", borderRadius: 7, padding: "7px 14px",
+              fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", opacity: !ready || saving ? 0.5 : 1,
+            }}
+          >
+            {submitLabel}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -2426,16 +2574,12 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onMovePr
     applyLinePrefix(`${"#".repeat(level)} `);
   }
 
-  function applyLink() {
-    const url = window.prompt("Link URL");
-    if (!url) return;
-    applyMd("[", `](${url})`, "text");
-  }
+  // the URL is asked in a small dialog (it was window.prompt); the textarea keeps its selection meanwhile
+  const [askUrl, setAskUrl] = useState(null); // "link" | "image"
 
-  function applyImage() {
-    const url = window.prompt("Image URL");
-    if (!url) return;
-    applyMd("![", `](${url})`, "alt text");
+  function applyUrl({ url }) {
+    if (askUrl === "image") applyMd("![", `](${url})`, "alt text");
+    else applyMd("[", `](${url})`, "text");
   }
 
   function saveNotes() {
@@ -2694,8 +2838,8 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onMovePr
                   <ToolbarBtn title="Bullet list" onClick={applyList}><List size={13} /></ToolbarBtn>
                   <ToolbarBtn title="Numbered list" onClick={applyOrderedList}><ListOrdered size={13} /></ToolbarBtn>
                   <div style={{ width: 1, background: "#E4E6EB", margin: "2px 2px" }} />
-                  <ToolbarBtn title="Link" onClick={applyLink}><Link2 size={13} /></ToolbarBtn>
-                  <ToolbarBtn title="Image" onClick={applyImage}><Image size={13} /></ToolbarBtn>
+                  <ToolbarBtn title="Link" onClick={() => setAskUrl("link")}><Link2 size={13} /></ToolbarBtn>
+                  <ToolbarBtn title="Image" onClick={() => setAskUrl("image")}><Image size={13} /></ToolbarBtn>
                 </div>
                 <textarea
                   ref={notesRef}
@@ -2911,14 +3055,40 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onMovePr
           }}
         />
       )}
-      {confirmDelete && (
-        <ConfirmDeleteDialog
-          card={form}
-          subtasks={cards.filter((c) => c.parentId === card.id).length}
-          onCancel={() => setConfirmDelete(false)}
-          onConfirm={() => { setConfirmDelete(false); onDelete(card.id); }}
+      {askUrl && (
+        <TextFieldsDialog
+          title={askUrl === "image" ? "Insert image" : "Insert link"}
+          fields={[{ key: "url", label: askUrl === "image" ? "Image URL" : "Link URL", placeholder: "https://" }]}
+          submitLabel="Insert"
+          onSubmit={applyUrl}
+          onClose={() => setAskUrl(null)}
         />
       )}
+      {confirmDelete && (() => {
+        const subtasks = cards.filter((c) => c.parentId === card.id).length;
+        return (
+          <ConfirmDeleteDialog
+            title={subtasks
+              ? <><span className="mono">{form.id}</span> can't be deleted yet</>
+              : <>Delete <span className="mono">{form.id}</span>?</>}
+            confirmLabel={subtasks ? null : "Delete task"}
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={() => { setConfirmDelete(false); onDelete(card.id); }}
+          >
+            {subtasks ? (
+              <>
+                <b>{form.title}</b> has {subtasks} subtask{subtasks === 1 ? "" : "s"}. Delete {subtasks === 1 ? "it" : "them"}, or open{" "}
+                {subtasks === 1 ? "it" : "each one"} and choose Change → Remove parent, first.
+              </>
+            ) : (
+              <>
+                <b>{form.title}</b> and its notes will be deleted for everyone on this board, and agents that have{" "}
+                <span className="mono">{form.id}</span> won't find it any more. This can't be undone.
+              </>
+            )}
+          </ConfirmDeleteDialog>
+        );
+      })()}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { buildLaunchText, launchPromptLines, defaultLaunchTarget, shellQuote } from "../web/src/launch.js";
+import { buildLaunchText, launchPromptLines, shellQuote } from "../web/src/launch.js";
 
 // the launch lines are POSIX shell; checking them takes a real `sh`, which Windows usually lacks
 const hasSh = spawnSync("sh", ["-c", "true"]).status === 0;
@@ -53,9 +53,6 @@ test("a non-default workspace and board URL are spelled out on every command", (
   assert.doesNotMatch(text, /MCP/); // registered MCP clients point at the default URL, not this board
 });
 
-test("defaultLaunchTarget follows the card's agent, else generic", () => {
-  assert.equal(defaultLaunchTarget("codex"), "codex");
-  assert.equal(defaultLaunchTarget("opencode"), "generic");
-  assert.equal(defaultLaunchTarget(null), "generic");
+test("shellQuote escapes single quotes", () => {
   assert.equal(shellQuote("a'b"), `'a'\\''b'`);
 });

@@ -133,7 +133,7 @@ export default function Tour({ cards, projects, workspace, drawerOpen, dialogOpe
 
   async function run(fn) {
     setBusy(true);
-    try { await fn(); } catch (e) { window.alert(e.message); } finally { setBusy(false); }
+    try { await fn(); } catch (e) { actions.showError(e.message); } finally { setBusy(false); }
   }
 
   const guideHref = guideUrl(workspace);
