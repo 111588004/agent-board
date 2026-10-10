@@ -23,8 +23,20 @@ async function rawRequest(method, path, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new Error((data && data.error) || res.statusText);
+  // a non-JSON error body (an older server's HTML page) still carries the status
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    if (res.ok) throw new Error(`unexpected response from the server: ${text.slice(0, 80)}`);
+  }
+  if (!res.ok) {
+    // code lets the UI react to a rule, not only show the message
+    throw Object.assign(new Error((data && data.error) || `${res.status} ${res.statusText}`), {
+      status: res.status,
+      code: data && data.code,
+    });
+  }
   return data;
 }
 
