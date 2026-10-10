@@ -1,8 +1,9 @@
 import { Fragment, useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil, Copy, Check, HelpCircle, BookOpen, CircleAlert, CircleDashed, AlignLeft } from "lucide-react";
+import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil, Copy, Check, HelpCircle, BookOpen, CircleAlert, CircleDashed, AlignLeft, ChevronUp, Equal, Users } from "lucide-react";
 import { BrandMark } from "./theme.jsx";
 import * as api from "./api.js";
+import { AGENT_ICONS } from "./agentIcons.js";
 import { LAUNCH_TARGETS, buildLaunchText } from "./launch.js";
 import Tour, { TOUR_SEEN_KEY, readStore, writeStore, demoTicket, isSeedProject, guideUrl } from "./Tour.jsx";
 
@@ -24,22 +25,52 @@ const AGENTS = [
   { id: "other", label: "Other", color: "#8B8D98" },
 ];
 
+// Jira's convention (the shape carries the level, so it reads without color too — WCAG 1.4.1):
+// ˄ high, = medium, ˅ low, warm to cool
 const PRIORITIES = [
-  { id: "low", label: "Low", color: "#8B8D98" },
-  { id: "med", label: "Med", color: "#4C8DFF" },
+  { id: "low", label: "Low", color: "#4C8DFF" },
+  { id: "med", label: "Med", color: "#E8A33D" },
   { id: "high", label: "High", color: "#E5484D" },
 ];
 
 const UNASSIGNED_AGENT = { id: null, label: "Unassigned", color: "#8B8D98" };
-const AGENT_OPTIONS = [UNASSIGNED_AGENT, ...AGENTS];
+// the agent filter's value for "nobody has it yet" (a ticket's agent is null, which a menu id can't be)
+// agent menus carry an icon + a group heading; narrower than this they look cramped
+const AGENT_MENU_MIN_WIDTH = 200;
+const UNASSIGNED_FILTER = "__unassigned__";
+const AGENT_OPTIONS = // grouped in the menus: nobody | AGENTS (the named ones) | the catch-all
+[UNASSIGNED_AGENT, ...AGENTS].map((a, i) => ({
+  ...a,
+  groupLabel: i === 1 ? "Agents" : undefined,
+  dividerBefore: a.id === "other",
+  icon: a.id ? <AgentIcon agent={a.id} color={a.color} /> : <CircleDashed size={14} color="#9599A3" style={{ flexShrink: 0 }} aria-hidden="true" />,
+}));
 
 function agentMeta(id) {
   if (!id) return UNASSIGNED_AGENT;
   return AGENTS.find((a) => a.id === id) || AGENTS[AGENTS.length - 1];
 }
+// the agent's own solid mark (agentIcons.js); "Other" gets a generic bot, Unassigned gets nothing
+function AgentIcon({ agent, size = 14, color = "currentColor" }) {
+  if (!agent) return null;
+  const mark = AGENT_ICONS[agentMeta(agent).id];
+  if (!mark) return <Bot size={size} color={color} strokeWidth={2.2} style={{ flexShrink: 0 }} aria-hidden="true" />;
+  return (
+    <svg width={size} height={size} viewBox={mark.viewBox} fill={color} fillRule="evenodd" style={{ flexShrink: 0 }} aria-hidden="true">
+      {mark.paths.map((d) => <path key={d} d={d} clipRule="evenodd" />)}
+    </svg>
+  );
+}
 function priorityMeta(id) {
   return PRIORITIES.find((p) => p.id === id) || PRIORITIES[0];
 }
+function PriorityIcon({ priority, size = 15 }) {
+  const { id, color } = priorityMeta(priority);
+  const Icon = id === "high" ? ChevronUp : id === "med" ? Equal : ChevronDown;
+  return <Icon size={size} color={color} strokeWidth={2.6} style={{ flexShrink: 0 }} aria-hidden="true" />;
+}
+// the same options with their icon, for the menus — highest first, as in Jira
+const PRIORITY_OPTIONS = [...PRIORITIES].reverse().map((p) => ({ ...p, icon: <PriorityIcon priority={p.id} /> }));
 function statusMeta(id) {
   return COLUMNS.find((c) => c.id === id) || COLUMNS[0];
 }
@@ -339,7 +370,7 @@ export default function AgentBoard() {
     return cards.filter(
       (c) =>
         (projectFilter === "all" || c.project === projectFilter) &&
-        (agentFilter === "all" || c.agent === agentFilter)
+        (agentFilter === "all" || (agentFilter === UNASSIGNED_FILTER ? !c.agent : c.agent === agentFilter))
     );
   }, [cards, projectFilter, agentFilter]);
 
@@ -687,8 +718,13 @@ export default function AgentBoard() {
         <FilterSelect
           light
           value={agentFilter}
+          minWidth={AGENT_MENU_MIN_WIDTH}
           onChange={setAgentFilter}
-          options={[{ id: "all", label: "All agents" }, ...AGENTS.map((a) => ({ id: a.id, label: a.label }))]}
+          options={[
+            { id: "all", label: "All agents", icon: <Users size={14} color="#6B6F79" style={{ flexShrink: 0 }} aria-hidden="true" /> },
+            { id: UNASSIGNED_FILTER, label: "Unassigned", icon: <CircleDashed size={14} color="#9599A3" style={{ flexShrink: 0 }} aria-hidden="true" /> },
+            ...AGENTS.map((a, i) => ({ id: a.id, label: a.label, icon: <AgentIcon agent={a.id} color={a.color} />, groupLabel: i === 0 ? "Agents" : undefined, dividerBefore: a.id === "other" })),
+          ]}
         />
       </div>
 
@@ -807,19 +843,15 @@ export default function AgentBoard() {
                       </button>
                     )}
                     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 9, marginLeft: 19 }}>
+                      {/* priority leads the row: it is what a scan of the board looks for first */}
+                      <span title={`${priorityMeta(c.priority).label} priority`} style={{ display: "flex" }}>
+                        <PriorityIcon priority={c.priority} size={14} />
+                      </span>
                       <Chip label={c.project} />
                       <Chip
                         label={agentMeta(c.agent).label}
                         color={agentMeta(c.agent).color}
-                      />
-                      <span
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: 99,
-                          background: priorityMeta(c.priority).color,
-                        }}
-                        title={priorityMeta(c.priority).label}
+                        icon={<AgentIcon agent={c.agent} size={11} />}
                       />
                       {c.unconfirmed && (
                         <span title={`The board picked this for you: ${c.unconfirmed}`}>
@@ -959,12 +991,16 @@ function Toast({ message, actionLabel, onAction, onDone }) {
   );
 }
 
-function Chip({ label, color }) {
+function Chip({ label, color, icon }) {
   if (!label) return null;
   return (
     <span
       className="mono"
       style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        whiteSpace: "nowrap",
         fontSize: 10.5,
         padding: "2px 6px",
         borderRadius: 5,
@@ -974,6 +1010,7 @@ function Chip({ label, color }) {
         border: color ? `1px solid ${color}33` : "1px solid #E4E6EB",
       }}
     >
+      {icon}
       {label}
     </span>
   );
@@ -1013,7 +1050,7 @@ function SortHeader({ label, sortKeyName, sortKey, sortDir, onSort, align }) {
 // scrollable table wrapper), which is exactly what happened before this.
 // options: [{ id, label, description?, dividerBefore? }]; title is an optional heading over the options
 // placement "top" opens the menu above the trigger (for triggers near the bottom of the screen)
-function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left", block = false, title, placement = "bottom" }) {
+function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left", block = false, title, placement = "bottom", minWidth = 130 }) {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
   const triggerRef = useRef(null);
@@ -1024,6 +1061,7 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left",
     setMenuPos({
       ...(placement === "top" ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
       left: rect.left, right: window.innerWidth - rect.right,
+      minWidth: Math.max(minWidth, block ? rect.width : 0),
     });
     setOpen(true);
   }
@@ -1072,7 +1110,7 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left",
             borderRadius: 8,
             boxShadow: "0 8px 24px rgba(20,22,30,0.14)",
             padding: 4,
-            minWidth: 130,
+            minWidth: menuPos.minWidth,
           }}
         >
           {title && (
@@ -1082,13 +1120,18 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left",
           )}
           {options.map((o) => (
             <Fragment key={o.id ?? "__none__"}>
-            {o.dividerBefore && <div style={{ borderTop: "1px solid #E4E6EB", margin: "4px 0" }} />}
+            {(o.dividerBefore || o.groupLabel) && <div style={{ borderTop: "1px solid #E4E6EB", margin: "4px 0" }} />}
+            {o.groupLabel && (
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#6B6F79", textTransform: "uppercase", letterSpacing: 0.4, padding: "6px 10px 4px" }}>
+                {o.groupLabel}
+              </div>
+            )}
             <div
               onClick={() => { onChange(o.id); setOpen(false); }}
               style={{
-                padding: "6px 10px",
+                padding: "7px 10px",
                 borderRadius: 5,
-                fontSize: 12.5,
+                fontSize: CONTROL_SIZE.fontSize,
                 fontWeight: o.id === value ? 600 : 400,
                 color: "#1D2027",
                 background: o.id === value ? "#F0F4FF" : "transparent",
@@ -1098,7 +1141,7 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left",
               onMouseEnter={(e) => { if (o.id !== value) e.currentTarget.style.background = "#F4F5F7"; }}
               onMouseLeave={(e) => { if (o.id !== value) e.currentTarget.style.background = "transparent"; }}
             >
-              {o.label}
+              {o.icon ? <span style={{ display: "flex", alignItems: "center", gap: 7 }}>{o.icon}{o.label}</span> : o.label}
               {o.description && (
                 <div style={{ fontSize: 11.5, fontWeight: 400, color: "#8B8D98", marginTop: 1 }}>{o.description}</div>
               )}
@@ -1690,7 +1733,7 @@ function NewProjectDialog({ onClose, onCreate }) {
   );
 }
 
-function ChipSelect({ value, onChange, options, colorFor }) {
+function ChipSelect({ value, onChange, options, colorFor, iconFor, minWidth }) {
   const color = colorFor(value);
   const label = options.find((o) => o.id === value)?.label ?? value;
   return (
@@ -1698,6 +1741,7 @@ function ChipSelect({ value, onChange, options, colorFor }) {
       value={value}
       options={options}
       onChange={onChange}
+      minWidth={minWidth}
       renderTrigger={({ onClick }) => (
         <button
           type="button"
@@ -1713,8 +1757,13 @@ function ChipSelect({ value, onChange, options, colorFor }) {
             border: color ? `1px solid ${color}33` : "1px solid #E4E6EB",
             cursor: "pointer",
             fontFamily: "inherit",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            whiteSpace: "nowrap",
           }}
         >
+          {iconFor?.(value)}
           {label}
         </button>
       )}
@@ -1726,7 +1775,8 @@ function ChipSelect({ value, onChange, options, colorFor }) {
 // dot on the kanban card, never a pill) — the whole cell is the click target,
 // styled as plain text so it doesn't read as a badge that isn't one.
 function BlockSelect({ value, onChange, options, color }) {
-  const label = options.find((o) => o.id === value)?.label ?? value;
+  const current = options.find((o) => o.id === value);
+  const label = current?.label ?? value;
   return (
     <Dropdown
       value={value}
@@ -1738,8 +1788,9 @@ function BlockSelect({ value, onChange, options, color }) {
           type="button"
           onClick={onClick}
           className="detail-value"
-          style={{ ...detailInputStyle, width: "auto", textAlign: "left", color: color || "#42454D", fontWeight: 600 }}
+          style={{ ...detailInputStyle, width: "auto", textAlign: "left", color: color || "#42454D", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 7 }}
         >
+          {current?.icon}
           {label}
         </button>
       )}
@@ -1996,15 +2047,16 @@ function ListView({ tasks, sortKey, sortDir, onSort, onOpen, projects, onFieldCh
                     value={t.agent}
                     onChange={(v) => onFieldChange(t.id, "agent", v)}
                     options={AGENT_OPTIONS}
+                    minWidth={AGENT_MENU_MIN_WIDTH}
                     colorFor={(v) => agentMeta(v).color}
+                    iconFor={(v) => <AgentIcon agent={v} size={11} />}
                   />
                 </td>
                 <td style={{ padding: "6px 12px" }}>
                   <BlockSelect
                     value={t.priority}
                     onChange={(v) => onFieldChange(t.id, "priority", v)}
-                    options={PRIORITIES}
-                    color={priorityMeta(t.priority).color}
+                    options={PRIORITY_OPTIONS}
                   />
                 </td>
                 <td style={{ padding: "10px 12px" }}>
@@ -2034,13 +2086,14 @@ function ListView({ tasks, sortKey, sortDir, onSort, onOpen, projects, onFieldCh
   );
 }
 
-function FilterSelect({ value, onChange, options, icon, light }) {
+function FilterSelect({ value, onChange, options, icon, light, minWidth }) {
   const label = options.find((o) => o.id === value)?.label ?? value;
   return (
     <Dropdown
       value={value}
       options={options}
       onChange={onChange}
+      minWidth={minWidth}
       renderTrigger={({ onClick }) => (
         <button
           type="button"
@@ -2329,6 +2382,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                 value={form.project}
                 options={[...projectNames.map((p) => ({ id: p, label: p })), { id: "__new__", label: "+ New project…" }]}
                 onChange={handleProjectChange}
+                minWidth={AGENT_MENU_MIN_WIDTH}
                 renderTrigger={({ onClick, open }) => (
                   <button
                     ref={projectRef}
@@ -2426,10 +2480,12 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
               <Dropdown
                 value={form.agent}
                 options={AGENT_OPTIONS}
+                minWidth={AGENT_MENU_MIN_WIDTH}
                 onChange={(v) => setAndSave("agent", v)}
                 block
                 renderTrigger={({ onClick, open }) => (
-                  <button type="button" onClick={onClick} className="detail-value" style={propValueStyle({ open, empty: !form.agent })}>
+                  <button type="button" onClick={onClick} className="detail-value" style={{ ...propValueStyle({ open, empty: !form.agent }), display: "flex", alignItems: "center", gap: 8 }}>
+                    <AgentIcon agent={form.agent} size={15} color={agentMeta(form.agent).color} />
                     {agentMeta(form.agent).label}
                   </button>
                 )}
@@ -2438,11 +2494,12 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
             <Field icon={<Flag size={12} />} label="Priority">
               <Dropdown
                 value={form.priority}
-                options={PRIORITIES}
+                options={PRIORITY_OPTIONS}
                 onChange={(v) => setAndSave("priority", v)}
                 block
                 renderTrigger={({ onClick, open }) => (
-                  <button type="button" onClick={onClick} className="detail-value" style={propValueStyle({ open })}>
+                  <button type="button" onClick={onClick} className="detail-value" style={{ ...propValueStyle({ open }), display: "flex", alignItems: "center", gap: 8 }}>
+                    <PriorityIcon priority={form.priority} />
                     {priorityMeta(form.priority).label}
                   </button>
                 )}
@@ -2885,6 +2942,10 @@ const headerLinkStyle = {
   cursor: "pointer", textDecoration: "none", fontFamily: "inherit",
 };
 
+// the drawer's small controls (project picker, hint buttons, menu rows) sit next to inline fields, so they
+// share their text size and come close to their height
+const CONTROL_SIZE = { fontSize: 13.5, padding: "8px 12px", borderRadius: 7 };
+
 const inputStyle = {
   width: "100%",
   padding: "8px 10px",
@@ -2935,9 +2996,10 @@ function propValueStyle({ open = false, empty = false } = {}) {
 const chipTextStyle = { overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 };
 
 const projectChipStyle = {
-  display: "inline-flex", alignItems: "center", gap: 5, maxWidth: 240, minWidth: 0, // a long name ellipsizes
-  border: "1px solid #E4E6EB", borderRadius: 6, padding: "3px 8px", background: "#fff",
-  fontSize: 12.5, fontFamily: "inherit", color: "#1D2027", cursor: "pointer", whiteSpace: "nowrap",
+  ...CONTROL_SIZE,
+  display: "inline-flex", alignItems: "center", gap: 6, maxWidth: 260, minWidth: 0, // a long name ellipsizes
+  border: "1px solid #E4E6EB", background: "#fff",
+  fontFamily: "inherit", color: "#1D2027", cursor: "pointer", whiteSpace: "nowrap",
 };
 
 
