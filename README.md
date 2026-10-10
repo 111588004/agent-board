@@ -49,8 +49,8 @@ From any other terminal, on any project. (These commands assume `agent-board` is
 
 ```bash
 agent-board list [--project=] [--status=] [--parent=] [--workspace=]
-agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--remember-as=<word>] [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes sets the Description field
-agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--notes="..."] [--confirm] [--workspace=]   # --notes overwrites the Description field; --confirm clears "unconfirmed"
+agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--remember-as=<word>] [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes sets the Description field; with --parent, --project can be left out
+agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--parent=<id>|none] [--notes="..."] [--confirm] [--workspace=]   # --notes overwrites the Description field; --parent=none detaches; --confirm clears "unconfirmed"
 agent-board delete <id> [--workspace=]
 agent-board note <id> "<text>" [--agent=<name>] [--workspace=]
 
@@ -93,6 +93,14 @@ agent-board config ask off     # CLI (npx: npx @limao.li.design/agent-board conf
 
 - MCP: tell your agent "turn off the board's questions". It calls the `set_ask_mode` tool, which agents are told to use only when you ask.
 - Claude Code mod: `/board-sync ask off`.
+
+**Subtasks** split one piece of work across agents: a parent ticket coordinates it, and each agent gets a subtask (`--parent=<id>` on create; the project comes from the parent). The board enforces the shape for the web board, the CLI and MCP alike:
+
+- Two levels only. A subtask can't have subtasks, and a ticket that has subtasks can't become one.
+- A parent is in the same project as its subtasks (tickets can't move projects). Naming a parent in another project when you create a ticket asks which you meant.
+- `agent-board update <id> --parent=<id>` moves a subtask under another parent; `--parent=none` detaches it. Each move is written into the ticket's notes.
+- A parent shows its subtasks' progress (`list` prints `[2/3 done]` and indents the subtasks under it). Its status never changes by itself: when the last subtask is done, the board says so (`note: All 3 subtasks of AB-4 are done`) and leaves moving the parent to you.
+- A ticket with subtasks can't be deleted. The error lists them, so you can delete them or detach them first.
 
 **Workspaces** are fully isolated boards (own projects, own tasks, own SQLite file) for separating contexts — e.g. personal projects vs. a client's. Everything defaults to a single `"default"` workspace if you never touch this; it's opt-in.
 
@@ -147,7 +155,8 @@ Rules the template teaches agents for opening a ticket in one call:
 2. Know the project? Create the ticket directly; no `list` first.
 3. `status`: `backlog` `in_progress` `review` `done`; `priority`: `low` `med` `high`. Aliases such as `doing`/`wip`/`進行中`/`urgent`/`高` are accepted and stored as the standard value; anything else is a 400 listing the allowed values.
 4. Description goes in `notes`; set `agent` to your own id.
-5. MCP clients get these rules automatically as the server's `instructions`.
+5. Work split across agents: one parent ticket, one subtask per agent (see **Subtasks** above). An agent tells you when every subtask is done instead of moving the parent itself.
+6. MCP clients get these rules automatically as the server's `instructions`.
 
 ## Data
 

@@ -289,8 +289,10 @@ function cli(...argv) {
       env: { ...process.env, AGENT_BOARD_URL: base, AGENT_BOARD_DIR: dir },
     });
     let err = "";
+    let out = "";
     p.stderr.on("data", (d) => (err += d));
-    p.on("exit", (code) => resolve({ code, err }));
+    p.stdout.on("data", (d) => (out += d));
+    p.on("exit", (code) => resolve({ code, err, out }));
   });
 }
 
@@ -341,6 +343,107 @@ test("aliases registered up front: create with aliases, add more, clashes refuse
   assert.equal(t.body.project, "Launch");
 });
 
+// ---- parent / subtask rules (two levels, same project) — the server enforces them for every client
+
+async function subtaskBoard(ws) {
+  await api("POST", "/api/workspaces", { name: ws });
+  await api("POST", `/api/w/${ws}/projects`, { name: "Alpha", prefix: "AL" });
+  await api("POST", `/api/w/${ws}/projects`, { name: "Beta", prefix: "BE" });
+  return (await create({ project: "Alpha", status: "in_progress" }, ws)).body;
+}
+
+test("subtasks: project comes from the parent; two levels, existing parent, same project enforced on create", async () => {
+  const P = await subtaskBoard("sub1");
+  const child = await create({ parentId: P.id }, "sub1");
+  assert.equal(child.status, 201);
+  assert.equal(child.body.project, "Alpha");
+  assert.equal(child.body.parentId, P.id);
+
+  const grandchild = await create({ parentId: child.body.id }, "sub1");
+  assert.equal(grandchild.status, 409);
+  assert.equal(grandchild.body.code, "parent_is_subtask");
+  const missing = await create({ parentId: "AL-99" }, "sub1");
+  assert.equal(missing.status, 400);
+  assert.equal(missing.body.code, "parent_not_found");
+
+  // parent in another project: asked (never guessed), and with asking off, refused
+  const cross = await create({ project: "Beta", parentId: P.id }, "sub1");
+  assert.equal(cross.status, 422);
+  assert.equal(cross.body.code, "needs_input");
+  assert.deepEqual(cross.body.options.map((o) => o.args), [
+    { project: "Alpha", parentId: P.id },
+    { project: "Beta", parentId: null },
+  ]);
+  const answered = await create({ project: "Beta", parentId: null }, "sub1");
+  assert.equal(answered.status, 201);
+  assert.equal(answered.body.parentId, null);
+  try {
+    await setAsk("off");
+    const off = await create({ project: "Beta", parentId: P.id }, "sub1");
+    assert.equal(off.status, 400);
+    assert.equal(off.body.code, "parent_other_project");
+  } finally {
+    await setAsk("on");
+  }
+});
+
+test("subtasks: re-parenting via PATCH is checked, logged, and an unchanged parentId is a no-op", async () => {
+  const P = await subtaskBoard("sub2");
+  const kid = (await create({ parentId: P.id }, "sub2")).body;
+  const loose = (await create({ project: "Alpha" }, "sub2")).body;
+  const beta = (await create({ project: "Beta" }, "sub2")).body;
+  const patch = (id, b) => api("PATCH", `/api/w/sub2/tasks/${id}`, b);
+
+  assert.equal((await patch(loose.id, { parentId: loose.id })).body.code, "self_parent");
+  const parentWithKids = await patch(P.id, { parentId: loose.id });
+  assert.equal(parentWithKids.status, 409);
+  assert.equal(parentWithKids.body.code, "has_subtasks");
+  assert.deepEqual(parentWithKids.body.subtasks, [kid.id]);
+  assert.equal((await patch(loose.id, { parentId: kid.id })).body.code, "parent_is_subtask");
+  assert.equal((await patch(beta.id, { parentId: P.id })).body.code, "parent_other_project");
+
+  const attached = await patch(loose.id, { parentId: P.id });
+  assert.equal(attached.status, 200);
+  assert.equal(attached.body.parentId, P.id);
+  assert.match(attached.body.notes, new RegExp(`parentId: – → ${P.id}`));
+  // a whole card sent back with the same parentId (older clients) passes without re-checking
+  assert.equal((await patch(loose.id, { ...attached.body, title: "renamed" })).status, 200);
+
+  assert.equal((await patch(loose.id, { parentId: null })).body.parentId, null);
+  assert.equal((await patch(kid.id, { parentId: "" })).body.parentId, null);
+});
+
+test("subtasks: progress on every task; the all-done hint never changes the parent's status", async () => {
+  const P = await subtaskBoard("sub3");
+  const a = (await create({ parentId: P.id }, "sub3")).body;
+  const b = (await create({ parentId: P.id }, "sub3")).body;
+  const patch = (id, body) => api("PATCH", `/api/w/sub3/tasks/${id}`, body);
+  const get = async (id) => (await api("GET", "/api/w/sub3/tasks")).body.find((t) => t.id === id);
+
+  const before = await get(P.id);
+  assert.deepEqual([before.subtaskCount, before.subtasksDone], [2, 0]);
+  assert.equal((await patch(a.id, { status: "done" })).body.hint, undefined);
+  const last = await patch(b.id, { status: "done" });
+  assert.match(last.body.hint, new RegExp(`All 2 subtasks of ${P.id} are done`));
+  const parent = await get(P.id);
+  assert.equal(parent.status, "in_progress");
+  assert.deepEqual([parent.subtaskCount, parent.subtasksDone], [2, 2]);
+  assert.equal((await patch(b.id, { title: "again" })).body.hint, undefined);
+});
+
+test("subtasks: a parent can't be deleted while it has subtasks — JSON 409 listing them", async () => {
+  const P = await subtaskBoard("sub4");
+  const kid = (await create({ parentId: P.id }, "sub4")).body;
+  const blocked = await fetch(`${base}/api/w/sub4/tasks/${P.id}`, { method: "DELETE" });
+  assert.equal(blocked.status, 409);
+  assert.match(blocked.headers.get("content-type"), /json/);
+  const body = await blocked.json();
+  assert.equal(body.code, "has_subtasks");
+  assert.deepEqual(body.subtasks, [kid.id]);
+  await api("PATCH", `/api/w/sub4/tasks/${kid.id}`, { parentId: null });
+  assert.equal((await api("DELETE", `/api/w/sub4/tasks/${P.id}`)).status, 204);
+});
+
 test("errors are always JSON: bad JSON body, unknown /api path", async () => {
   const bad = await fetch(`${base}/api/w/t/tasks`, { method: "POST", headers: { "content-type": "application/json" }, body: "{oops" });
   assert.equal(bad.status, 400);
@@ -383,4 +486,51 @@ test("ids: an existing board is backfilled from its tickets the first time the n
   const next = await create({ project: "Migrated" }, "legacy");
   assert.equal(next.status, 201);
   assert.equal(next.body.id, "MG-6");
+});
+
+// ---- the same rules through the CLI and MCP
+
+test("CLI: subtasks listed under their parent with progress; --parent=none detaches; empty --parent refused", async () => {
+  await api("POST", "/api/w/t/projects", { name: "Subtasks", prefix: "ST" });
+  const P = (await create({ project: "Subtasks" })).body;
+  const made = await cli("create", "--title=child", `--parent=${P.id}`);
+  assert.equal(made.code, 0);
+  assert.match(made.out, new RegExp(`subtask of ${P.id}`));
+  const kid = made.out.match(/created (\S+)/)[1];
+  const list = await cli("list", "--project=Subtasks");
+  assert.match(list.out, new RegExp(`${P.id} .*\\[0/1 done\\]`));
+  assert.match(list.out, new RegExp(`\\n  ↳ ${kid} `));
+  const done = await cli("update", kid, "--status=done");
+  assert.match(done.out, /note: The only subtask/);
+
+  const blocked = await cli("delete", P.id);
+  assert.equal(blocked.code, 1);
+  assert.match(blocked.err, /409 .*has 1 subtask/);
+  assert.match(blocked.err, new RegExp(`agent-board update ${kid} --parent=none`));
+  assert.ok(!blocked.err.includes("reach the server"));
+
+  const empty = await cli("update", kid, "--parent=");
+  assert.equal(empty.code, 1);
+  assert.match(empty.err, /--parent needs a ticket id/);
+  assert.equal((await cli("update", kid, "--parent=none")).code, 0);
+  assert.equal((await cli("delete", P.id)).code, 0);
+});
+
+test("MCP: update_task moves/detaches a parent; hint comes first; delete_task names the subtasks", async () => {
+  await api("POST", "/api/w/t/projects", { name: "McpSub", prefix: "MS" });
+  const call = (name, args) => rpc("tools/call", { name, arguments: { workspace: "t", ...args } });
+  const last = (r) => JSON.parse(r.content.at(-1).text);
+  const P = last(await call("create_task", { title: "parent", project: "McpSub" }));
+  const kid = last(await call("create_task", { title: "kid", parentId: P.id }));
+  assert.equal(kid.project, "McpSub");
+
+  const done = await call("update_task", { taskId: kid.id, status: "done" });
+  assert.match(done.content[0].text, /^Note: The only subtask/);
+  const del = await call("delete_task", { taskId: P.id });
+  assert.equal(del.isError, true);
+  assert.match(del.content[0].text, new RegExp(`${kid.id}.*update_task with taskId ${kid.id} and parentId null`));
+
+  assert.equal(last(await call("update_task", { taskId: kid.id, parentId: null })).parentId, null);
+  assert.equal(last(await call("update_task", { taskId: kid.id, parentId: P.id })).parentId, P.id);
+  assert.equal(last(await call("update_task", { taskId: kid.id, parentId: "none" })).parentId, null);
 });

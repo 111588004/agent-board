@@ -49,8 +49,8 @@ agent-board
 
 ```bash
 agent-board list [--project=] [--status=] [--parent=] [--workspace=]
-agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--remember-as=<word>] [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes 設定 Description 欄位
-agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--notes="..."] [--confirm] [--workspace=]   # --notes 會覆寫 Description 欄位；--confirm 清除「unconfirmed」
+agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--remember-as=<word>] [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes 設定 Description 欄位；有 --parent 時可以省略 --project
+agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--parent=<id>|none] [--notes="..."] [--confirm] [--workspace=]   # --notes 會覆寫 Description 欄位；--parent=none 解除 parent；--confirm 清除「unconfirmed」
 agent-board delete <id> [--workspace=]
 agent-board note <id> "<text>" [--agent=<name>] [--workspace=]
 
@@ -93,6 +93,14 @@ agent-board config ask off     # CLI（npx：npx @limao.li.design/agent-board co
 
 - MCP：跟你的 agent 說「關掉看板的提問」。它會呼叫 `set_ask_mode` 工具，而 agent 被告知只有在你要求時才能用它。
 - Claude Code mod：`/board-sync ask off`。
+
+**子任務（subtask）** 用來把一件工作分給多個 agent：一張 parent 單負責協調，每個 agent 各拿一張子任務（建立時加 `--parent=<id>`；專案會沿用 parent 的）。網頁看板、CLI、MCP 都遵守同一套規則，由看板強制執行：
+
+- 只有兩層。子任務不能再有子任務，已經有子任務的單也不能變成別人的子任務。
+- parent 和它的子任務在同一個專案（單不能換專案）。建立單時指定了另一個專案的 parent，看板會問你到底要哪一個。
+- `agent-board update <id> --parent=<id>` 把子任務移到另一個 parent 底下；`--parent=none` 解除。每次移動都會寫進單的 notes。
+- parent 會顯示子任務的進度（`list` 會印出 `[2/3 done]`，並把子任務縮排在它底下）。它的狀態不會自己變：最後一個子任務完成時，看板會告訴你（`note: All 3 subtasks of AB-4 are done`），要不要推進 parent 由你決定。
+- 有子任務的單不能刪除。錯誤訊息會列出那些子任務，讓你先刪掉或解除它們。
 
 **Workspace** 是完全隔離的看板（各自的專案、各自的任務、各自的 SQLite 檔案），用來區隔不同情境，例如個人專案和客戶的專案。如果你從不碰它，一切都預設在單一個 `"default"` workspace；要用才需要開。
 
@@ -147,7 +155,8 @@ claude mcp add --transport http agent-board http://localhost:4317/mcp
 2. 知道是哪個專案？直接開單，不必先 `list`。
 3. `status`：`backlog` `in_progress` `review` `done`；`priority`：`low` `med` `high`。像 `doing`/`wip`/`進行中`/`urgent`/`高` 這類別名也接受，並存成標準值；其他值會回 400，並列出允許的值。
 4. 描述放在 `notes`；`agent` 設成你自己的 id。
-5. MCP client 會自動透過伺服器的 `instructions` 拿到這些規則。
+5. 工作分給多個 agent 時：一張 parent 單，每個 agent 一張子任務（見上方「子任務」）。所有子任務都完成時，agent 會告訴你，而不是自己去推進 parent。
+6. MCP client 會自動透過伺服器的 `instructions` 拿到這些規則。
 
 ## 資料
 

@@ -49,6 +49,7 @@ export async function apiRequest(method, path, body) {
     err.status = res.status;
     err.code = data && data.code;
     err.input = data && data.input;
+    err.subtasks = data && data.subtasks;
     if (err.code === "needs_input") Object.assign(err, { question: data.question, options: data.options, answerArg: data.answerArg });
     throw err;
   }
@@ -57,11 +58,20 @@ export async function apiRequest(method, path, body) {
 
 // REST errors are caller-neutral; each front end appends its own next step.
 export function errorWithHint(e, surface) {
-  if (e.code !== "unknown_project") return e.message;
-  const name = e.input || "<name>";
-  return surface === "cli"
-    ? `${e.message} New project: agent-board project create "${name}" --prefix=<PREFIX>`
-    : `${e.message} New project: use the create_project tool (name, prefix).`;
+  const cli = surface === "cli";
+  if (e.code === "unknown_project") {
+    const name = e.input || "<name>";
+    return cli
+      ? `${e.message} New project: agent-board project create "${name}" --prefix=<PREFIX>`
+      : `${e.message} New project: use the create_project tool (name, prefix).`;
+  }
+  if (e.code === "has_subtasks" && e.subtasks?.length) {
+    const first = e.subtasks[0];
+    return cli
+      ? `${e.message} Detach one: agent-board update ${first} --parent=none`
+      : `${e.message} Detach one: update_task with taskId ${first} and parentId null.`;
+  }
+  return e.message;
 }
 
 // global settings (every workspace) live on the server: ask = on | new | off
