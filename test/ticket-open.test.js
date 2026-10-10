@@ -339,3 +339,12 @@ test("aliases registered up front: create with aliases, add more, clashes refuse
   assert.equal(t.status, 201);
   assert.equal(t.body.project, "Launch");
 });
+
+test("errors are always JSON: bad JSON body, unknown /api path", async () => {
+  const bad = await fetch(`${base}/api/w/t/tasks`, { method: "POST", headers: { "content-type": "application/json" }, body: "{oops" });
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).code, "bad_json");
+  const nope = await fetch(`${base}/api/nope`);
+  assert.equal(nope.status, 404);
+  assert.match(nope.headers.get("content-type"), /json/);
+});

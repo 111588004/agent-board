@@ -36,9 +36,16 @@ export async function apiRequest(method, path, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  // a body that isn't JSON (an old server's HTML error page) still carries the status: with no status,
+  // the CLI would report "can't reach the server" about a server that answered
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    if (res.ok) throw Object.assign(new Error(`unexpected response from the server: ${text.slice(0, 80)}`), { status: res.status });
+  }
   if (!res.ok) {
-    const err = new Error((data && data.error) || res.statusText);
+    const err = new Error((data && data.error) || `${res.status} ${res.statusText}`);
     err.status = res.status;
     err.code = data && data.code;
     err.input = data && data.input;

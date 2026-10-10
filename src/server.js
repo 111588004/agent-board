@@ -121,8 +121,31 @@ app.delete("/mcp", (req, res) => {
   res.status(405).json({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed." }, id: null });
 });
 
+// an /api path no route matched: JSON like every other API answer, not express's HTML page
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: `no such endpoint: ${req.method} ${req.originalUrl}`, code: "not_found" });
+});
+
 // serves the built web UI (npm run build in web/) — 404s harmlessly until built
 app.use(express.static(path.join(__dirname, "../web/dist")));
+
+// anything a route threw: JSON, never express's HTML error page — the clients read error bodies as
+// JSON, and an HTML 500 used to reach the CLI as "can't reach the server". Malformed JSON bodies are
+// the caller's 400; a foreign-key failure (a rule a route didn't catch) is a 409 conflict, not a crash.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  let status = err.status || err.statusCode || 500;
+  let code = typeof err.code === "string" ? err.code : undefined;
+  if (err.type === "entity.parse.failed") {
+    status = 400;
+    code = "bad_json";
+  } else if (code === "SQLITE_CONSTRAINT_FOREIGNKEY") {
+    status = 409;
+    code = "foreign_key";
+  }
+  if (status >= 500) console.error(err);
+  res.status(status).json({ error: status >= 500 ? `internal error: ${err.message}` : err.message, code });
+});
 
 // dev and npm default to different ports so both can run at once and be
 // compared directly — no more "stop one to test the other." PORT still wins
