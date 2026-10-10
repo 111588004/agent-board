@@ -91,6 +91,8 @@ function initSchema(db) {
   if (!db.prepare("PRAGMA table_info(tasks)").all().some((c) => c.name === "unconfirmed")) {
     db.exec("ALTER TABLE tasks ADD COLUMN unconfirmed TEXT");
   }
+  // subtask lookups (a parent's progress, "has subtasks?" checks) on every read
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parentId)");
 
   // added after release: the last ticket number handed out per prefix, so a number is never handed out
   // twice. MAX(seq)+1 reused the highest number once its ticket was deleted, and an agent still holding
@@ -147,6 +149,8 @@ export function getDb(workspaceName) {
   const dir = path.join(workspacesDir, name);
   fs.mkdirSync(dir, { recursive: true });
   const db = new Database(path.join(dir, "tasks.db"));
+  // parentId REFERENCES tasks(id) has to hold whatever SQLite build better-sqlite3 ships with
+  db.pragma("foreign_keys = ON");
   initSchema(db);
   if (name === "default") seedOnboarding(db);
   connections.set(name, db);
@@ -356,7 +360,7 @@ export function createTask(db, task) {
       `INSERT INTO tasks (id, seq, title, project, projectPrefix, parentId, agent, priority, status, notes, worktree, branch, link, dueDate, unconfirmed, createdAt, updatedAt)
        VALUES (@id, @seq, @title, @project, @projectPrefix, @parentId, @agent, @priority, @status, @notes, @worktree, @branch, @link, @dueDate, @unconfirmed, @createdAt, @updatedAt)`
     ).run({ unconfirmed: null, ...task, id, seq: next, createdAt: now, updatedAt: now });
-    return db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
+    return getTask(db, id);
   })(task);
 }
 
@@ -371,6 +375,68 @@ export function carryIdCounter(db, fromPrefix, toPrefix) {
   ).run(toPrefix, from.lastSeq);
 }
 
+// a task row plus its subtasks' progress. Computed on read, never stored, so it can't drift from the
+// subtasks themselves. Filter on t.<column> — the joined counts have a parentId column too.
+export const TASK_SELECT = `SELECT t.*, COALESCE(c.n, 0) AS subtaskCount, COALESCE(c.d, 0) AS subtasksDone
+  FROM tasks t LEFT JOIN (
+    SELECT parentId, COUNT(*) AS n, SUM(status = 'done') AS d FROM tasks WHERE parentId IS NOT NULL GROUP BY parentId
+  ) c ON c.parentId = t.id`;
+
+export function getTask(db, id) {
+  return db.prepare(`${TASK_SELECT} WHERE t.id = ?`).get(id);
+}
+
+export function subtaskIds(db, id) {
+  return db.prepare("SELECT id FROM tasks WHERE parentId = ? ORDER BY createdAt").all(id).map((r) => r.id);
+}
+
+// Tickets nest two levels: a parent can't itself be a subtask, a subtask can't have subtasks, and both
+// sit in the same project (tickets can't move projects). task: { id? (absent when creating), project }.
+// -> { parent } or { status, body } — the cross-project case is left to the caller (POST asks, PATCH refuses).
+export function checkParent(db, task, parentId) {
+  if (task.id && parentId === task.id) {
+    return { status: 400, body: { error: `${task.id} can't be its own parent`, code: "self_parent" } };
+  }
+  const parent = db.prepare("SELECT id, title, project, status, parentId FROM tasks WHERE id = ?").get(parentId);
+  if (!parent) {
+    return { status: 400, body: { error: `there's no task ${parentId} to be the parent — check the id`, code: "parent_not_found" } };
+  }
+  if (parent.parentId) {
+    return {
+      status: 409,
+      body: {
+        error: `${parentId} is itself a subtask of ${parent.parentId} — tasks nest two levels only; use ${parent.parentId} as the parent`,
+        code: "parent_is_subtask",
+        parentOf: parent.parentId,
+      },
+    };
+  }
+  if (task.id) {
+    const subtasks = subtaskIds(db, task.id);
+    if (subtasks.length) {
+      return {
+        status: 409,
+        body: {
+          error: `${task.id} has subtasks (${subtasks.join(", ")}), so it can't become a subtask — tasks nest two levels only`,
+          code: "has_subtasks",
+          subtasks,
+        },
+      };
+    }
+  }
+  return { parent };
+}
+
+// a subtask just went done or moved: if that leaves every subtask of its parent done while the parent
+// isn't, say so — the parent's status is never changed for it (moving it on is the user's call)
+export function allDoneHint(db, parentId) {
+  if (!parentId) return undefined;
+  const p = getTask(db, parentId);
+  if (!p || p.status === "done" || !p.subtaskCount || p.subtasksDone < p.subtaskCount) return undefined;
+  const n = p.subtaskCount;
+  return `${n === 1 ? "The only subtask" : `All ${n} subtasks`} of ${p.id} ${n === 1 ? "is" : "are"} done — ${p.id} is still ${p.status}; move it on when ready.`;
+}
+
 // used by the CLI/MCP `note` verb (append) — distinct from the "notes" PATCH
 // field (full overwrite, used by the UI's free-edit Description box).
 export function appendNote(db, id, text, agent) {
@@ -380,5 +446,5 @@ export function appendNote(db, id, text, agent) {
   if (!row) return null;
   const notes = row.notes ? `${row.notes}\n${line}` : line;
   db.prepare("UPDATE tasks SET notes = ?, updatedAt = ? WHERE id = ?").run(notes, Date.now(), id);
-  return db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
+  return getTask(db, id);
 }
