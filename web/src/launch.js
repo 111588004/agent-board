@@ -11,7 +11,7 @@ export const LAUNCH_TARGETS = [
   { id: "codex", label: "Codex", cmd: "codex" },
   { id: "gemini", label: "Gemini CLI", cmd: "gemini -i" },
   { id: "pi", label: "Pi", cmd: "pi" },
-  { id: "generic", label: "Any agent (prompt only)", cmd: null },
+  { id: "generic", label: "Any agent", cmd: null }, // a prompt only — the menu says so (App.jsx LaunchCommand)
 ];
 
 export function defaultLaunchTarget(agent) {

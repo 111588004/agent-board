@@ -1,9 +1,9 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { Fragment, useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil, Copy, Check, HelpCircle, BookOpen } from "lucide-react";
+import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil, Copy, Check, HelpCircle, BookOpen, CircleAlert, CircleDashed, AlignLeft } from "lucide-react";
 import { BrandMark } from "./theme.jsx";
 import * as api from "./api.js";
-import { LAUNCH_TARGETS, buildLaunchText, defaultLaunchTarget } from "./launch.js";
+import { LAUNCH_TARGETS, buildLaunchText } from "./launch.js";
 import Tour, { TOUR_SEEN_KEY, readStore, writeStore, demoTicket, isSeedProject, guideUrl } from "./Tour.jsx";
 
 const COLUMNS = [
@@ -130,6 +130,7 @@ export default function AgentBoard() {
   const [projectFilter, setProjectFilter] = useState("all");
   const [agentFilter, setAgentFilter] = useState("all");
   const [modalCard, setModalCard] = useState(null); // null = closed, {} = new
+  const [toast, setToast] = useState(null); // {key, message, card?}
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [dragId, setDragId] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null);
@@ -411,6 +412,8 @@ export default function AgentBoard() {
         const created = await api.createTask(card);
         setCards((prev) => [...prev, created]);
         setModalCard(null);
+        // the drawer closes on create, so say where the ticket went and offer a way back to it
+        setToast({ key: Date.now(), message: `Created ${created.id}`, card: created });
       }
     } catch (e) {
       reportError("Save", e);
@@ -422,6 +425,7 @@ export default function AgentBoard() {
       await api.deleteTask(id);
       setCards((prev) => prev.filter((c) => c.id !== id));
       setModalCard(null);
+      setToast({ key: Date.now(), message: `Deleted ${id}` }); // the drawer closes, so confirm it went
     } catch (e) {
       reportError("Delete", e);
     }
@@ -522,6 +526,8 @@ export default function AgentBoard() {
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap');
         * { box-sizing: border-box; }
         html, body, #root { height: 100%; margin: 0; }
+        /* menus are portaled to <body>, outside the root div's font — without this they render in the browser's serif */
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
         ::-webkit-scrollbar { height: 8px; width: 8px; }
         ::-webkit-scrollbar-thumb { background: #C7CBD4; border-radius: 8px; }
         .mono { font-family: 'JetBrains Mono', monospace; }
@@ -530,9 +536,15 @@ export default function AgentBoard() {
         .col-drop { transition: background .15s ease; }
         select:focus, input:focus, textarea:focus { outline: 2px solid #4C8DFF; outline-offset: 1px; }
         @keyframes drawer-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
-        .drawer-title:focus { outline: none; background: #FAFAFB; }
-        .drawer-collapse summary { cursor: pointer; list-style: none; }
-        .drawer-collapse summary::-webkit-details-marker { display: none; }
+        .drawer-title { border-bottom: 2px solid transparent; }
+        .drawer-title:focus { outline: none; border-bottom-color: #4C8DFF; } /* the board's focus color, as on every input */
+        .detail-value { background: transparent; }
+        /* Development fields: inline edit on a real input — reads as text at rest, the Development input box on focus
+           (plus the global input:focus ring), so it matches the property values above */
+        .inline-input { border: 1px solid transparent; background: transparent; }
+        .inline-input:hover { background: #F4F5F7; }
+        .inline-input:focus { border-color: #E4E6EB; background: #FAFAFB; }
+        .inline-input::placeholder { color: #8B8D98; }
         .detail-value:hover { background: #F4F5F7; }
         ::placeholder { color: #C7CBD4; }
         .cal-day:not(:disabled):not(.cal-day--selected):hover { background: #F4F5F7; }
@@ -863,6 +875,17 @@ export default function AgentBoard() {
           onDelete={deleteCard}
           onCreateProject={createProject}
           onOpenSubtask={(status, parentId) => openNew(status, parentId)}
+          onToast={(message) => setToast({ key: Date.now(), message })}
+        />
+      )}
+
+      {toast && (
+        <Toast
+          key={toast.key}
+          message={toast.message}
+          actionLabel={toast.card ? "Open" : null}
+          onAction={() => { openCard(toast.card); setToast(null); }}
+          onDone={() => setToast(null)}
         />
       )}
 
@@ -881,6 +904,57 @@ export default function AgentBoard() {
           actions={tourActions}
         />
       )}
+    </div>
+  );
+}
+
+// short confirmation after an action whose result isn't otherwise on screen (e.g. the drawer closed);
+// errors still go through reportError, and form problems are shown on the field itself.
+const TOAST_MS = 4000;
+
+function Toast({ message, actionLabel, onAction, onDone }) {
+  const [hover, setHover] = useState(false);
+  useEffect(() => {
+    if (hover) return; // keep it up while the pointer is on it, so "Open" can still be clicked
+    const t = setTimeout(onDone, TOAST_MS);
+    return () => clearTimeout(t);
+  }, [hover]);
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        position: "fixed", left: "50%", bottom: 84, transform: "translateX(-50%)", zIndex: 70, // above the drawer footer, not on it
+        display: "flex", alignItems: "center", gap: 12, maxWidth: "calc(100vw - 32px)",
+        background: "var(--ab-chrome)", color: "#fff", borderRadius: 8, padding: "10px 12px 10px 14px",
+        fontSize: 13, boxShadow: "0 6px 24px rgba(0,0,0,0.18)",
+      }}
+    >
+      <Check size={15} color="var(--ab-accent-on-dark)" style={{ flexShrink: 0 }} />
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{message}</span>
+      {actionLabel && (
+        <button
+          type="button"
+          onClick={onAction}
+          style={{
+            background: "none", border: "none", color: "var(--ab-accent-on-dark)", fontWeight: 700,
+            fontSize: 13, cursor: "pointer", padding: "2px 4px", fontFamily: "inherit",
+          }}
+        >
+          {actionLabel}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onDone}
+        title="Dismiss"
+        aria-label="Dismiss"
+        style={{ background: "none", border: "none", color: "#8B8D98", cursor: "pointer", padding: 2, display: "flex" }}
+      >
+        <X size={14} />
+      </button>
     </div>
   );
 }
@@ -937,7 +1011,9 @@ function SortHeader({ label, sortKeyName, sortKey, sortDir, onSort, align }) {
 // getBoundingClientRect() — otherwise an absolutely-positioned menu gets
 // silently clipped by any ancestor with overflow:auto (e.g. the List view's
 // scrollable table wrapper), which is exactly what happened before this.
-function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left", block = false }) {
+// options: [{ id, label, description?, dividerBefore? }]; title is an optional heading over the options
+// placement "top" opens the menu above the trigger (for triggers near the bottom of the screen)
+function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left", block = false, title, placement = "bottom" }) {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
   const triggerRef = useRef(null);
@@ -945,7 +1021,10 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left",
 
   function openMenu() {
     const rect = triggerRef.current.getBoundingClientRect();
-    setMenuPos({ top: rect.bottom + 4, left: rect.left, right: window.innerWidth - rect.right });
+    setMenuPos({
+      ...(placement === "top" ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
+      left: rect.left, right: window.innerWidth - rect.right,
+    });
     setOpen(true);
   }
 
@@ -957,7 +1036,10 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left",
       setOpen(false);
     }
     function onKeyDown(e) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Escape") return;
+      // handled here: the drawer's own Escape (on window, runs after this) must not also close the drawer
+      e.preventDefault();
+      setOpen(false);
     }
     function onScroll() {
       setOpen(false);
@@ -974,7 +1056,7 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left",
 
   return (
     <span ref={triggerRef} style={{ display: block ? "block" : "inline-block" }}>
-      {renderTrigger({ onClick: (e) => { e.stopPropagation(); open ? setOpen(false) : openMenu(); } })}
+      {renderTrigger({ open, onClick: (e) => { e.stopPropagation(); open ? setOpen(false) : openMenu(); } })}
       {open && menuPos && createPortal(
         <div
           ref={menuRef}
@@ -982,6 +1064,7 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left",
           style={{
             position: "fixed",
             top: menuPos.top,
+            bottom: menuPos.bottom,
             [menuAlign]: menuAlign === "right" ? menuPos.right : menuPos.left,
             zIndex: 1000,
             background: "#fff",
@@ -992,9 +1075,15 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left",
             minWidth: 130,
           }}
         >
+          {title && (
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#6B6F79", textTransform: "uppercase", letterSpacing: 0.4, padding: "6px 10px 4px" }}>
+              {title}
+            </div>
+          )}
           {options.map((o) => (
+            <Fragment key={o.id ?? "__none__"}>
+            {o.dividerBefore && <div style={{ borderTop: "1px solid #E4E6EB", margin: "4px 0" }} />}
             <div
-              key={o.id ?? "__none__"}
               onClick={() => { onChange(o.id); setOpen(false); }}
               style={{
                 padding: "6px 10px",
@@ -1010,7 +1099,11 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left",
               onMouseLeave={(e) => { if (o.id !== value) e.currentTarget.style.background = "transparent"; }}
             >
               {o.label}
+              {o.description && (
+                <div style={{ fontSize: 11.5, fontWeight: 400, color: "#8B8D98", marginTop: 1 }}>{o.description}</div>
+              )}
             </div>
+            </Fragment>
           ))}
         </div>,
         document.body
@@ -1401,6 +1494,70 @@ function ProjectFilterSelect({ value, projects, onChange, onRequestCreate, onRen
 // focused form, not a persistent editing surface) with the name/prefix
 // fields side by side so picking a project's ticket-id prefix isn't a
 // separate prompt() step.
+// asks before a task is deleted. In-app, not window.confirm: some embedded browsers don't implement the native
+// dialogs, and the board's own look is clearer about what goes away. A task with subtasks can't be deleted (the
+// server refuses), so that case says so up front instead of letting the request fail.
+function ConfirmDeleteDialog({ card, subtasks, onCancel, onConfirm }) {
+  const blocked = subtasks > 0;
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={onCancel} style={{ position: "absolute", inset: 0, background: "rgba(15,16,20,0.32)" }} />
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-delete-title"
+        aria-describedby="confirm-delete-body"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "relative", background: "#fff", borderRadius: 10, boxShadow: "0 16px 48px rgba(9,10,12,0.28)",
+          width: 420, maxWidth: "92vw", padding: 20,
+        }}
+      >
+        <div id="confirm-delete-title" style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>
+          {blocked
+            ? <><span className="mono">{card.id}</span> can't be deleted yet</>
+            : <>Delete <span className="mono">{card.id}</span>?</>}
+        </div>
+        <div id="confirm-delete-body" style={{ fontSize: 13, lineHeight: 1.5, color: "#31343B", marginBottom: 18 }}>
+          {blocked ? (
+            <>
+              <b>{card.title}</b> has {subtasks} subtask{subtasks === 1 ? "" : "s"}. Delete {subtasks === 1 ? "it" : "them"} first —
+              a task with subtasks can't be deleted.
+            </>
+          ) : (
+            <>
+              <b>{card.title}</b> and its notes will be deleted for everyone on this board, and agents that have{" "}
+              <span className="mono">{card.id}</span> won't find it any more. This can't be undone.
+            </>
+          )}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button
+            type="button"
+            autoFocus // the safe choice gets the focus, so a stray Enter doesn't delete
+            onClick={onCancel}
+            style={{ background: "none", border: "1px solid #E4E6EB", borderRadius: 7, padding: "7px 14px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}
+          >
+            {blocked ? "OK" : "Cancel"}
+          </button>
+          {!blocked && (
+            <button
+              type="button"
+              onClick={onConfirm}
+              style={{
+                background: ERROR_COLOR, color: "#fff", border: "none", borderRadius: 7, padding: "7px 14px",
+                fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+              }}
+            >
+              Delete task
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NewProjectDialog({ onClose, onCreate }) {
   const [name, setName] = useState("");
   const [prefix, setPrefix] = useState(""); // stays empty until the user actually types — the suggestion is a placeholder, not a value
@@ -1695,7 +1852,10 @@ function DueDateField({ value, onChange }) {
       setOpen(false);
     }
     function onKeyDown(e) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Escape") return;
+      // handled here: the drawer's own Escape (on window, runs after this) must not also close the drawer
+      e.preventDefault();
+      setOpen(false);
     }
     function onScroll() {
       setOpen(false);
@@ -1716,9 +1876,9 @@ function DueDateField({ value, onChange }) {
         type="button"
         onClick={(e) => { e.stopPropagation(); open ? setOpen(false) : openMenu(); }}
         className="detail-value"
-        style={{ ...detailInputStyle, color: value ? "#1D2027" : "#8B8D98" }}
+        style={propValueStyle({ open, empty: !value })}
       >
-        {value || "No due date"}
+        {value || "Add due date"}
       </button>
       {open && menuPos && createPortal(
         <div
@@ -1914,11 +2074,23 @@ const DRAWER_MIN_WIDTH = 360;
 const DRAWER_MAX_WIDTH_RATIO = 0.8;
 const DRAWER_WIDTH_KEY = "ab-drawer-width";
 
-function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreateProject, onOpenSubtask }) {
+function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreateProject, onOpenSubtask, onToast }) {
   const [form, setForm] = useState(card);
-  const [editingNotes, setEditingNotes] = useState(!card.notes || !card.notes.trim());
+  // read view first, editor on click (inline edit) — for a new task too, so the empty box isn't mistaken for a field to fill
+  const [editingNotes, setEditingNotes] = useState(false);
+  // Development starts open only when it has something in it, so a new task's drawer stays short
+  const [devOpen, setDevOpen] = useState(Boolean(card.worktree || card.branch || card.link));
   const [notesDraft, setNotesDraft] = useState(card.notes || "");
   const notesRef = useRef(null);
+  // a new task needs a title and a project. Create stays clickable (a greyed-out button can't explain itself);
+  // pressing it with one missing follows Jira's create dialog, which these borderless fields mirror: a red underline
+  // on each missing field and one "Complete required fields" message by the Create button. The project is never
+  // pre-picked: a ticket can't move projects later, and the board asks rather than guesses.
+  const [showErrors, setShowErrors] = useState(false);
+  const titleRef = useRef(null);
+  const projectRef = useRef(null);
+  const titleError = showErrors && !form.title.trim();
+  const projectError = showErrors && !form.project;
   const [drawerWidth, setDrawerWidth] = useState(
     () => Number(readStore(DRAWER_WIDTH_KEY)) || 460
   );
@@ -2003,21 +2175,30 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
     onClose();
   }
 
-  async function handleProjectChange(newValue) {
-    if (newValue === "__new__") {
-      const name = window.prompt("New project name");
-      if (!name) return;
-      const prefix = window.prompt("Project prefix (used in ticket ids, e.g. AB → AB-1)");
-      if (!prefix) return;
-      try {
-        const project = await onCreateProject(name, prefix.toUpperCase());
-        setAndSave("project", project.name);
-      } catch (err) {
-        window.alert(`Failed to create project: ${err.message}`);
-      }
-    } else {
-      setAndSave("project", newValue);
+  function create() {
+    if (!form.title.trim() || !form.project) {
+      setShowErrors(true);
+      (!form.title.trim() ? titleRef : projectRef).current?.focus(); // first missing field, top to bottom
+      return;
     }
+    // the description box is a draft until its own Save; on a new task Create is the only save, so include it
+    onSave({ ...form, notes: notesDraft });
+  }
+
+  // "+ New project…" opens the same dialog as the board's project menu (prefix suggestions, aliases,
+  // inline errors). It used window.prompt, which some embedded browsers don't implement — it threw and nothing opened.
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  function handleProjectChange(newValue) {
+    if (newValue === "__new__") setNewProjectOpen(true);
+    else setAndSave("project", newValue);
+  }
+
+  async function createProjectHere(name, prefix, aliases) {
+    const project = await onCreateProject(name, prefix, aliases);
+    setAndSave("project", project.name);
+    return project;
   }
 
   function applyMd(prefix, suffix = prefix, placeholder = "") {
@@ -2076,13 +2257,18 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
   }
 
   function cancelNotes() {
-    setNotesDraft(form.notes);
+    setNotesDraft(form.notes || "");
     setEditingNotes(false);
   }
 
   useEffect(() => {
     function onKey(e) {
-      if (e.key === "Escape") closeAndSave();
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      // Escape closes the topmost layer only: an open menu (handled above) or the New project dialog,
+      // not the drawer (and the draft) under it
+      if (confirmDelete) setConfirmDelete(false);
+      else if (newProjectOpen) setNewProjectOpen(false);
+      else closeAndSave();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -2131,12 +2317,53 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
             padding: "14px 18px", borderBottom: "1px solid #E4E6EB", flexShrink: 0,
           }}
         >
-          <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: "#8B8D98", letterSpacing: 0.5 }}>
-            {card.id || "New task"}
-          </span>
-          <button onClick={closeAndSave} style={{ background: "none", border: "none", cursor: "pointer", color: "#8B8D98", display: "flex" }}>
-            <X size={18} />
-          </button>
+          {/* project › ticket, on top like Jira's "KAN | Feature" and Linear's team: the project sets the id */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexShrink: 1 }}>
+            {card.id ? (
+              // a ticket can't move projects, so here it's a label, not a control
+              <span style={{ ...projectChipStyle, cursor: "default" }} title="A ticket can't move to another project">
+                <Folder size={13} style={{ flexShrink: 0 }} /> <span style={chipTextStyle}>{form.project}</span>
+              </span>
+            ) : (
+              <Dropdown
+                value={form.project}
+                options={[...projectNames.map((p) => ({ id: p, label: p })), { id: "__new__", label: "+ New project…" }]}
+                onChange={handleProjectChange}
+                renderTrigger={({ onClick, open }) => (
+                  <button
+                    ref={projectRef}
+                    type="button"
+                    onClick={onClick}
+                    aria-label={form.project ? `Project: ${form.project}` : "Select project"}
+                    aria-required
+                    aria-invalid={projectError}
+                    aria-describedby={projectError ? "new-task-required-error" : undefined}
+                    style={{
+                      ...projectChipStyle,
+                      color: form.project ? "#1D2027" : "#6B6F79",
+                      ...(open && FOCUS_RING),
+                      ...(projectError && { borderColor: ERROR_COLOR, color: ERROR_COLOR }),
+                    }}
+                  >
+                    <Folder size={13} style={{ flexShrink: 0 }} />
+                    <span style={chipTextStyle}>{form.project || "Select project"}</span>
+                    <ChevronDown size={12} style={{ flexShrink: 0 }} />
+                  </button>
+                )}
+              />
+            )}
+            <span style={{ color: "#C7CBD4" }}>›</span>
+            <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: "#8B8D98", letterSpacing: 0.5, whiteSpace: "nowrap", flexShrink: 0 }}>
+              {card.id || "New task"}
+            </span>
+          </div>
+          {/* in a narrow drawer the autosave note is dropped, so the project and the id keep their room */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, marginLeft: 10 }}>
+            {card.id && drawerWidth >= 520 && <span style={{ fontSize: 11.5, color: "#9599A3", whiteSpace: "nowrap" }}>Changes save automatically</span>}
+            <button onClick={closeAndSave} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "#8B8D98", display: "flex", flexShrink: 0 }}>
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px" }}>
@@ -2156,113 +2383,96 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
             </div>
           )}
           <input
-            autoFocus
+            ref={titleRef}
+            autoFocus={!card.id} // a new task starts typing its title; an existing one just opens to read
             className="drawer-title"
             value={form.title}
             onChange={(e) => set("title", e.target.value)}
             onBlur={blurSave}
-            placeholder="What is the agent doing?"
+            placeholder="What needs to be done?"
+            aria-label="Title"
+            aria-required={!card.id}
+            aria-invalid={titleError}
+            aria-describedby={titleError ? "new-task-required-error" : undefined}
             style={{
-              width: "100%", border: "1px solid transparent", borderRadius: 6, padding: "4px 6px",
-              marginLeft: -6, fontSize: 17, fontWeight: 700, fontFamily: "inherit", background: "transparent",
-              marginBottom: 14,
+              // underline only (the .drawer-title rule): none at rest, 2px accent while editing, 2px red when
+              // missing — Material 3's active indicator is 2px focused, with 8px between text and line
+              width: "100%", borderTop: "none", borderLeft: "none", borderRight: "none", borderRadius: 0,
+              padding: "4px 6px 8px", marginLeft: -6, marginBottom: 14,
+              fontSize: 17, fontWeight: 700, fontFamily: "inherit", background: "transparent",
+              ...(titleError && { borderBottomColor: ERROR_COLOR }),
             }}
           />
 
-          {/* status — its own pill, like Jira's "To Do ▾" button above the Details block */}
-          <div style={{ marginBottom: 16 }}>
-            <Dropdown
-              value={form.status}
-              options={COLUMNS}
-              onChange={(v) => setAndSave("status", v)}
-              renderTrigger={({ onClick }) => (
-                <button
-                  type="button"
-                  onClick={onClick}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 4,
-                    border: "none", borderRadius: 20, padding: "6px 10px 6px 12px",
-                    fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-                    background: `${statusMeta(form.status).color}1A`, color: statusMeta(form.status).color,
-                  }}
-                >
-                  {statusMeta(form.status).label}
-                  <ChevronDown size={12} />
-                </button>
-              )}
-            />
-          </div>
-
-          {/* details — compact vertical rows, icon + label left, value right (mirrors Jira's Details panel) */}
-          <div style={{ border: "1px solid #E4E6EB", borderRadius: 8, padding: "2px 10px", marginBottom: 16 }}>
-            <DetailRow icon={<Folder size={13} />} label="Project">
+          {/* properties — Field labels and spacing like Description and Development; each value reads as text until
+              clicked (inline edit). Two columns to keep the block short, gapped like the Worktree/Branch row; auto-fit
+              drops to one when the drawer is dragged narrower than two 180px columns. */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", columnGap: 10 }}>
+            <Field icon={<CircleDashed size={12} />} label="Status">
               <Dropdown
-                value={form.project}
-                options={[...projectNames.map((p) => ({ id: p, label: p })), { id: "__new__", label: "+ New project…" }]}
-                onChange={handleProjectChange}
-                menuAlign="right"
+                value={form.status}
+                options={COLUMNS}
+                onChange={(v) => setAndSave("status", v)}
                 block
-                renderTrigger={({ onClick }) => (
-                  <button type="button" onClick={onClick} className="detail-value" style={{ ...detailInputStyle, color: form.project ? "#1D2027" : "#8B8D98" }}>
-                    {form.project || "Select project"}
+                renderTrigger={({ onClick, open }) => (
+                  <button type="button" onClick={onClick} className="detail-value" style={propValueStyle({ open })}>
+                    <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: statusMeta(form.status).color, marginRight: 7, verticalAlign: 1 }} />
+                    {statusMeta(form.status).label}
                   </button>
                 )}
               />
-            </DetailRow>
-            <DetailRow icon={<Bot size={13} />} label="Agent">
+            </Field>
+            <Field icon={<Bot size={12} />} label="Agent">
               <Dropdown
                 value={form.agent}
                 options={AGENT_OPTIONS}
                 onChange={(v) => setAndSave("agent", v)}
-                menuAlign="right"
                 block
-                renderTrigger={({ onClick }) => (
-                  <button type="button" onClick={onClick} className="detail-value" style={{ ...detailInputStyle, color: form.agent ? "#1D2027" : "#8B8D98" }}>
+                renderTrigger={({ onClick, open }) => (
+                  <button type="button" onClick={onClick} className="detail-value" style={propValueStyle({ open, empty: !form.agent })}>
                     {agentMeta(form.agent).label}
                   </button>
                 )}
               />
-            </DetailRow>
-            <DetailRow icon={<Flag size={13} />} label="Priority">
+            </Field>
+            <Field icon={<Flag size={12} />} label="Priority">
               <Dropdown
                 value={form.priority}
                 options={PRIORITIES}
                 onChange={(v) => setAndSave("priority", v)}
-                menuAlign="right"
                 block
-                renderTrigger={({ onClick }) => (
-                  <button type="button" onClick={onClick} className="detail-value" style={detailInputStyle}>
+                renderTrigger={({ onClick, open }) => (
+                  <button type="button" onClick={onClick} className="detail-value" style={propValueStyle({ open })}>
                     {priorityMeta(form.priority).label}
                   </button>
                 )}
               />
-            </DetailRow>
-            <DetailRow icon={<CalendarDays size={13} />} label="Due date">
+            </Field>
+            <Field icon={<CalendarDays size={12} />} label="Due date">
               <DueDateField value={form.dueDate || ""} onChange={(v) => setAndSave("dueDate", v)} />
-            </DetailRow>
-            <DetailRow icon={<CornerDownRight size={13} />} label="Parent" last>
+            </Field>
+            <Field icon={<CornerDownRight size={12} />} label="Parent">
               <Dropdown
                 value={form.parentId || ""}
                 options={[{ id: "", label: "— none —" }, ...parentCandidates.map((p) => ({ id: p.id, label: `${p.id} — ${p.title}` }))]}
                 onChange={(v) => setAndSave("parentId", v || null)}
-                menuAlign="right"
                 block
-                renderTrigger={({ onClick }) =>
+                renderTrigger={({ onClick, open }) =>
                   parentCandidates.length === 0 && !form.parentId ? (
-                    <span className="detail-value" style={{ ...detailInputStyle, color: "#C7CBD4", cursor: "default" }}>— none —</span>
+                    // nothing to nest under (no project yet, or no top-level tasks in it): an empty value, not a control
+                    <span style={{ ...propValueStyle({ empty: true }), cursor: "default", display: "block" }}>-</span>
                   ) : (
-                    <button type="button" onClick={onClick} className="detail-value" style={{ ...detailInputStyle, color: form.parentId ? "#1D2027" : "#8B8D98" }}>
-                      {form.parentId ? `${form.parentId} — ${cards.find((c) => c.id === form.parentId)?.title ?? ""}` : "— none —"}
+                    <button type="button" onClick={onClick} className="detail-value" style={propValueStyle({ open, empty: !form.parentId })}>
+                      {form.parentId ? `${form.parentId} — ${cards.find((c) => c.id === form.parentId)?.title ?? ""}` : "Add parent"}
                     </button>
                   )
                 }
               />
-            </DetailRow>
+            </Field>
           </div>
 
-          {card.id && <LaunchCommand card={card} />}
 
-          <Field label="Description">
+          <Field icon={<AlignLeft size={12} />} label="Description">
             {editingNotes ? (
               <div>
                 <div
@@ -2286,17 +2496,18 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                 </div>
                 <textarea
                   ref={notesRef}
-                  autoFocus={Boolean(card.id)} // a new card is already in edit mode; don't pull focus off the title
+                  autoFocus // the editor only opens from a click on the description
                   value={notesDraft}
                   onChange={(e) => setNotesDraft(e.target.value)}
-                  placeholder="markdown — blockers, checklist, links…"
+                  placeholder={card.id ? "markdown — blockers, checklist, links…" : "Optional — markdown: blockers, checklist, links…"}
                   style={{
                     ...inputStyle, borderRadius: "0 0 7px 7px", resize: "none", overflowY: "auto",
                     fontFamily: "'JetBrains Mono', monospace", fontSize: 12,
                     height: 240, minHeight: 240, maxHeight: 480,
                   }}
                 />
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                {/* a new task saves its description with Create — a second Save here read as "already saved" */}
+                {card.id && <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <button
                     onClick={saveNotes}
                     style={{
@@ -2315,10 +2526,10 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
                   >
                     Cancel
                   </button>
-                </div>
+                </div>}
               </div>
-            ) : form.notes.trim() ? (
-              <div className="notes-view" style={{ position: "relative", padding: "9px 11px", borderRadius: 7 }}>
+            ) : (form.notes || "").trim() ? ( // notes can be null (a ticket created without a description)
+              <div className="notes-view" style={{ position: "relative", padding: "9px 11px", marginLeft: -11, borderRadius: 7 }}>
                 <button
                   type="button"
                   title="Edit description"
@@ -2338,73 +2549,103 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
               </div>
             ) : (
               <button
+                type="button"
+                className="detail-value"
                 onClick={() => { setNotesDraft(""); setEditingNotes(true); }}
-                style={{
-                  width: "100%", textAlign: "left", background: "none", border: "1px dashed #E4E6EB",
-                  borderRadius: 7, padding: "9px 11px", fontSize: 12.5, color: "#9599A3", cursor: "pointer",
-                }}
+                style={propValueStyle({ empty: true })}
               >
-                + Add a description
+                Add a description — blockers, checklist, links…
               </button>
             )}
           </Field>
 
-          <details className="drawer-collapse" open style={{ marginTop: 4 }}>
-            <summary style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 0", borderTop: "1px solid #E4E6EB" }}>
-              <ChevronRight size={13} color="#8B8D98" style={{ transition: "transform .12s" }} className="dev-chevron" />
-              <FolderGit2 size={13} color="#6B6F79" />
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#6B6F79", textTransform: "uppercase", letterSpacing: 0.5 }}>
+          {/* Development — a collapsible card like Jira's Details panel: a header row (chevron, title, and a summary
+              while collapsed) set apart from the field labels inside it. */}
+          {(() => {
+            const filled = [form.worktree, form.branch, form.link].filter(Boolean).length;
+            const Chevron = devOpen ? ChevronDown : ChevronRight;
+            const header = (
+              <button
+                type="button"
+                onClick={() => setDevOpen((o) => !o)}
+                aria-expanded={devOpen}
+                aria-controls="drawer-development"
+                style={{
+                  display: "flex", alignItems: "center", gap: 4, width: "100%", background: "none", border: "none",
+                  cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: "#1D2027", textAlign: "left",
+                  // hanging chevron: it sits 10px in, so the title text (10 + 16 + 4 = 30px) lines up with the fields below
+                  padding: "10px 22px 10px 10px",
+                }}
+              >
+                <Chevron size={16} color="#6B6F79" style={{ flexShrink: 0 }} />
                 Development
-              </span>
-            </summary>
-            <div style={{ paddingLeft: 2 }}>
-              <div style={{ display: "flex", gap: 10 }}>
-                <Field label="Worktree" style={{ flex: 1 }}>
+                {!devOpen && (
+                  <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 400, color: "#8B8D98" }}>
+                    {filled ? `${filled} of 3 set` : "Empty"}
+                  </span>
+                )}
+              </button>
+            );
+            const body = devOpen && (
+              <div id="drawer-development" style={{ padding: "2px 22px 4px 30px" }}>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <Field icon={<FolderGit2 size={12} />} label="Worktree" style={{ flex: 1 }}>
+                    <input
+                      className="mono inline-input"
+                      value={form.worktree || ""}
+                      onChange={(e) => set("worktree", e.target.value)}
+                      onBlur={blurSave}
+                      onKeyDown={blurOnEnter}
+                      placeholder="Add worktree path"
+                      style={{ ...inlineInputStyle, fontSize: 12 }}
+                    />
+                  </Field>
+                  <Field icon={<GitBranch size={12} />} label="Branch" style={{ flex: 1 }}>
+                    <input
+                      className="mono inline-input"
+                      value={form.branch || ""}
+                      onChange={(e) => set("branch", e.target.value)}
+                      onBlur={blurSave}
+                      onKeyDown={blurOnEnter}
+                      placeholder="Add branch"
+                      style={{ ...inlineInputStyle, fontSize: 12 }}
+                    />
+                  </Field>
+                </div>
+                <Field icon={<Link2 size={12} />} label="Link">
                   <input
-                    className="mono"
-                    value={form.worktree || ""}
-                    onChange={(e) => set("worktree", e.target.value)}
+                    className="inline-input"
+                    value={form.link || ""}
+                    onChange={(e) => set("link", e.target.value)}
                     onBlur={blurSave}
-                    placeholder="~/code/project/.worktrees/…"
-                    style={{ ...inputStyle, fontSize: 12 }}
+                    onKeyDown={blurOnEnter}
+                    placeholder="Add a repo, PR, or issue link"
+                    style={inlineInputStyle}
                   />
                 </Field>
-                <Field label="Branch" style={{ flex: 1 }}>
-                  <input
-                    className="mono"
-                    value={form.branch || ""}
-                    onChange={(e) => set("branch", e.target.value)}
-                    onBlur={blurSave}
-                    placeholder="feature/…"
-                    style={{ ...inputStyle, fontSize: 12 }}
-                  />
-                </Field>
+                {form.link && (
+                  <a
+                    href={form.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#4C8DFF",
+                      textDecoration: "none", marginTop: -4, marginBottom: 12,
+                    }}
+                  >
+                    <GitBranch size={12} /> <span style={{ wordBreak: "break-all" }}>{form.link}</span>
+                    <ExternalLink size={11} style={{ flexShrink: 0 }} />
+                  </a>
+                )}
               </div>
-              <Field label="Link">
-                <input
-                  value={form.link || ""}
-                  onChange={(e) => set("link", e.target.value)}
-                  onBlur={blurSave}
-                  placeholder="repo / PR / issue URL"
-                  style={inputStyle}
-                />
-              </Field>
-              {form.link && (
-                <a
-                  href={form.link}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#4C8DFF",
-                    textDecoration: "none", marginTop: -4, marginBottom: 12,
-                  }}
-                >
-                  <GitBranch size={12} /> <span style={{ wordBreak: "break-all" }}>{form.link}</span>
-                  <ExternalLink size={11} style={{ flexShrink: 0 }} />
-                </a>
-              )}
-            </div>
-          </details>
+            );
+            return (
+              <div style={{ border: "1px solid #E4E6EB", borderRadius: 8, marginTop: 4, marginBottom: 12 }}>
+                {header}
+                {body}
+              </div>
+            );
+          })()}
 
           {card.id && !card.parentId && (
             <button
@@ -2429,7 +2670,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
         >
           {card.id ? (
             <button
-              onClick={() => onDelete(card.id)}
+              onClick={() => setConfirmDelete(true)}
               style={{
                 display: "flex", alignItems: "center", gap: 6,
                 background: "none", border: "none", color: "#E5484D", fontSize: 12.5, cursor: "pointer",
@@ -2437,22 +2678,25 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
             >
               <Trash2 size={14} /> Delete
             </button>
+          ) : titleError || projectError ? (
+            <FieldError id="new-task-required-error" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5 }}>
+              <CircleAlert size={14} style={{ flexShrink: 0 }} /> Complete required fields
+            </FieldError>
           ) : <span />}
           {card.id ? (
-            <span style={{ fontSize: 11.5, color: "#9599A3" }}>Changes save automatically</span>
+            <HandOffButton card={card} compact={drawerWidth < 380} onCopied={onToast} />
           ) : (
             <button
-              disabled={!form.title.trim() || !form.project}
-              onClick={() => onSave(form)}
+              onClick={create}
               style={{
-                background: form.title.trim() && form.project ? "var(--ab-accent)" : "#E4E6EB",
-                color: form.title.trim() && form.project ? "#fff" : "#9599A3",
+                background: "var(--ab-accent)",
+                color: "#fff",
                 border: "none",
                 borderRadius: 7,
                 padding: "8px 16px",
                 fontSize: 13,
                 fontWeight: 600,
-                cursor: form.title.trim() && form.project ? "pointer" : "not-allowed",
+                cursor: "pointer",
               }}
             >
               Create
@@ -2460,72 +2704,134 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
           )}
         </div>
       </div>
+
+      {newProjectOpen && (
+        <NewProjectDialog onClose={() => setNewProjectOpen(false)} onCreate={createProjectHere} />
+      )}
+      {confirmDelete && (
+        <ConfirmDeleteDialog
+          card={form}
+          subtasks={cards.filter((c) => c.parentId === card.id).length}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => { setConfirmDelete(false); onDelete(card.id); }}
+        />
+      )}
     </div>
   );
 }
 
 // AB-29: copy a hand-off for an agent. Copy only — never starts a terminal.
-function LaunchCommand({ card }) {
-  const [target, setTarget] = useState(() => defaultLaunchTarget(card.agent));
+// It lives in the drawer footer, opposite Delete — where Create sits on a new task, so the footer's right end is
+// always the drawer's main action. The button names the goal ("Hand off to Codex"), not the mechanism: that it
+// copies a command is said when it's pressed (the button flips to Copied and a toast says where to paste it) and
+// in the "?" tooltip next to it.
+function HandOffButton({ card, compact, onCopied }) {
+  const [target, setTarget] = useState("generic"); // any agent by default: a prompt works with whatever is running
   const [copied, setCopied] = useState(false);
   const [manual, setManual] = useState(false); // clipboard refused: show the text selected instead
+  const [tip, setTip] = useState(false);
   const text = buildLaunchText({ card, target, workspace: api.getWorkspace(), boardUrl: window.location.origin });
+  const t = LAUNCH_TARGETS.find((x) => x.id === target);
+  const next = t.cmd ? `paste it in a terminal to start ${t.label} on ${card.id}` : "paste it into an agent that's already running";
+  const menu = LAUNCH_TARGETS.map((x) => ({
+    id: x.id,
+    label: x.label,
+    description: x.cmd ? `Starts ${x.cmd} in a terminal` : "A prompt to paste into a running session",
+    dividerBefore: !x.cmd, // "Any agent" only copies a prompt; set it apart from the agents it would start
+  }));
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(text);
       setManual(false);
       setCopied(true);
+      onCopied(`Copied — ${next}`);
       setTimeout(() => setCopied(false), 1800);
     } catch {
       setManual(true);
     }
   }
 
+  const half = {
+    display: "inline-flex", alignItems: "center", gap: 6, background: copied ? "#3DCC7B" : "#1D2027", color: "#fff",
+    border: "none", padding: "8px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+  };
+  const popover = {
+    position: "absolute", bottom: "calc(100% + 8px)", right: 0, zIndex: 5, background: "#1D2027", color: "#fff",
+    borderRadius: 6, padding: "8px 10px", fontSize: 11.5, lineHeight: 1.45,
+  };
+
   return (
-    <div data-tour="launch" style={{ border: "1px solid #E4E6EB", borderRadius: 8, padding: "10px 10px 8px", marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#6B6F79", marginRight: "auto" }}>
-          <Terminal size={13} /> Hand off to
-        </span>
+    <div data-tour="launch" style={{ position: "relative", display: "flex", alignItems: "center", gap: 8 }}>
+      <button
+        type="button"
+        aria-label="What does hand off do?"
+        aria-describedby={tip ? "handoff-tip" : undefined}
+        onMouseEnter={() => setTip(true)}
+        onMouseLeave={() => setTip(false)}
+        onFocus={() => setTip(true)}
+        onBlur={() => setTip(false)}
+        style={{ display: "flex", background: "none", border: "none", padding: 2, color: "#9599A3", cursor: "help" }}
+      >
+        <HelpCircle size={15} />
+      </button>
+      {tip && (
+        <div id="handoff-tip" role="tooltip" style={{ ...popover, width: 280 }}>
+          {t.cmd
+            ? `Copies a one-line command that starts ${t.label}${card.worktree ? " in this ticket's worktree" : ""} with a prompt pointing at ${card.id} on this board. Paste it in a terminal — nothing runs until you do.`
+            : `Copies a short prompt with ${card.id} and this board's address. Paste it into an agent that's already running — nothing runs until you do.`}
+        </div>
+      )}
+
+      <div style={{ display: "inline-flex", borderRadius: 7, overflow: "hidden" }}>
+        <button type="button" onClick={copy} style={half}>
+          {copied ? <Check size={14} /> : <Terminal size={14} />}
+          {copied ? "Copied" : compact ? "Hand off" : `Hand off to ${t.cmd ? t.label : "any agent"}`}
+        </button>
         <Dropdown
           value={target}
-          options={LAUNCH_TARGETS}
-          onChange={(v) => { setTarget(v); setManual(false); }}
+          options={menu}
+          title="Hand off to"
+          placement="top"
           menuAlign="right"
+          onChange={(v) => { setTarget(v); setManual(false); }}
           renderTrigger={({ onClick }) => (
-            <button type="button" onClick={onClick} style={{ display: "inline-flex", alignItems: "center", gap: 4, border: "1px solid #E4E6EB", background: "#fff", borderRadius: 6, padding: "5px 8px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", color: "#1D2027" }}>
-              {LAUNCH_TARGETS.find((t) => t.id === target).label} <ChevronDown size={12} />
+            <button
+              type="button"
+              onClick={onClick}
+              aria-label={`Choose agent (now: ${t.label})`}
+              aria-haspopup="menu"
+              style={{ ...half, padding: "8px 9px", borderLeft: "1px solid rgba(255,255,255,0.18)", height: "100%" }}
+            >
+              <ChevronDown size={14} />
             </button>
           )}
         />
-        <button
-          type="button"
-          onClick={copy}
-          style={{ display: "inline-flex", alignItems: "center", gap: 5, background: copied ? "#3DCC7B" : "#1D2027", color: "#fff", border: "none", borderRadius: 6, padding: "6px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
-        >
-          {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copied" : "Copy launch command"}
-        </button>
       </div>
-      {manual && <div style={{ fontSize: 11.5, color: "#E5484D", marginTop: 8 }}>The browser blocked the clipboard — the text below is selected, press ⌘C / Ctrl+C.</div>}
-      <details open={manual} style={{ marginTop: 6 }}>
-        <summary style={{ fontSize: 11.5, color: "#9599A3", cursor: "pointer" }}>
-          {LAUNCH_TARGETS.find((t) => t.id === target).cmd ? "Paste it in a terminal — preview" : "Paste it into any agent — preview"}
-        </summary>
-        <textarea
-          readOnly
-          value={text}
-          ref={(el) => { if (el && manual) { el.focus(); el.select(); } }}
-          onFocus={(e) => e.target.select()}
-          className="mono"
-          style={{ ...inputStyle, fontSize: 11, marginTop: 6, height: 120, resize: "vertical" }}
-        />
-      </details>
+
+      {manual && (
+        <div style={{ ...popover, width: 320, background: "#fff", color: "#1D2027", border: "1px solid #E4E6EB", boxShadow: "0 8px 24px rgba(20,22,30,0.14)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <span style={{ flex: 1, color: "#E5484D" }}>The browser blocked the clipboard — the text is selected, press ⌘C / Ctrl+C.</span>
+            <button type="button" onClick={() => setManual(false)} aria-label="Close" style={{ display: "flex", background: "none", border: "none", cursor: "pointer", color: "#8B8D98" }}>
+              <X size={14} />
+            </button>
+          </div>
+          <textarea
+            readOnly
+            value={text}
+            ref={(el) => { if (el) { el.focus(); el.select(); } }}
+            onFocus={(e) => e.target.select()}
+            className="mono"
+            style={{ ...inputStyle, fontSize: 11, height: 120, resize: "vertical" }}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
-function DetailRow({ icon, label, children, last }) {
+function DetailRow({ icon, label, children, last, required }) {
   return (
     <div
       style={{
@@ -2535,7 +2841,7 @@ function DetailRow({ icon, label, children, last }) {
     >
       <div style={{ display: "flex", alignItems: "center", gap: 7, width: 92, flexShrink: 0, color: "#6B6F79", fontSize: 12.5 }}>
         {icon}
-        <span>{label}</span>
+        <span>{label}{required && <span title="Required" style={{ color: ERROR_COLOR, marginLeft: 2 }}>*</span>}</span>
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
     </div>
@@ -2561,10 +2867,11 @@ function ToolbarBtn({ onClick, title, children }) {
   );
 }
 
-function Field({ label, children, style }) {
+function Field({ icon, label, children, style }) {
   return (
-    <div style={{ marginBottom: 12, ...style }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: "#6B6F79", marginBottom: 5, textTransform: "uppercase", letterSpacing: 0.4 }}>
+    <div style={{ marginBottom: 12, minWidth: 0, ...style }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: "#6B6F79", marginBottom: 5, textTransform: "uppercase", letterSpacing: 0.4 }}>
+        {icon}
         {label}
       </div>
       {children}
@@ -2587,6 +2894,62 @@ const inputStyle = {
   fontFamily: "inherit",
   background: "#FAFAFB",
 };
+
+const ERROR_COLOR = "#E5484D"; // same red as the drawer's Delete
+
+// the message under a field that failed a check; `id` is what the field's aria-describedby points at
+function FieldError({ id, children, style }) {
+  return (
+    <div id={id} role="alert" style={{ color: ERROR_COLOR, fontSize: 12, lineHeight: 1.4, ...style }}>
+      {children}
+    </div>
+  );
+}
+
+// the board's focus ring — what the global input:focus rule draws on the Development inputs
+const FOCUS_RING = { outline: "2px solid #4C8DFF", outlineOffset: 1 };
+
+// a property value in the task drawer, after Atlassian's inline edit: plain text (read view) until it's clicked,
+// then a field (edit view) while its menu or picker is open. Both views have the Development inputs' box
+// (inputStyle: 8px 10px, 13.5px, radius 7) — the read view's is just transparent — so they're the same height
+// and nothing moves on click (Atlassian's read and edit views are both 40px for the same reason). The edit view
+// looks like a focused Development input, which is the board's own field style.
+function propValueStyle({ open = false, empty = false } = {}) {
+  return {
+    ...inputStyle,
+    display: "block",
+    textAlign: "left",
+    // pulled left by its padding + border so the text lines up with the label above, as Notion does; the hover
+    // fill and the edit-view box stick out to the left instead
+    marginLeft: -11, width: "calc(100% + 11px)",
+    // a long value (a parent ticket title) stays on one line in its column
+    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+    cursor: "pointer",
+    border: "1px solid transparent",
+    background: undefined, // transparent from the .detail-value rule, so its :hover fill can show
+    color: empty ? "#8B8D98" : "#1D2027",
+    ...(open && { border: inputStyle.border, background: inputStyle.background, ...FOCUS_RING }),
+  };
+}
+
+const chipTextStyle = { overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 };
+
+const projectChipStyle = {
+  display: "inline-flex", alignItems: "center", gap: 5, maxWidth: 240, minWidth: 0, // a long name ellipsizes
+  border: "1px solid #E4E6EB", borderRadius: 6, padding: "3px 8px", background: "#fff",
+  fontSize: 12.5, fontFamily: "inherit", color: "#1D2027", cursor: "pointer", whiteSpace: "nowrap",
+};
+
+
+// a text input used inline (Development fields): the Development input geometry, pulled left like propValueStyle so
+// its text lines up with the label; border and fill come from the .inline-input rules so :hover/:focus can change them
+const { border: _b, background: _bg, ...inputGeometry } = inputStyle;
+const inlineInputStyle = { ...inputGeometry, marginLeft: -11, width: "calc(100% + 11px)" };
+
+// Enter commits an inline text field the way leaving it does (onBlur saves)
+function blurOnEnter(e) {
+  if (e.key === "Enter") e.currentTarget.blur();
+}
 
 const detailInputStyle = {
   width: "100%",
