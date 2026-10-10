@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil, Copy, Check, HelpCircle, BookOpen, CircleAlert, CircleDashed, AlignLeft, ChevronUp, Equal, Users } from "lucide-react";
+import { Plus, X, Terminal, GripVertical, Filter, ChevronDown, ChevronLeft, Trash2, Clock, ChevronRight, GitBranch, FolderGit2, ExternalLink, Bold, List, ListOrdered, Code2, Link2, Image, Heading1, Heading2, Heading3, CalendarDays, Folder, Bot, Flag, CornerDownRight, MoreHorizontal, Pencil, Copy, Check, HelpCircle, BookOpen, CircleAlert, CircleDashed, AlignLeft, ListTree, ChevronUp, Equal, Users } from "lucide-react";
 import { BrandMark } from "./theme.jsx";
 import * as api from "./api.js";
 import { AGENT_ICONS } from "./agentIcons.js";
@@ -149,9 +149,13 @@ function timeAgo(ts) {
 
 const POLL_MS = 3000; // live-update interval, see the polling effect in AgentBoard
 
+// errors go to the board's toast (set by AgentBoard), not window.alert: some embedded browsers don't
+// implement the native dialogs, so an alert there fails silently and the user never learns why
+let showErrorToast = null;
 function reportError(action, err) {
   console.error(action, err);
-  window.alert(`${action} failed: ${err.message}`);
+  if (showErrorToast) showErrorToast(`${action} failed: ${err.message}`);
+  else window.alert(`${action} failed: ${err.message}`);
 }
 
 export default function AgentBoard() {
@@ -161,7 +165,13 @@ export default function AgentBoard() {
   const [projectFilter, setProjectFilter] = useState("all");
   const [agentFilter, setAgentFilter] = useState("all");
   const [modalCard, setModalCard] = useState(null); // null = closed, {} = new
-  const [toast, setToast] = useState(null); // {key, message, card?}
+  const [toast, setToast] = useState(null); // {key, message, card?, tone?}
+  useEffect(() => {
+    showErrorToast = (message) => setToast({ key: Date.now(), message, tone: "error" });
+    return () => { showErrorToast = null; };
+  }, []);
+  // a server note on a write ("all subtasks of AB-4 are done") — shown, never acted on
+  const toastHint = (task) => { if (task && task.hint) setToast({ key: Date.now(), message: task.hint }); };
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [dragId, setDragId] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null);
@@ -252,6 +262,13 @@ export default function AgentBoard() {
     const id = new URLSearchParams(window.location.search).get("task");
     const card = id && cards.find((c) => c.id === id);
     if (card) setModalCard(card);
+    // not on the board: maybe the ticket moved projects and this is its old id — the server knows the new one
+    else if (id) {
+      api.getTask(id).then((found) => {
+        setModalCard(found);
+        toastHint(found); // "AB-5 is now OPS-12 …"
+      }).catch(() => {}); // gone, or an older server without GET /tasks/:id: the board just opens
+    }
   }, [loaded, cards]);
 
   // first visit: start the tour (AB-30) — but not over a ?task= link someone followed to a card
@@ -432,6 +449,7 @@ export default function AgentBoard() {
       if (card.id) {
         const updated = await api.updateTask(card.id, card);
         setCards((prev) => prev.map((c) => (c.id === card.id ? updated : c)));
+        toastHint(updated);
       } else {
         const created = await api.createTask(card);
         setCards((prev) => [...prev, created]);
@@ -442,6 +460,17 @@ export default function AgentBoard() {
     } catch (e) {
       reportError("Save", e);
     }
+  }
+
+  // to another project (Jira's Move): new ids for the ticket and its subtasks, so the list is reloaded, not
+  // patched. Throws, so the dialog can show the server's reason.
+  async function moveToProject(id, project, { detach } = {}) {
+    const moved = await api.moveTask(id, { project, detach });
+    const fresh = await api.listTasks();
+    setCards(fresh);
+    setModalCard(fresh.find((c) => c.id === moved.id) || moved);
+    setToast({ key: Date.now(), message: moved.hint || `Moved to ${moved.id}` });
+    return moved;
   }
 
   async function deleteCard(id) {
@@ -455,10 +484,20 @@ export default function AgentBoard() {
     }
   }
 
+  // a write whose failure the caller shows itself (the drawer's relation field puts the server's reason
+  // under the field), so this throws instead of toasting
+  async function patchTask(id, patch) {
+    const updated = await api.updateTask(id, patch);
+    setCards((prev) => prev.map((c) => (c.id === id ? updated : c)));
+    toastHint(updated);
+    return updated;
+  }
+
   async function moveCard(id, status) {
     try {
       const updated = await api.updateTask(id, { status });
       setCards((prev) => prev.map((c) => (c.id === id ? updated : c)));
+      toastHint(updated);
     } catch (e) {
       reportError("Move", e);
     }
@@ -841,6 +880,11 @@ export default function AgentBoard() {
                         <PriorityIcon priority={c.priority} size={14} />
                       </span>
                       <Chip label={c.project} />
+                      {(() => {
+                        // a parent shows its subtasks' progress on the board too (counted here, so it works with any server)
+                        const kids = cards.filter((k) => k.parentId === c.id);
+                        return kids.length ? <Chip label={`${kids.filter((k) => k.status === "done").length}/${kids.length} subtasks`} /> : null;
+                      })()}
                       <Chip
                         label={agentMeta(c.agent).label}
                         color={agentMeta(c.agent).color}
@@ -898,8 +942,11 @@ export default function AgentBoard() {
           onClose={() => setModalCard(null)}
           onSave={saveModal}
           onDelete={deleteCard}
+          onMoveProject={moveToProject}
           onCreateProject={createProject}
           onOpenSubtask={(status, parentId) => openNew(status, parentId)}
+          onOpenCard={openCard}
+          onPatch={patchTask}
           onToast={(message) => setToast({ key: Date.now(), message })}
         />
       )}
@@ -908,6 +955,7 @@ export default function AgentBoard() {
         <Toast
           key={toast.key}
           message={toast.message}
+          tone={toast.tone}
           actionLabel={toast.card ? "Open" : null}
           onAction={() => { openCard(toast.card); setToast(null); }}
           onDone={() => setToast(null)}
@@ -937,7 +985,7 @@ export default function AgentBoard() {
 // errors still go through reportError, and form problems are shown on the field itself.
 const TOAST_MS = 4000;
 
-function Toast({ message, actionLabel, onAction, onDone }) {
+function Toast({ message, actionLabel, onAction, onDone, tone }) {
   const [hover, setHover] = useState(false);
   useEffect(() => {
     if (hover) return; // keep it up while the pointer is on it, so "Open" can still be clicked
@@ -952,13 +1000,16 @@ function Toast({ message, actionLabel, onAction, onDone }) {
       onMouseLeave={() => setHover(false)}
       style={{
         position: "fixed", left: "50%", bottom: 84, transform: "translateX(-50%)", zIndex: 70, // above the drawer footer, not on it
-        display: "flex", alignItems: "center", gap: 12, maxWidth: "calc(100vw - 32px)",
+        // max-content: centred with left 50%, it would otherwise only get half the viewport to wrap in
+        display: "flex", alignItems: "center", gap: 12, width: "max-content", maxWidth: "calc(100vw - 32px)",
         background: "var(--ab-chrome)", color: "#fff", borderRadius: 8, padding: "10px 12px 10px 14px",
         fontSize: 13, boxShadow: "0 6px 24px rgba(0,0,0,0.18)",
       }}
     >
-      <Check size={15} color="var(--ab-accent-on-dark)" style={{ flexShrink: 0 }} />
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{message}</span>
+      {tone === "error"
+        ? <CircleAlert size={15} color="#FF8A8E" style={{ flexShrink: 0 }} />
+        : <Check size={15} color="var(--ab-accent-on-dark)" style={{ flexShrink: 0 }} />}
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "normal", maxWidth: 520 }}>{message}</span>
       {actionLabel && (
         <button
           type="button"
@@ -1086,7 +1137,8 @@ function Dropdown({ value, options, onChange, renderTrigger, menuAlign = "left",
   }, [open]);
 
   return (
-    <span ref={triggerRef} style={{ display: block ? "block" : "inline-block" }}>
+    // minWidth 0: in a flex row (the drawer header) the trigger can shrink and ellipsize instead of overlapping its neighbours
+    <span ref={triggerRef} style={{ display: block ? "block" : "inline-block", minWidth: 0, maxWidth: "100%" }}>
       {renderTrigger({ open, onClick: (e) => { e.stopPropagation(); open ? setOpen(false) : openMenu(); } })}
       {open && menuPos && createPortal(
         <div
@@ -1557,8 +1609,8 @@ function ConfirmDeleteDialog({ card, subtasks, onCancel, onConfirm }) {
         <div id="confirm-delete-body" style={{ fontSize: 13, lineHeight: 1.5, color: "#31343B", marginBottom: 18 }}>
           {blocked ? (
             <>
-              <b>{card.title}</b> has {subtasks} subtask{subtasks === 1 ? "" : "s"}. Delete {subtasks === 1 ? "it" : "them"} first —
-              a task with subtasks can't be deleted.
+              <b>{card.title}</b> has {subtasks} subtask{subtasks === 1 ? "" : "s"}. Delete {subtasks === 1 ? "it" : "them"}, or open{" "}
+              {subtasks === 1 ? "it" : "each one"} and choose Change → Remove parent, first.
             </>
           ) : (
             <>
@@ -1588,6 +1640,87 @@ function ConfirmDeleteDialog({ card, subtasks, onCancel, onConfirm }) {
               Delete task
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// asks before a ticket moves projects: it gets a new id there, which agents holding the old one need to hear
+// about (old ids keep working, and say the new one). A parent's subtasks come along; a subtask moving alone
+// leaves its parent, so the dialog says that and the button says so too.
+function ConfirmMoveDialog({ card, to, prefix, subtasks, onCancel, onConfirm }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const isSubtask = !!card.parentId;
+  const nextId = prefix ? `${prefix}-…` : "a new id";
+  async function confirm() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onConfirm({ detach: isSubtask });
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  }
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={busy ? undefined : onCancel} style={{ position: "absolute", inset: 0, background: "rgba(15,16,20,0.32)" }} />
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-move-title"
+        aria-describedby="confirm-move-body"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "relative", background: "#fff", borderRadius: 10, boxShadow: "0 16px 48px rgba(9,10,12,0.28)",
+          width: 440, maxWidth: "92vw", padding: 20,
+        }}
+      >
+        <div id="confirm-move-title" style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>
+          Move <span className="mono" style={{ whiteSpace: "nowrap" }}>{card.id}</span> to {to}?
+        </div>
+        <div id="confirm-move-body" style={{ fontSize: 13, lineHeight: 1.55, color: "#31343B", marginBottom: 18 }}>
+          <p style={{ margin: "0 0 8px" }}>
+            It gets a new id in {to} (<span className="mono" style={{ whiteSpace: "nowrap" }}>{card.id} → {nextId}</span>). Agents that still use{" "}
+            <span className="mono" style={{ whiteSpace: "nowrap" }}>{card.id}</span> reach it anyway and are told the new id.
+          </p>
+          {isSubtask && (
+            <p style={{ margin: "0 0 8px" }}>
+              It's a subtask of <span className="mono" style={{ whiteSpace: "nowrap" }}>{card.parentId}</span>, which stays in {card.project} — so it leaves{" "}
+              <span className="mono" style={{ whiteSpace: "nowrap" }}>{card.parentId}</span> and moves on its own.
+            </p>
+          )}
+          {subtasks.length > 0 && (
+            <p style={{ margin: 0 }}>
+              Its {subtasks.length} subtask{subtasks.length === 1 ? "" : "s"} move{subtasks.length === 1 ? "s" : ""} with it, with {subtasks.length === 1 ? "a new id" : "new ids"} too:{" "}
+              <span className="mono" style={{ whiteSpace: "nowrap" }}>{subtasks.map((s) => s.id).join(", ")}</span>.
+            </p>
+          )}
+          {error && <FieldError style={{ marginTop: 10 }}>{error}</FieldError>}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button
+            type="button"
+            autoFocus // the safe choice gets the focus, so a stray Enter doesn't renumber anything
+            onClick={onCancel}
+            disabled={busy}
+            style={{ background: "none", border: "1px solid #E4E6EB", borderRadius: 7, padding: "7px 14px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={confirm}
+            disabled={busy}
+            style={{
+              background: "var(--ab-accent)", color: "#fff", border: "none", borderRadius: 7, padding: "7px 14px",
+              fontSize: 12.5, fontWeight: 600, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.7 : 1,
+            }}
+          >
+            {busy ? "Moving…" : isSubtask ? `Leave ${card.parentId} and move` : subtasks.length ? `Move ${subtasks.length + 1} tickets` : "Move ticket"}
+          </button>
         </div>
       </div>
     </div>
@@ -2120,7 +2253,7 @@ const DRAWER_MIN_WIDTH = 360;
 const DRAWER_MAX_WIDTH_RATIO = 0.8;
 const DRAWER_WIDTH_KEY = "ab-drawer-width";
 
-function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreateProject, onOpenSubtask, onToast }) {
+function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onMoveProject, onCreateProject, onOpenSubtask, onToast, onOpenCard, onPatch }) {
   const [form, setForm] = useState(card);
   // read view first, editor on click (inline edit) — for a new task too, so the empty box isn't mistaken for a field to fill
   const [editingNotes, setEditingNotes] = useState(false);
@@ -2235,6 +2368,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
   // inline errors). It used window.prompt, which some embedded browsers don't implement — it threw and nothing opened.
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [moveTo, setMoveTo] = useState(null); // the project picked for this ticket, waiting on the confirm dialog
 
   function handleProjectChange(newValue) {
     if (newValue === "__new__") setNewProjectOpen(true);
@@ -2313,6 +2447,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
       // Escape closes the topmost layer only: an open menu (handled above) or the New project dialog,
       // not the drawer (and the draft) under it
       if (confirmDelete) setConfirmDelete(false);
+      else if (moveTo) setMoveTo(null);
       else if (newProjectOpen) setNewProjectOpen(false);
       else closeAndSave();
     }
@@ -2366,10 +2501,26 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
           {/* project › ticket, on top like Jira's "KAN | Feature" and Linear's team: the project sets the id */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexShrink: 1 }}>
             {card.id ? (
-              // a ticket can't move projects, so here it's a label, not a control
-              <span style={{ ...projectChipStyle, cursor: "default" }} title="A ticket can't move to another project">
-                <Folder size={13} style={{ flexShrink: 0 }} /> <span style={chipTextStyle}>{form.project}</span>
-              </span>
+              // moving renumbers the ticket (and its subtasks), so picking a project only opens a confirm dialog
+              <Dropdown
+                value={form.project}
+                options={projectNames.map((p) => ({ id: p, label: p }))}
+                title="Move to project"
+                minWidth={AGENT_MENU_MIN_WIDTH}
+                onChange={(p) => { if (p !== form.project) setMoveTo(p); }}
+                renderTrigger={({ onClick, open }) => (
+                  <button
+                    type="button"
+                    onClick={onClick}
+                    aria-label={`Project: ${form.project} — move to another project`}
+                    style={{ ...projectChipStyle, maxWidth: "100%", color: "#1D2027", ...(open && FOCUS_RING) }}
+                  >
+                    <Folder size={13} style={{ flexShrink: 0 }} />
+                    <span style={chipTextStyle}>{form.project}</span>
+                    <ChevronDown size={12} style={{ flexShrink: 0 }} />
+                  </button>
+                )}
+              />
             ) : (
               <Dropdown
                 value={form.project}
@@ -2418,7 +2569,7 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
           {card.id && form.unconfirmed && (
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: "#FFF8E6", border: "1px solid #F3D58C", borderRadius: 8, padding: "9px 11px", marginBottom: 14, fontSize: 12.5, color: "#7A5300" }}>
               <span style={{ flex: 1, lineHeight: 1.45 }}>
-                <b>⚠ The board picked this for you:</b> {form.unconfirmed}. A wrong project can't be changed — create the ticket again in the right one.
+                <b>⚠ The board picked this for you:</b> {form.unconfirmed}. If the project is wrong, pick the right one at the top left to move the ticket there.
               </span>
               <button
                 className="card-btn"
@@ -2501,26 +2652,21 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
             <Field icon={<CalendarDays size={12} />} label="Due date">
               <DueDateField value={form.dueDate || ""} onChange={(v) => setAndSave("dueDate", v)} />
             </Field>
-            <Field icon={<CornerDownRight size={12} />} label="Parent">
-              <Dropdown
-                value={form.parentId || ""}
-                options={[{ id: "", label: "— none —" }, ...parentCandidates.map((p) => ({ id: p.id, label: `${p.id} — ${p.title}` }))]}
-                onChange={(v) => setAndSave("parentId", v || null)}
-                block
-                renderTrigger={({ onClick, open }) =>
-                  parentCandidates.length === 0 && !form.parentId ? (
-                    // nothing to nest under (no project yet, or no top-level tasks in it): an empty value, not a control
-                    <span style={{ ...propValueStyle({ empty: true }), cursor: "default", display: "block" }}>-</span>
-                  ) : (
-                    <button type="button" onClick={onClick} className="detail-value" style={propValueStyle({ open, empty: !form.parentId })}>
-                      {form.parentId ? `${form.parentId} — ${cards.find((c) => c.id === form.parentId)?.title ?? ""}` : "Add parent"}
-                    </button>
-                  )
-                }
-              />
-            </Field>
           </div>
 
+          <RelationsField
+            card={form}
+            cards={cards}
+            parentCandidates={parentCandidates}
+            onPatch={async (id, patch) => {
+              const updated = await onPatch(id, patch);
+              setForm((f) => ({ ...f, ...patch }));
+              return updated;
+            }}
+            onOpenCard={(c) => { closeAndSave(); onOpenCard(c); }}
+            onAddSubtask={() => { closeAndSave(); onOpenSubtask(form.status, form.id); }}
+            onLocalParent={(v) => set("parentId", v)}
+          />
 
           <Field icon={<AlignLeft size={12} />} label="Description">
             {editingNotes ? (
@@ -2697,19 +2843,6 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
             );
           })()}
 
-          {card.id && !card.parentId && (
-            <button
-              onClick={() => { closeAndSave(); onOpenSubtask(card.status, card.id); }}
-              className="card-btn"
-              style={{
-                display: "flex", alignItems: "center", gap: 6, marginTop: 4,
-                background: "none", border: "1px dashed #E4E6EB", borderRadius: 7,
-                padding: "8px 11px", fontSize: 12.5, color: "#6B6F79", cursor: "pointer", width: "100%",
-              }}
-            >
-              <CornerDownRight size={13} /> Add subtask
-            </button>
-          )}
         </div>
 
         <div
@@ -2757,6 +2890,19 @@ function TaskDrawer({ card, cards, projects, onClose, onSave, onDelete, onCreate
 
       {newProjectOpen && (
         <NewProjectDialog onClose={() => setNewProjectOpen(false)} onCreate={createProjectHere} />
+      )}
+      {moveTo && (
+        <ConfirmMoveDialog
+          card={form}
+          to={moveTo}
+          prefix={projects.find((p) => p.name === moveTo)?.prefix}
+          subtasks={cards.filter((c) => c.parentId === card.id)}
+          onCancel={() => setMoveTo(null)}
+          onConfirm={async ({ detach }) => {
+            blurSave(); // a title typed but not yet saved goes with it
+            await onMoveProject(card.id, moveTo, { detach });
+          }}
+        />
       )}
       {confirmDelete && (
         <ConfirmDeleteDialog
@@ -2947,6 +3093,146 @@ const inputStyle = {
   fontSize: 13.5,
   fontFamily: "inherit",
   background: "#FAFAFB",
+};
+
+// A ticket's place in its family, in one field. Tickets nest two levels (the server enforces it), so a
+// ticket is exactly one of: a parent (has subtasks — lists them with progress, and Add subtask), a
+// subtask (has a parent — shows it and its siblings, Change / Remove parent), or standalone (Set parent
+// or Add subtask). Progress is shown, never acted on: when every subtask is done, the parent offers to
+// move on, and only a click changes it.
+function RelationsField({ card, cards, parentCandidates, onPatch, onOpenCard, onAddSubtask, onLocalParent }) {
+  const [error, setError] = useState(null);
+  const subtasks = card.id ? cards.filter((c) => c.parentId === card.id) : [];
+  const parent = card.parentId ? cards.find((c) => c.id === card.parentId) : null;
+  const done = subtasks.filter((s) => s.status === "done").length;
+
+  async function patch(p) {
+    setError(null);
+    if (!card.id) return onLocalParent(p.parentId); // a new task: saved with Create
+    try {
+      await onPatch(card.id, p);
+    } catch (e) {
+      setError(e.message); // the server's reason, e.g. "AB-4 has subtasks, so it can't become a subtask"
+    }
+  }
+
+  const rowStyle = { ...propValueStyle(), display: "flex", alignItems: "center", gap: 8 };
+  const parentMenu = (includeRemove) => [
+    ...parentCandidates.map((p) => ({ id: p.id, label: `${p.id} — ${p.title}` })),
+    ...(includeRemove ? [{ id: "__none__", label: "Remove parent", dividerBefore: parentCandidates.length > 0 }] : []),
+  ];
+  const pickParent = (v) => patch({ parentId: v === "__none__" ? null : v });
+  const errorLine = error && <FieldError style={{ marginTop: 4 }}>{error}</FieldError>;
+
+  // ---- parent: its subtasks, progress, Add subtask
+  if (subtasks.length) {
+    const allDone = done === subtasks.length;
+    return (
+      <Field icon={<ListTree size={12} />} label={`Subtasks · ${done}/${subtasks.length} done`}>
+        {/* one segment per subtask, so "2 of 3" reads as a count, not a percentage; past ~12 they'd be slivers, so one bar */}
+        <div style={{ display: "flex", gap: subtasks.length <= 12 ? 3 : 0, height: 4, margin: "2px 0 6px", borderRadius: 2, overflow: "hidden" }}>
+          {subtasks.length <= 12
+            ? subtasks.map((s, i) => (
+                <div key={s.id} style={{ flex: 1, borderRadius: 2, background: i < done ? "var(--ab-accent)" : "#E4E6EB" }} />
+              ))
+            : <div style={{ flex: 1, background: `linear-gradient(to right, var(--ab-accent) ${(done / subtasks.length) * 100}%, #E4E6EB 0)` }} />}
+        </div>
+        {subtasks.map((s) => (
+          <button key={s.id} type="button" className="detail-value" onClick={() => onOpenCard(s)} style={rowStyle}>
+            <span className="mono" style={{ fontSize: 11.5, color: "#8B8D98", flexShrink: 0 }}>{s.id}</span>
+            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{s.title}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#6B6F79", flexShrink: 0 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: statusMeta(s.status).color }} />
+              {statusMeta(s.status).label}
+            </span>
+          </button>
+        ))}
+        <button type="button" className="detail-value" onClick={onAddSubtask} style={propValueStyle({ empty: true })}>
+          + Add subtask
+        </button>
+        {allDone && card.status !== "done" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6, padding: "8px 10px", borderRadius: 7, background: "#F0F7F9", fontSize: 12.5, color: "#31343B" }}>
+            <span style={{ flex: 1, minWidth: 160 }}>All subtasks done — move {card.id} on?</span>
+            {card.status !== "review" && (
+              <button type="button" onClick={() => patch({ status: "review" })} style={hintButtonStyle}>Move to review</button>
+            )}
+            <button type="button" onClick={() => patch({ status: "done" })} style={hintButtonStyle}>Mark done</button>
+          </div>
+        )}
+        {errorLine}
+      </Field>
+    );
+  }
+
+  // ---- subtask: its parent (opens it), siblings' progress, Change / Remove
+  if (card.parentId) {
+    const siblings = cards.filter((c) => c.parentId === card.parentId && c.id !== card.id);
+    const sibDone = siblings.filter((s) => s.status === "done").length;
+    return (
+      <Field icon={<CornerDownRight size={12} />} label="Parent">
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button
+            type="button"
+            className="detail-value"
+            onClick={() => parent && onOpenCard(parent)}
+            title={parent ? `Open ${parent.id}` : undefined}
+            style={{ ...rowStyle, flex: 1, minWidth: 0 }}
+          >
+            <span className="mono" style={{ fontSize: 11.5, color: "#8B8D98", flexShrink: 0 }}>{card.parentId}</span>
+            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{parent ? parent.title : ""}</span>
+          </button>
+          <Dropdown
+            value={card.parentId}
+            options={parentMenu(true)}
+            title="Move under"
+            menuAlign="right"
+            onChange={pickParent}
+            renderTrigger={({ onClick }) => (
+              <button type="button" onClick={onClick} style={{ ...hintButtonStyle, flexShrink: 0 }}>Change</button>
+            )}
+          />
+        </div>
+        <div style={{ fontSize: 11.5, color: "#8B8D98", marginTop: 3, paddingBottom: 9 }}>
+          {siblings.length ? `${sibDone} of ${siblings.length} sibling${siblings.length === 1 ? "" : "s"} done` : "No other subtasks"}
+        </div>
+        {errorLine}
+      </Field>
+    );
+  }
+
+  // ---- standalone: become a subtask, or start a family
+  return (
+    <Field icon={<ListTree size={12} />} label="Relations">
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {parentCandidates.length > 0 && (
+          <Dropdown
+            value=""
+            options={parentMenu(false)}
+            title="Make it a subtask of"
+            onChange={pickParent}
+            renderTrigger={({ onClick, open }) => (
+              <button type="button" className="detail-value" onClick={onClick} style={{ ...propValueStyle({ open, empty: true }), width: "auto" }}>
+                Set parent
+              </button>
+            )}
+          />
+        )}
+        {card.id && (
+          <button type="button" className="detail-value" onClick={onAddSubtask} style={{ ...propValueStyle({ empty: true }), width: "auto" }}>
+            + Add subtask
+          </button>
+        )}
+        {!card.id && parentCandidates.length === 0 && <span style={{ ...propValueStyle({ empty: true }), cursor: "default" }}>-</span>}
+      </div>
+      {errorLine}
+    </Field>
+  );
+}
+
+const hintButtonStyle = {
+  ...CONTROL_SIZE,
+  background: "#fff", border: "1px solid #E4E6EB",
+  fontWeight: 600, color: "#31343B", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
 };
 
 const ERROR_COLOR = "#E5484D"; // same red as the drawer's Delete
