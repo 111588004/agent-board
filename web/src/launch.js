@@ -14,10 +14,6 @@ export const LAUNCH_TARGETS = [
   { id: "generic", label: "Any agent", cmd: null }, // a prompt only — the menu says so (App.jsx LaunchCommand)
 ];
 
-export function defaultLaunchTarget(agent) {
-  return LAUNCH_TARGETS.some((t) => t.id === agent && t.cmd) ? agent : "generic";
-}
-
 export function shellQuote(s) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
