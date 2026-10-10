@@ -534,3 +534,118 @@ test("MCP: update_task moves/detaches a parent; hint comes first; delete_task na
   assert.equal(last(await call("update_task", { taskId: kid.id, parentId: P.id })).parentId, P.id);
   assert.equal(last(await call("update_task", { taskId: kid.id, parentId: "none" })).parentId, null);
 });
+
+// ---- moving a ticket to another project (Jira's "Move"): new id, subtasks along, old ids keep working
+
+test("move: new id in the target project, subtasks come along under it, history says where from", async () => {
+  await api("POST", "/api/w/t/projects", { name: "MoveFrom", prefix: "MF" });
+  await api("POST", "/api/w/t/projects", { name: "MoveTo", prefix: "MT" });
+  const P = (await create({ project: "MoveFrom", title: "parent" })).body;
+  const k1 = (await create({ parentId: P.id, title: "kid 1" })).body;
+  const k2 = (await create({ parentId: P.id, title: "kid 2", status: "done" })).body;
+
+  const r = await api("POST", `/api/w/t/tasks/${P.id}/move`, { project: "mt", agent: "claude" });
+  assert.equal(r.status, 200);
+  assert.match(r.body.id, /^MT-\d+$/);
+  assert.equal(r.body.project, "MoveTo");
+  assert.equal(r.body.movedFrom, P.id);
+  assert.deepEqual(r.body.moved.map((m) => m.from), [P.id, k1.id, k2.id]);
+  assert.match(r.body.hint, new RegExp(`${P.id} is now ${r.body.id} in MoveTo\\. Its subtasks moved too: ${k1.id} → MT-\\d+, ${k2.id} → MT-\\d+`));
+  assert.equal(r.body.subtaskCount, 2);
+  assert.equal(r.body.subtasksDone, 1);
+  const kids = (await api("GET", `/api/w/t/tasks?parentId=${r.body.id}`)).body;
+  assert.deepEqual(kids.map((k) => k.id), r.body.moved.slice(1).map((m) => m.to));
+  assert.ok(kids.every((k) => k.project === "MoveTo" && k.projectPrefix === "MT"));
+  assert.match(kids[0].notes, new RegExp(`moved from ${k1.id} \\(MoveFrom → MoveTo\\)$`));
+
+  // the parentId foreign key survived the renumbering
+  const db = new Database(path.join(dir, "workspaces", "t", "tasks.db"), { readonly: true });
+  try { assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []); } finally { db.close(); }
+});
+
+test("move: old ids keep working everywhere (and say the new one); a second move repoints them; delete forgets them", async () => {
+  await api("POST", "/api/w/t/projects", { name: "Alias A", prefix: "AA" });
+  await api("POST", "/api/w/t/projects", { name: "Alias B", prefix: "AZ" });
+  const P = (await create({ project: "Alias A" })).body;
+  const kid = (await create({ parentId: P.id })).body;
+  const first = (await api("POST", `/api/w/t/tasks/${P.id}/move`, { project: "Alias B" })).body;
+  const newKid = first.moved[1].to;
+
+  const got = await api("GET", `/api/w/t/tasks/${P.id}`);
+  assert.equal(got.status, 200);
+  assert.equal(got.body.id, first.id);
+  assert.match(got.body.hint, new RegExp(`${P.id} is now ${first.id} \\(it moved projects\\)`));
+  const patched = await api("PATCH", `/api/w/t/tasks/${kid.id}`, { note: "still works" });
+  assert.equal(patched.body.id, newKid);
+  assert.match(patched.body.hint, new RegExp(`${kid.id} is now ${newKid}`));
+  assert.deepEqual((await api("GET", `/api/w/t/tasks?parentId=${P.id}`)).body.map((t) => t.id), [newKid]);
+  // a new subtask can name the parent by its old id; it's stored under the current one
+  assert.equal((await create({ parentId: P.id })).body.parentId, first.id);
+
+  const second = (await api("POST", `/api/w/t/tasks/${first.id}/move`, { project: "Alias A" })).body;
+  assert.equal((await api("GET", `/api/w/t/tasks/${P.id}`)).body.id, second.id); // straight to the latest, no chain
+  assert.match(second.id, /^AA-\d+$/);
+  assert.notEqual(second.id, P.id); // the old number isn't handed back
+
+  // moving it back needs its subtasks gone first only to delete it — detach them, then delete
+  for (const t of (await api("GET", `/api/w/t/tasks?parentId=${second.id}`)).body) await api("DELETE", `/api/w/t/tasks/${t.id}`);
+  assert.equal((await api("DELETE", `/api/w/t/tasks/${P.id}`)).status, 204); // by its first id
+  assert.equal((await api("GET", `/api/w/t/tasks/${P.id}`)).status, 404);
+  assert.equal((await api("GET", `/api/w/t/tasks/${second.id}`)).status, 404);
+});
+
+test("move: a subtask moves alone only with detach; same project, unknown project and a new project", async () => {
+  await api("POST", "/api/w/t/projects", { name: "Detach From", prefix: "DF" });
+  await api("POST", "/api/w/t/projects", { name: "Detach To", prefix: "DT" });
+  const P = (await create({ project: "Detach From" })).body;
+  const kid = (await create({ parentId: P.id, status: "in_progress" })).body;
+  const done = (await create({ parentId: P.id, status: "done" })).body;
+
+  const blocked = await api("POST", `/api/w/t/tasks/${kid.id}/move`, { project: "Detach To" });
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.body.code, "is_subtask");
+  assert.equal(blocked.body.parentId, P.id);
+  const alone = await api("POST", `/api/w/t/tasks/${kid.id}/move`, { project: "Detach To", detach: true });
+  assert.equal(alone.status, 200);
+  assert.equal(alone.body.parentId, null);
+  assert.match(alone.body.notes, new RegExp(`parentId: ${P.id} → –`));
+  assert.match(alone.body.hint, new RegExp(`The only subtask of ${P.id} is done`)); // what's left of the old parent
+
+  const same = await api("POST", `/api/w/t/tasks/${P.id}/move`, { project: "detach from" });
+  assert.equal(same.status, 400);
+  assert.equal(same.body.code, "same_project");
+  const unknown = await api("POST", `/api/w/t/tasks/${P.id}/move`, { project: "Brand New Place" });
+  assert.equal(unknown.status, 422);
+  assert.equal(unknown.body.code, "needs_input");
+  const pick = unknown.body.options.find((o) => o.args.newProjectPrefix);
+  const created = await api("POST", `/api/w/t/tasks/${P.id}/move`, { project: "Brand New Place", ...pick.args });
+  assert.equal(created.status, 200);
+  assert.equal(created.body.project, "Brand New Place");
+  assert.equal(created.body.projectPrefix, pick.args.newProjectPrefix);
+  assert.equal(created.body.moved.length, 2); // the parent and the subtask still under it
+  assert.equal((await api("POST", `/api/w/t/tasks/${done.id}/move`, {})).status, 400); // no project given
+});
+
+test("CLI move + MCP move_task: old → new printed, subtask needs --detach / detach", async () => {
+  await api("POST", "/api/w/t/projects", { name: "CliMove", prefix: "CM" });
+  await api("POST", "/api/w/t/projects", { name: "CliTarget", prefix: "CT" });
+  const P = (await create({ project: "CliMove" })).body;
+  const kid = (await create({ parentId: P.id })).body;
+
+  const sub = await cli("move", kid.id, "--project=CliTarget");
+  assert.equal(sub.code, 1);
+  assert.match(sub.err, new RegExp(`409 .*agent-board move ${P.id} --project=<name> — or this one alone: add --detach`));
+  const moved = await cli("move", P.id, "--project=CliTarget");
+  assert.equal(moved.code, 0);
+  assert.match(moved.out, new RegExp(`moved ${P.id} → CT-\\d+\\nmoved ${kid.id} → CT-\\d+`));
+  assert.match(moved.out, /note: .* is now CT-\d+ in CliTarget/);
+  const noted = await cli("note", kid.id, "by the old id");
+  assert.match(noted.out, new RegExp(`noted CT-\\d+\\nnote: ${kid.id} is now CT-\\d+`));
+
+  const call = (name, args) => rpc("tools/call", { name, arguments: { workspace: "t", ...args } });
+  const back = await call("move_task", { taskId: P.id, project: "CliMove" });
+  assert.match(back.content[0].text, new RegExp(`^Note: ${P.id} \\(later CT-\\d+\\) is now CM-\\d+ in CliMove`));
+  const lone = await call("move_task", { taskId: kid.id, project: "CliTarget" });
+  assert.equal(lone.isError, true);
+  assert.match(lone.content[0].text, /move_task with taskId CM-\d+ — or this one alone: detach true/);
+});

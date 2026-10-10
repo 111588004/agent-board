@@ -44,7 +44,7 @@ export const INSTRUCTIONS = [
   "A result starting with NEEDS USER INPUT means the board can't tell what the user wants (several projects match, the project doesn't exist yet, no title). Ask the user that question with your built-in ask tool (Claude Code: AskUserQuestion, Codex: request_user_input, Gemini: ask_user; none -> ask in chat), then call the same tool again with the chosen option's args. Never pick an option yourself.",
   "Ticket prefixes are the user's call: never invent one — omit prefix (create_project) and the board asks.",
   "Whether the board asks is the user's setting (set_ask_mode: on | new | off) — change it only when the user explicitly tells you to. A ticket with an \"unconfirmed\" field was auto-picked by the board; mention it to the user.",
-  "Subtasks: to split work across agents or sessions, make one parent ticket that coordinates it and one subtask per agent (create_task with parentId; the project comes from the parent). Two levels only — a subtask can't have subtasks. A parent's status never changes by itself: when a result says all its subtasks are done, tell the user or move the parent on. A ticket with subtasks can't be deleted; delete or detach them first (update_task parentId null).",
+  "Subtasks: to split work across agents or sessions, make one parent ticket that coordinates it and one subtask per agent (create_task with parentId; the project comes from the parent). Two levels only — a subtask can't have subtasks. A parent's status never changes by itself: when a result says all its subtasks are done, tell the user or move the parent on. A ticket with subtasks can't be deleted; delete or detach them first (update_task parentId null). Ids can change: move_task renumbers a ticket into another project; an old id still works, but when a result says \"X is now Y\", use Y from then on.",
 ].join("\n");
 
 export function createMcpServer({ notice } = {}) {
@@ -150,7 +150,7 @@ export function createMcpServer({ notice } = {}) {
       },
     },
     async ({ taskId, note, agent, workspace }) => {
-      return json(await client.updateTask(taskId, { note, agent, workspace }));
+      return taskResult(await client.updateTask(taskId, { note, agent, workspace }));
     }
   );
 
@@ -166,6 +166,25 @@ export function createMcpServer({ notice } = {}) {
     async ({ taskId, workspace }) => {
       await client.deleteTask(taskId, { workspace });
       return json({ deleted: taskId });
+    }
+  );
+
+  tool(
+    "move_task",
+    {
+      description: "Move a task to another project — only when the user asks for it. It gets a new id there (e.g. AB-5 → OPS-12) and its subtasks come along with new ids too; the result lists every old → new id. Old ids keep working, but use the new ones from then on. A subtask can't move alone unless detach is true, which takes it out of its parent — ask the user first. If the project is unclear or doesn't exist, the result asks you to check with the user.",
+      inputSchema: {
+        taskId: z.string(),
+        project: z.string().describe(`The project to move it to. ${PROJECT_DESC}`),
+        newProjectPrefix: z.string().optional().describe("Only from a NEEDS USER INPUT option the user chose: creates the project with this prefix in the same call. Never invent one"),
+        rememberAs: z.string().optional().describe("Only from a NEEDS USER INPUT option the user chose: copy it unchanged"),
+        detach: z.boolean().optional().describe("true moves a subtask alone, taking it out of its parent — only with the user's go-ahead"),
+        agent: z.string().optional().describe("Your agent id, e.g. claude — tags the history line"),
+        workspace: z.string().optional().describe(WORKSPACE_DESC),
+      },
+    },
+    async ({ taskId, project, newProjectPrefix, rememberAs, detach, agent, workspace }) => {
+      return taskResult(await client.moveTask(taskId, { project, newProjectPrefix, rememberAs, detach, agent, workspace }));
     }
   );
 

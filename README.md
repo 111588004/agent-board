@@ -51,6 +51,7 @@ From any other terminal, on any project. (These commands assume `agent-board` is
 agent-board list [--project=] [--status=] [--parent=] [--workspace=]
 agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--remember-as=<word>] [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes sets the Description field; with --parent, --project can be left out
 agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--parent=<id>|none] [--notes="..."] [--confirm] [--workspace=]   # --notes overwrites the Description field; --parent=none detaches; --confirm clears "unconfirmed"
+agent-board move <id> --project=<name> [--detach] [--workspace=]   # to another project: a new id there, subtasks come along, old ids keep working
 agent-board delete <id> [--workspace=]
 agent-board note <id> "<text>" [--agent=<name>] [--workspace=]
 
@@ -83,7 +84,7 @@ The CLI is a REST client — it talks to the server above, it does not touch the
 | `new` | the board picks, marks the ticket ⚠ unconfirmed | asks |
 | `off` | the board picks, marks the ticket ⚠ unconfirmed | error (never auto-created) |
 
-When the board picks, it takes the project with the most tickets (ties: the oldest), or uses the description's first line as the title. It writes why into the ticket's notes and sets its `unconfirmed` field. The web board shows a ⚠ Unconfirmed chip on the card and a Confirm button in the ticket drawer; `agent-board update <id> --confirm` does the same. A ticket can't move to another project, so if the pick was wrong, create it again in the right one. Creating a project without a prefix asks in `on`/`new` and is an error in `off`: the prefix is never picked for you.
+When the board picks, it takes the project with the most tickets (ties: the oldest), or uses the description's first line as the title. It writes why into the ticket's notes and sets its `unconfirmed` field. The web board shows a ⚠ Unconfirmed chip on the card and a Confirm button in the ticket drawer; `agent-board update <id> --confirm` does the same. If the pick was wrong, move the ticket: `agent-board move <id> --project=<the right one>`. Creating a project without a prefix asks in `on`/`new` and is an error in `off`: the prefix is never picked for you.
 
 Three ways to change it, all the same setting:
 
@@ -97,16 +98,23 @@ agent-board config ask off     # CLI (npx: npx @limao.li.design/agent-board conf
 **Subtasks** split one piece of work across agents: a parent ticket coordinates it, and each agent gets a subtask (`--parent=<id>` on create; the project comes from the parent). The board enforces the shape for the web board, the CLI and MCP alike:
 
 - Two levels only. A subtask can't have subtasks, and a ticket that has subtasks can't become one.
-- A parent is in the same project as its subtasks (tickets can't move projects). Naming a parent in another project when you create a ticket asks which you meant.
+- A parent is in the same project as its subtasks. Naming a parent in another project when you create a ticket asks which you meant.
 - `agent-board update <id> --parent=<id>` moves a subtask under another parent; `--parent=none` detaches it. Each move is written into the ticket's notes.
 - A parent shows its subtasks' progress (`list` prints `[2/3 done]` and indents the subtasks under it). Its status never changes by itself: when the last subtask is done, the board says so (`note: All 3 subtasks of AB-4 are done`) and leaves moving the parent to you.
 - A ticket with subtasks can't be deleted. The error lists them, so you can delete them or detach them first.
+
+**Moving a ticket to another project** works like Jira's Move: `agent-board move AB-5 --project=Ops` gives it a new id there (`AB-5 → OPS-12`), because a ticket's id names its project.
+
+- Its subtasks come along, with new ids too, still under it.
+- The old id keeps working everywhere — `list`, `update`, `note`, `delete`, MCP, a `?task=AB-5` link — and every reply that used it says `AB-5 is now OPS-12`. Moving twice points every old id at the newest one.
+- A subtask moves alone only with `--detach`, which takes it out of its parent; otherwise the error tells you to move the parent instead.
+- Each moved ticket's notes record where it came from. An old number is never handed out again.
 
 **Workspaces** are fully isolated boards (own projects, own tasks, own SQLite file) for separating contexts — e.g. personal projects vs. a client's. Everything defaults to a single `"default"` workspace if you never touch this; it's opt-in.
 
 ## MCP
 
-10 tools: `list_tasks`, `create_task`, `update_task`, `delete_task`, `add_task_note`, `list_projects`, `create_project`, `rename_project`, `delete_project`, `set_ask_mode`.
+11 tools: `list_tasks`, `create_task`, `update_task`, `move_task`, `delete_task`, `add_task_note`, `list_projects`, `create_project`, `rename_project`, `delete_project`, `set_ask_mode`.
 
 **stdio (recommended)** — `agent-board mcp` speaks MCP over stdin/stdout, so a client can launch it with no global install:
 
