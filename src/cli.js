@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import * as client from "./client.js";
 
@@ -10,7 +10,9 @@ const [cmd, ...rest] = process.argv.slice(2);
 // An unrecognized verb still falls through to the usage error below.
 if (cmd === undefined) {
   const serverPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "server.js");
-  await import(serverPath);
+  // a file URL, not the path: on Windows an absolute path (C:\...) is read as a URL with scheme "c:" and
+  // import() refuses it (ERR_UNSUPPORTED_ESM_URL_SCHEME), so bare `agent-board` crashed there
+  await import(pathToFileURL(serverPath).href);
   await new Promise(() => {}); // server.js's own app.listen() keeps the process alive
 }
 
