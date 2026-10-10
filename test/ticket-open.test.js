@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
 
 const src = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src");
 let child, base, dir;
@@ -347,4 +348,39 @@ test("errors are always JSON: bad JSON body, unknown /api path", async () => {
   const nope = await fetch(`${base}/api/nope`);
   assert.equal(nope.status, 404);
   assert.match(nope.headers.get("content-type"), /json/);
+});
+
+// ---- ticket ids are never handed out twice
+
+test("ids: deleting the newest ticket doesn't free its number; a re-prefixed project keeps counting", async () => {
+  await api("POST", "/api/workspaces", { name: "ids" });
+  await api("POST", "/api/w/ids/projects", { name: "Web", prefix: "WB" });
+  for (let i = 0; i < 3; i++) await create({ project: "Web" }, "ids");
+  assert.equal((await api("DELETE", "/api/w/ids/tasks/WB-3")).status, 204);
+  assert.equal((await create({ project: "Web" }, "ids")).body.id, "WB-4");
+
+  // WB -> XY: new tickets continue after WB's numbers; a later project taking WB can't reissue them
+  assert.equal((await api("PATCH", "/api/w/ids/projects/Web", { prefix: "XY" })).status, 200);
+  assert.equal((await create({ project: "Web" }, "ids")).body.id, "XY-5");
+  await api("POST", "/api/w/ids/projects", { name: "Web2", prefix: "WB" });
+  assert.equal((await create({ project: "Web2" }, "ids")).body.id, "WB-5");
+});
+
+test("ids: an existing board is backfilled from its tickets the first time the new server opens it", async () => {
+  // a board from before id_counters: MG-1, MG-2, and a ticket re-prefixed from OLD to MG with seq 5
+  const wsDir = path.join(dir, "workspaces", "legacy");
+  fs.mkdirSync(wsDir, { recursive: true });
+  const db = new Database(path.join(wsDir, "tasks.db"));
+  db.exec(`CREATE TABLE projects (name TEXT PRIMARY KEY, prefix TEXT UNIQUE NOT NULL, createdAt INTEGER);
+    CREATE TABLE tasks (id TEXT PRIMARY KEY, seq INTEGER NOT NULL, title TEXT NOT NULL, project TEXT, projectPrefix TEXT,
+      parentId TEXT REFERENCES tasks(id), agent TEXT, priority TEXT, status TEXT, notes TEXT, worktree TEXT, branch TEXT,
+      link TEXT, dueDate TEXT, createdAt INTEGER, updatedAt INTEGER);
+    INSERT INTO projects VALUES ('Migrated', 'MG', 0);
+    INSERT INTO tasks (id, seq, title, project, projectPrefix, status, createdAt) VALUES
+      ('MG-1', 1, 'a', 'Migrated', 'MG', 'backlog', 1), ('MG-2', 2, 'b', 'Migrated', 'MG', 'backlog', 2),
+      ('OLD-5', 5, 'c', 'Migrated', 'MG', 'backlog', 3);`);
+  db.close();
+  const next = await create({ project: "Migrated" }, "legacy");
+  assert.equal(next.status, 201);
+  assert.equal(next.body.id, "MG-6");
 });

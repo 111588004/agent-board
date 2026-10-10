@@ -153,6 +153,8 @@ Rules the template teaches agents for opening a ticket in one call:
 
 Each workspace's database lives at `~/.agent-board/workspaces/<name>/tasks.db` — not project-cwd-relative, so a board is shared across every project/worktree on the machine regardless of where `agent-board` is invoked from.
 
+Ticket numbers are never reused. Deleting `AB-7` doesn't free `7`: the next ticket is `AB-8`, so an agent still holding `AB-7` gets "not found" instead of somebody else's ticket. The same holds across a prefix change: a project re-prefixed from `AB` to `XY` continues at `XY-8`, and a later project that takes `AB` starts after `AB-7`.
+
 ## Development
 
 ```bash

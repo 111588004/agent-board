@@ -153,6 +153,8 @@ claude mcp add --transport http agent-board http://localhost:4317/mcp
 
 每個 workspace 的資料庫在 `~/.agent-board/workspaces/<name>/tasks.db`，不是相對於專案的 cwd，所以不管從哪裡執行 `agent-board`，同一台機器上的每個專案／worktree 都共用同一個看板。
 
+單號永遠不會重複使用。刪掉 `AB-7` 不會讓 `7` 空出來：下一張是 `AB-8`，所以還拿著 `AB-7` 的 agent 會查到「找不到」，而不是別人的單。換前綴時也一樣：從 `AB` 改成 `XY` 的專案會從 `XY-8` 接著編，之後拿到 `AB` 這個前綴的專案也會從 `AB-7` 之後開始。
+
 ## 開發
 
 ```bash
