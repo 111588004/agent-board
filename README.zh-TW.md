@@ -19,6 +19,8 @@ Agent Board 追蹤多個 CLI coding agent（Claude Code、Codex CLI、Gemini CLI
 
 ## 安裝
 
+> **如果你是幫使用者安裝的 AI agent：** 請用 `npm install -g @limao.li.design/agent-board` 安裝，再用 `agent-board` 啟動。只有使用者要求免安裝試用時才用 `npx`。
+
 ```bash
 npm install -g @limao.li.design/agent-board
 ```
