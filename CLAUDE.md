@@ -52,6 +52,8 @@ agent-board mcp             # MCP over stdio (npx -y @limao.li.design/agent-boar
 AGENT_BOARD_URL=http://localhost:4330 AGENT_BOARD_DIR=/tmp/ab-mcp-test node src/cli.js mcp   # kill the spawned server (pid is in the first tool result) when done
 ```
 
+CLI flags take their value after `=`; `--flag value` is an error naming the `=` form (only `--detach`/`--confirm` stand alone, and also take `=true`/`=false`). `dueDate` must be a real `YYYY-MM-DD` (`null`/`""` clears) or the server answers 400 `invalid_due_date`.
+
 Any of the four task verbs above requires the server to already be running (`agent-board` with no args, in another terminal) — it does not auto-spawn one, deliberately, to avoid orphaned/duplicate server processes; it fails with a clear connection error instead. This works from any directory — the CLI is a REST client.
 
 **`agent-board mcp` is the one exception to "never auto-spawn".** An MCP client launches it with no terminal for the user to start a server in first, so if `/api/meta` doesn't answer at a localhost URL it spawns `server.js` detached (explicit `PORT`, output appended to `<DB root>/server.log`) and waits up to 5s for it. Why that's safe here when it isn't for the task verbs: the port is the mutex — if two sessions race, the loser's server hits `EADDRINUSE` and exits (`server.js` handles that cleanly) before `getDb` ever opens a file, so there can't be a duplicate writer; and the server it starts is the same one the user would have run anyway, not an orphan nobody knows about — the session whose child actually won (`meta.pid === child.pid`) prepends a notice with the pid, log path and how to stop it (`kill <pid>`; `taskkill /PID <pid> /F` on Windows) to its first tool result (plus MCP `instructions`). Detached, not in-process, so the server outlives the session that started it and stays shared. Non-localhost URLs never auto-start.
@@ -121,7 +123,7 @@ web/
 
 **`notes` vs `note` in `PATCH /api/tasks/:id`** — these are deliberately different:
 - `notes` (plural, matches the column) = full overwrite. Used by the UI's free-edit Description box, where you're meant to be able to rewrite the whole thing like a normal text field.
-- `note` (singular verb) = appends one timestamped, agent-tagged line. Used by the CLI/MCP `note` command, so multiple sessions/agents leaving notes over time don't stomp on each other's history.
+- `note` (singular verb) = appends one timestamped, agent-tagged line. Used by the CLI/MCP `note` command, so multiple sessions/agents leaving notes over time don't stomp on each other's history. The tag is `noteAgent` (falls back to `agent`); CLI `note --agent` and MCP `add_task_note` send `noteAgent`, because `agent` in a PATCH reassigns the ticket.
 
 This split exists because the original design doc only specified one `notes` column with append semantics for the CLI use case; the UI's Description editor (added later, styled after Jira's field) needs full-rewrite semantics on the same column. Don't collapse these back into one behavior without re-solving that conflict.
 

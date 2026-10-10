@@ -676,6 +676,89 @@ test("CLI move + MCP move_task: old → new printed, subtask needs --detach / de
   assert.match(lone.content[0].text, /move_task with taskId CM-\d+ — or this one alone: detach true/);
 });
 
+test("dueDate: a real YYYY-MM-DD, or null/\"\" to clear — anything else is a 400 on create and update", async () => {
+  for (const bad of ["notadate", "2026-02-30", "2026-3-5", "05/03/2026"]) {
+    const r = await create({ project: "bm", dueDate: bad });
+    assert.equal(r.status, 400, bad);
+    assert.equal(r.body.code, "invalid_due_date");
+    assert.match(r.body.error, /YYYY-MM-DD/);
+  }
+  const t = (await create({ project: "bm", dueDate: "2026-03-05" })).body;
+  assert.equal(t.dueDate, "2026-03-05");
+  const bad = await api("PATCH", `/api/w/t/tasks/${t.id}`, { dueDate: "notadate" });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.code, "invalid_due_date");
+  assert.equal((await api("GET", `/api/w/t/tasks/${t.id}`)).body.dueDate, "2026-03-05");
+  assert.equal((await api("PATCH", `/api/w/t/tasks/${t.id}`, { dueDate: "2024-02-29" })).body.dueDate, "2024-02-29");
+  assert.equal((await api("PATCH", `/api/w/t/tasks/${t.id}`, { dueDate: "" })).body.dueDate, null); // the web's "clear"
+  assert.equal((await api("PATCH", `/api/w/t/tasks/${t.id}`, { dueDate: null })).body.dueDate, null);
+
+  // a value stored before the check doesn't block the web's whole-card saves
+  const db = new Database(path.join(dir, "workspaces", "t", "tasks.db"));
+  try { db.prepare("UPDATE tasks SET dueDate = 'someday' WHERE id = ?").run(t.id); } finally { db.close(); }
+  const card = (await api("GET", `/api/w/t/tasks/${t.id}`)).body;
+  const saved = await api("PATCH", `/api/w/t/tasks/${t.id}`, { ...card, title: "renamed" });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.title, "renamed");
+
+  const c = await cli("create", "--title=dated", "--project=bm", "--due-date=notadate");
+  assert.equal(c.code, 1);
+  assert.match(c.err, /400 invalid dueDate "notadate" — use YYYY-MM-DD/);
+});
+
+test("CLI: --flag value is refused, naming --flag=value; nothing is sent", async () => {
+  const before = (await api("GET", "/api/w/t/tasks")).body.length;
+  const r = await cli("list", "--project", "AB-Benchmark");
+  assert.equal(r.code, 1);
+  assert.match(r.err, /--project needs its value after "=": --project="AB-Benchmark"/);
+  assert.equal(r.out, "");
+  const c = await cli("create", "--title=spaced", "--project", "bm");
+  assert.equal(c.code, 1);
+  assert.match(c.err, /--project="bm"/);
+  assert.equal((await api("GET", "/api/w/t/tasks")).body.length, before);
+});
+
+test("note --agent tags the note and keeps the owner; update --agent reassigns", async () => {
+  const t = (await create({ project: "bm", agent: "claude" })).body;
+  const n = await cli("note", t.id, "just a comment", "--agent=codex");
+  assert.equal(n.code, 0);
+  let row = (await api("GET", `/api/w/t/tasks/${t.id}`)).body;
+  assert.equal(row.agent, "claude");
+  assert.match(row.notes, /· codex\] just a comment$/);
+
+  const r = await rpc("tools/call", { name: "add_task_note", arguments: { workspace: "t", taskId: t.id, note: "from mcp", agent: "gemini" } });
+  assert.ok(!r.isError);
+  row = (await api("GET", `/api/w/t/tasks/${t.id}`)).body;
+  assert.equal(row.agent, "claude");
+  assert.match(row.notes, /· gemini\] from mcp$/);
+
+  assert.equal((await cli("update", t.id, "--agent=codex")).code, 0);
+  row = (await api("GET", `/api/w/t/tasks/${t.id}`)).body;
+  assert.equal(row.agent, "codex");
+  assert.match(row.notes, /agent: claude → codex$/);
+});
+
+test("CLI --confirm: bare, =true and =false read the same way everywhere; any other value is an error", async () => {
+  const t = (await create({ project: "bm" })).body;
+  const mark = () => api("PATCH", `/api/w/t/tasks/${t.id}`, { unconfirmed: "picked a project" });
+  const unconfirmed = async () => (await api("GET", `/api/w/t/tasks/${t.id}`)).body.unconfirmed;
+
+  await mark();
+  assert.equal((await cli("update", t.id, "--confirm=false")).code, 0);
+  assert.equal(await unconfirmed(), "picked a project");
+  assert.equal((await cli("update", t.id, "--confirm=true")).code, 0);
+  assert.equal(await unconfirmed(), null);
+  await mark();
+  assert.equal((await cli("update", t.id, "--confirm")).code, 0);
+  assert.equal(await unconfirmed(), null);
+
+  await mark();
+  const r = await cli("update", t.id, "--confirm=maybe");
+  assert.equal(r.code, 1);
+  assert.match(r.err, /--confirm is on or off: --confirm, --confirm=true or --confirm=false/);
+  assert.equal(await unconfirmed(), "picked a project");
+});
+
 test("an unknown workspace is a 404, never created by a read; workspace use checks the name (#22)", async () => {
   const r = await api("GET", "/api/w/typo/tasks");
   assert.equal(r.status, 404);

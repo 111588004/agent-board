@@ -145,12 +145,12 @@ export function createMcpServer({ notice } = {}) {
       inputSchema: {
         taskId: z.string(),
         note: z.string(),
-        agent: z.string().optional().describe("Your agent id, e.g. claude"),
+        agent: z.string().optional().describe("Your agent id, e.g. claude — tags the note; the ticket's owner stays as it is"),
         workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
     async ({ taskId, note, agent, workspace }) => {
-      return taskResult(await client.updateTask(taskId, { note, agent, workspace }));
+      return taskResult(await client.updateTask(taskId, { note, noteAgent: agent, workspace }));
     }
   );
 
