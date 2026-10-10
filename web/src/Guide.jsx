@@ -111,7 +111,7 @@ export default function Guide() {
         </Step>
 
         <Step n="4" title="Hand it to an agent">
-          <p>Open the ticket and find <b>Hand off to</b>. Pick the agent (Claude Code, Codex, Gemini CLI, Pi, or <i>Any agent</i> for a prompt to paste into a session that's already running), then <b>Copy launch command</b> and paste it into a terminal. It only copies — nothing runs until you paste it.</p>
+          <p>Open the ticket and press <b>Hand off</b> at the bottom. By default it copies a prompt for <i>any agent</i> to paste into a session that's already running; pick Claude Code, Codex, Gemini CLI or Pi with its <b>▾</b> to copy a command that starts that agent instead, and paste it into a terminal. It only copies — nothing runs until you paste it.</p>
           <p>For a ticket <code>APP-1</code> with a worktree set, Codex gets this:</p>
           <Cmd>{buildLaunchText({ card: sample, target: "codex", boardUrl: origin, workspace: ws || "default" })}</Cmd>
           <p>The agent claims the ticket, reads its history, and reports back with <code>agent-board note</code> / <code>update</code> (or the MCP tools). Keep the board open: it updates live as they work.</p>
