@@ -116,6 +116,14 @@ function initSchema(db) {
       for (const [prefix, n] of last) insert.run(prefix, n);
     })();
   }
+
+  // a ticket that moved to another project gets a new id there; its old ids stay here, pointing at the
+  // current one, so an agent still holding AB-5 reaches OPS-12 (and is told so). Always the latest id —
+  // a second move repoints every old id, never a chain. Deleted with the ticket.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_aliases (oldId TEXT PRIMARY KEY, taskId TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_task_aliases_task ON task_aliases(taskId);
+  `);
 }
 
 // global settings (every workspace), next to the workspaces dir. Read on every
@@ -347,21 +355,75 @@ export function parseAliases(v) {
 // against a counter that's behind its tickets, e.g. a prefix a renamed project used to own.
 export function createTask(db, task) {
   return db.transaction((task) => {
-    const counter = db.prepare("SELECT lastSeq FROM id_counters WHERE prefix = ?").get(task.projectPrefix);
-    const taken = db.prepare("SELECT 1 FROM tasks WHERE id = ?");
-    let next = (counter ? counter.lastSeq : 0) + 1;
-    while (taken.get(`${task.projectPrefix}-${next}`)) next++;
-    db.prepare(
-      "INSERT INTO id_counters (prefix, lastSeq) VALUES (?, ?) ON CONFLICT(prefix) DO UPDATE SET lastSeq = excluded.lastSeq"
-    ).run(task.projectPrefix, next);
-    const id = `${task.projectPrefix}-${next}`;
+    const { id, seq } = takeNextId(db, task.projectPrefix);
     const now = Date.now();
     db.prepare(
       `INSERT INTO tasks (id, seq, title, project, projectPrefix, parentId, agent, priority, status, notes, worktree, branch, link, dueDate, unconfirmed, createdAt, updatedAt)
        VALUES (@id, @seq, @title, @project, @projectPrefix, @parentId, @agent, @priority, @status, @notes, @worktree, @branch, @link, @dueDate, @unconfirmed, @createdAt, @updatedAt)`
-    ).run({ unconfirmed: null, ...task, id, seq: next, createdAt: now, updatedAt: now });
+    ).run({ unconfirmed: null, ...task, id, seq, createdAt: now, updatedAt: now });
     return getTask(db, id);
   })(task);
+}
+
+// the next id for a prefix, and bump its counter. Call inside a transaction. An id an old ticket left
+// behind (task_aliases) counts as taken too: it still leads to that ticket.
+function takeNextId(db, prefix) {
+  const counter = db.prepare("SELECT lastSeq FROM id_counters WHERE prefix = ?").get(prefix);
+  const taken = db.prepare("SELECT 1 FROM tasks WHERE id = ? UNION ALL SELECT 1 FROM task_aliases WHERE oldId = ?");
+  let seq = (counter ? counter.lastSeq : 0) + 1;
+  while (taken.get(`${prefix}-${seq}`, `${prefix}-${seq}`)) seq++;
+  db.prepare(
+    "INSERT INTO id_counters (prefix, lastSeq) VALUES (?, ?) ON CONFLICT(prefix) DO UPDATE SET lastSeq = excluded.lastSeq"
+  ).run(prefix, seq);
+  return { id: `${prefix}-${seq}`, seq };
+}
+
+// an id as given -> the ticket's current id: { id } for a live id, { id, movedFrom } for one a moved
+// ticket left behind, null for neither
+export function resolveTaskId(db, id) {
+  if (!id) return null;
+  if (db.prepare("SELECT 1 FROM tasks WHERE id = ?").get(id)) return { id };
+  const alias = db.prepare("SELECT taskId FROM task_aliases WHERE oldId = ?").get(id);
+  return alias ? { id: alias.taskId, movedFrom: id } : null;
+}
+
+export function movedHint(from, to) {
+  return `${from} is now ${to} (it moved projects) — use ${to} from now on.`;
+}
+
+// Move a ticket to another project: it gets a new id there, and its subtasks come along (new ids too,
+// still under it). Every old id keeps leading to the ticket (task_aliases), and each ticket's notes say
+// where it came from. A subtask moving alone leaves its parent first (detach). One transaction.
+// -> [{ from, to }], the ticket first
+export function moveTask(db, id, project, { detach = false, agent } = {}) {
+  return db.transaction(() => {
+    const task = db.prepare("SELECT id, project, parentId FROM tasks WHERE id = ?").get(id);
+    const ids = [task.id, ...subtaskIds(db, task.id)];
+    // ids change underneath the parentId foreign key: check it once, at commit, not mid-move
+    db.pragma("defer_foreign_keys = ON");
+    const moved = [];
+    const now = Date.now();
+    for (const from of ids) {
+      const { id: to, seq } = takeNextId(db, project.prefix);
+      db.prepare("UPDATE tasks SET id = ?, seq = ?, project = ?, projectPrefix = ?, updatedAt = ? WHERE id = ?")
+        .run(to, seq, project.name, project.prefix, now, from);
+      db.prepare("UPDATE tasks SET parentId = ? WHERE parentId = ?").run(to, from);
+      db.prepare("UPDATE task_aliases SET taskId = ? WHERE taskId = ?").run(to, from);
+      db.prepare("INSERT INTO task_aliases (oldId, taskId) VALUES (?, ?)").run(from, to);
+      moved.push({ from, to });
+    }
+    if (task.parentId && detach) {
+      db.prepare("UPDATE tasks SET parentId = NULL WHERE id = ?").run(moved[0].to);
+      appendNote(db, moved[0].to, `parentId: ${task.parentId} → –`, agent);
+    }
+    for (const { from, to } of moved) appendNote(db, to, `moved from ${from} (${task.project} → ${project.name})`, agent);
+    return moved;
+  })();
+}
+
+// a deleted ticket takes its old ids with it — they'd otherwise lead nowhere
+export function forgetTaskAliases(db, id) {
+  db.prepare("DELETE FROM task_aliases WHERE taskId = ?").run(id);
 }
 
 // a project's prefix changed: its new tickets continue after the old prefix's numbers, and the old
@@ -391,9 +453,10 @@ export function subtaskIds(db, id) {
 }
 
 // Tickets nest two levels: a parent can't itself be a subtask, a subtask can't have subtasks, and both
-// sit in the same project (tickets can't move projects). task: { id? (absent when creating), project }.
+// sit in the same project (a ticket changes project only by moving, subtasks along — see moveTask). task: { id? (absent when creating), project }.
 // -> { parent } or { status, body } — the cross-project case is left to the caller (POST asks, PATCH refuses).
-export function checkParent(db, task, parentId) {
+export function checkParent(db, task, givenParentId) {
+  const parentId = resolveTaskId(db, givenParentId)?.id || givenParentId; // an old id of a moved ticket works too
   if (task.id && parentId === task.id) {
     return { status: 400, body: { error: `${task.id} can't be its own parent`, code: "self_parent" } };
   }

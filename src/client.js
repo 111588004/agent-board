@@ -50,6 +50,7 @@ export async function apiRequest(method, path, body) {
     err.code = data && data.code;
     err.input = data && data.input;
     err.subtasks = data && data.subtasks;
+    err.parentId = data && data.parentId;
     if (err.code === "needs_input") Object.assign(err, { question: data.question, options: data.options, answerArg: data.answerArg });
     throw err;
   }
@@ -64,6 +65,11 @@ export function errorWithHint(e, surface) {
     return cli
       ? `${e.message} New project: agent-board project create "${name}" --prefix=<PREFIX>`
       : `${e.message} New project: use the create_project tool (name, prefix).`;
+  }
+  if (e.code === "is_subtask" && e.parentId) {
+    return cli
+      ? `${e.message}. Move the parent: agent-board move ${e.parentId} --project=<name> — or this one alone: add --detach`
+      : `${e.message}. Move the parent: move_task with taskId ${e.parentId} — or this one alone: detach true.`;
   }
   if (e.code === "has_subtasks" && e.subtasks?.length) {
     const first = e.subtasks[0];
@@ -122,6 +128,11 @@ export function createTask({ workspace, ...task }) {
 
 export function updateTask(id, { workspace, ...patch } = {}) {
   return apiRequest("PATCH", `${workspacePath(workspace)}/tasks/${id}`, patch);
+}
+
+// to another project: a new id there, subtasks along, old ids keep working (POST /tasks/:id/move)
+export function moveTask(id, { workspace, ...body } = {}) {
+  return apiRequest("POST", `${workspacePath(workspace)}/tasks/${id}/move`, body);
 }
 
 export function deleteTask(id, { workspace } = {}) {

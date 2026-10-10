@@ -152,6 +152,29 @@ switch (cmd) {
     break;
   }
 
+  case "move": {
+    const id = positional[0];
+    if (!id || !flags.project) {
+      console.error(
+        "usage: agent-board move <id> --project=<name> [--new-project-prefix=<prefix>] [--detach] [--agent=<name>] [--workspace=<name>]\n  (the ticket gets a new id in that project and its subtasks come along; old ids keep working. A subtask moves alone only with --detach, which takes it out of its parent)"
+      );
+      process.exit(1);
+    }
+    const res = await run(() =>
+      client.moveTask(id, {
+        project: flags.project,
+        newProjectPrefix: flags["new-project-prefix"],
+        rememberAs: flags["remember-as"],
+        detach: positional.includes("--detach") || undefined,
+        agent: flags.agent,
+        workspace: flags.workspace,
+      })
+    );
+    for (const m of res.moved) console.log(`moved ${m.from} → ${m.to}`);
+    printHint(res);
+    break;
+  }
+
   case "delete": {
     const id = positional[0];
     if (!id) {
@@ -172,6 +195,7 @@ switch (cmd) {
     }
     const task = await run(() => client.updateTask(id, { note: text, agent: flags.agent, workspace: flags.workspace }));
     console.log(`noted ${task.id}`);
+    printHint(task); // e.g. "AB-5 is now OPS-12" when an old id was used
     break;
   }
 
