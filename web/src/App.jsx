@@ -224,6 +224,13 @@ export default function AgentBoard() {
         }
       } catch (e) {
         if (cancelled) return;
+        // a ?workspace= link or a remembered one that no longer exists (the server stopped
+        // creating them on sight): fall back to "default" rather than an error every load
+        if (e.code === "unknown_workspace") {
+          api.setWorkspace("default");
+          setWorkspace("default");
+          return;
+        }
         // only the first load alerts; a later failure is usually the server
         // restarting, so stay quiet and let the next tick reconnect
         if (first) reportError("Loading board", e);

@@ -62,10 +62,15 @@ async function ensureServer() {
     const meta = await getMeta();
     if (!meta) continue;
     if (meta.pid !== child.pid) return null; // someone else won the race
-    return `agent-board: no server was running at ${url.origin}, so this MCP session auto-started one in the background (pid ${child.pid}, log: ${log}). It keeps running after this session ends so the web UI, CLI and other agents can share it — stop it with \`kill ${child.pid}\`.`;
+    return `agent-board: no server was running at ${url.origin}, so this MCP session auto-started one in the background (pid ${child.pid}, log: ${log}). It keeps running after this session ends so the web UI, CLI and other agents can share it — stop it with \`${stopCommand(child.pid)}\`.`;
   }
   console.error(`agent-board mcp: started a server but it didn't answer within 5s — see ${log}`);
   return null;
+}
+
+// how the user stops the server this session started: Windows has no `kill`
+function stopCommand(pid) {
+  return process.platform === "win32" ? `taskkill /PID ${pid} /F` : `kill ${pid}`;
 }
 
 const notice = await ensureServer();

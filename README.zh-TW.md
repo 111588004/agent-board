@@ -49,8 +49,9 @@ agent-board
 
 ```bash
 agent-board list [--project=] [--status=] [--parent=] [--workspace=]
-agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--remember-as=<word>] [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes 設定 Description 欄位
-agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--notes="..."] [--confirm] [--workspace=]   # --notes 會覆寫 Description 欄位；--confirm 清除「unconfirmed」
+agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--remember-as=<word>] [--parent=<id>] [--agent=] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=] [--branch=] [--link=] [--notes="..."] [--workspace=]   # --notes 設定 Description 欄位；有 --parent 時可以省略 --project
+agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=] [--title=] [--worktree=] [--branch=] [--link=] [--due-date=<YYYY-MM-DD>] [--parent=<id>|none] [--notes="..."] [--confirm] [--workspace=]   # --notes 會覆寫 Description 欄位；--parent=none 解除 parent；--confirm 清除「unconfirmed」
+agent-board move <id> --project=<name> [--detach] [--workspace=]   # 搬到另一個專案：在那裡拿新單號，子任務一起搬，舊單號照樣能用
 agent-board delete <id> [--workspace=]
 agent-board note <id> "<text>" [--agent=<name>] [--workspace=]
 
@@ -83,7 +84,7 @@ CLI 是 REST client：它跟上面的伺服器溝通，不直接碰資料庫，�
 | `new` | 看板自己選，並把單標為 ⚠ unconfirmed | 詢問 |
 | `off` | 看板自己選，並把單標為 ⚠ unconfirmed | 錯誤（絕不自動建立） |
 
-看板自己選的時候，會挑單最多的專案（同數時挑最舊的），或用描述的第一行當標題。它會把原因寫進單的 notes，並設定 `unconfirmed` 欄位。網頁看板會在卡上顯示 ⚠ Unconfirmed 標籤，在單的側邊面板裡顯示 Confirm 按鈕；`agent-board update <id> --confirm` 效果相同。單不能移到另一個專案，所以如果選錯了，就在正確的專案裡重新開一張。沒給前綴就建立專案，在 `on`/`new` 下會詢問，在 `off` 下是錯誤：前綴絕不會替你挑。
+看板自己選的時候，會挑單最多的專案（同數時挑最舊的），或用描述的第一行當標題。它會把原因寫進單的 notes，並設定 `unconfirmed` 欄位。網頁看板會在卡上顯示 ⚠ Unconfirmed 標籤，在單的側邊面板裡顯示 Confirm 按鈕；`agent-board update <id> --confirm` 效果相同。如果選錯了，把單搬過去：`agent-board move <id> --project=<正確的專案>`。沒給前綴就建立專案，在 `on`/`new` 下會詢問，在 `off` 下是錯誤：前綴絕不會替你挑。
 
 有三種改法，改的都是同一個設定：
 
@@ -94,11 +95,26 @@ agent-board config ask off     # CLI（npx：npx @limao.li.design/agent-board co
 - MCP：跟你的 agent 說「關掉看板的提問」。它會呼叫 `set_ask_mode` 工具，而 agent 被告知只有在你要求時才能用它。
 - Claude Code mod：`/board-sync ask off`。
 
+**子任務（subtask）** 用來把一件工作分給多個 agent：一張 parent 單負責協調，每個 agent 各拿一張子任務（建立時加 `--parent=<id>`；專案會沿用 parent 的）。網頁看板、CLI、MCP 都遵守同一套規則，由看板強制執行：
+
+- 只有兩層。子任務不能再有子任務，已經有子任務的單也不能變成別人的子任務。
+- parent 和它的子任務在同一個專案。建立單時指定了另一個專案的 parent，看板會問你到底要哪一個。
+- `agent-board update <id> --parent=<id>` 把子任務移到另一個 parent 底下；`--parent=none` 解除。每次移動都會寫進單的 notes。
+- parent 會顯示子任務的進度（`list` 會印出 `[2/3 done]`，並把子任務縮排在它底下）。它的狀態不會自己變：最後一個子任務完成時，看板會告訴你（`note: All 3 subtasks of AB-4 are done`），要不要推進 parent 由你決定。
+- 有子任務的單不能刪除。錯誤訊息會列出那些子任務，讓你先刪掉或解除它們。
+
+**把單搬到另一個專案**的做法跟 Jira 的 Move 一樣：`agent-board move AB-5 --project=Ops` 會在那裡給它新單號（`AB-5 → OPS-12`），因為單號標示的是它所在的專案。
+
+- 子任務會一起搬，也拿新單號，並且仍然掛在它底下。
+- 舊單號到處都照樣能用——`list`、`update`、`note`、`delete`、MCP、`?task=AB-5` 連結——用了舊號的回應都會說 `AB-5 is now OPS-12`。搬兩次的話，所有舊單號都直接指向最新的那個。
+- 子任務只有加上 `--detach` 才能單獨搬，它會因此脫離 parent；沒加的話，錯誤訊息會請你改搬 parent。
+- 每張被搬的單，notes 都會記下它從哪裡搬來。舊號碼絕不會再發給別張單。
+
 **Workspace** 是完全隔離的看板（各自的專案、各自的任務、各自的 SQLite 檔案），用來區隔不同情境，例如個人專案和客戶的專案。如果你從不碰它，一切都預設在單一個 `"default"` workspace；要用才需要開。
 
 ## MCP
 
-10 個工具：`list_tasks`、`create_task`、`update_task`、`delete_task`、`add_task_note`、`list_projects`、`create_project`、`rename_project`、`delete_project`、`set_ask_mode`。
+11 個工具：`list_tasks`、`create_task`、`update_task`、`move_task`、`delete_task`、`add_task_note`、`list_projects`、`create_project`、`rename_project`、`delete_project`、`set_ask_mode`。
 
 **stdio（推薦）**：`agent-board mcp` 透過 stdin/stdout 講 MCP，所以 client 不需全域安裝就能啟動它：
 
@@ -147,11 +163,14 @@ claude mcp add --transport http agent-board http://localhost:4317/mcp
 2. 知道是哪個專案？直接開單，不必先 `list`。
 3. `status`：`backlog` `in_progress` `review` `done`；`priority`：`low` `med` `high`。像 `doing`/`wip`/`進行中`/`urgent`/`高` 這類別名也接受，並存成標準值；其他值會回 400，並列出允許的值。
 4. 描述放在 `notes`；`agent` 設成你自己的 id。
-5. MCP client 會自動透過伺服器的 `instructions` 拿到這些規則。
+5. 工作分給多個 agent 時：一張 parent 單，每個 agent 一張子任務（見上方「子任務」）。所有子任務都完成時，agent 會告訴你，而不是自己去推進 parent。
+6. MCP client 會自動透過伺服器的 `instructions` 拿到這些規則。
 
 ## 資料
 
 每個 workspace 的資料庫在 `~/.agent-board/workspaces/<name>/tasks.db`，不是相對於專案的 cwd，所以不管從哪裡執行 `agent-board`，同一台機器上的每個專案／worktree 都共用同一個看板。
+
+單號永遠不會重複使用。刪掉 `AB-7` 不會讓 `7` 空出來：下一張是 `AB-8`，所以還拿著 `AB-7` 的 agent 會查到「找不到」，而不是別人的單。換前綴時也一樣：從 `AB` 改成 `XY` 的專案會從 `XY-8` 接著編，之後拿到 `AB` 這個前綴的專案也會從 `AB-7` 之後開始。
 
 ## 開發
 
