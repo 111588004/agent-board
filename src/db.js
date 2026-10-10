@@ -91,6 +91,29 @@ function initSchema(db) {
   if (!db.prepare("PRAGMA table_info(tasks)").all().some((c) => c.name === "unconfirmed")) {
     db.exec("ALTER TABLE tasks ADD COLUMN unconfirmed TEXT");
   }
+
+  // added after release: the last ticket number handed out per prefix, so a number is never handed out
+  // twice. MAX(seq)+1 reused the highest number once its ticket was deleted, and an agent still holding
+  // that id then found a different ticket. Keyed by prefix (the id is "<prefix>-<n>", and a prefix can
+  // move between projects); rows are never deleted. Backfilled once, when the table is first created.
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'id_counters'").get()) {
+    db.transaction(() => {
+      db.exec("CREATE TABLE id_counters (prefix TEXT PRIMARY KEY, lastSeq INTEGER NOT NULL)");
+      const last = new Map();
+      const bump = (prefix, n) => { if (prefix && n > (last.get(prefix) || 0)) last.set(prefix, n); };
+      // ids keep their original prefix after a re-prefix, so count both what the ids say...
+      for (const { id } of db.prepare("SELECT id FROM tasks").all()) {
+        const m = /^(.*)-(\d+)$/.exec(id);
+        if (m) bump(m[1], Number(m[2]));
+      }
+      // ...and the per-prefix seq the old MAX(seq)+1 numbering continued from
+      for (const { projectPrefix, s } of db.prepare("SELECT projectPrefix, MAX(seq) AS s FROM tasks GROUP BY projectPrefix").all()) {
+        bump(projectPrefix, s);
+      }
+      const insert = db.prepare("INSERT INTO id_counters (prefix, lastSeq) VALUES (?, ?)");
+      for (const [prefix, n] of last) insert.run(prefix, n);
+    })();
+  }
 }
 
 // global settings (every workspace), next to the workspaces dir. Read on every
@@ -272,9 +295,6 @@ export function renameWorkspace(oldName, newName) {
   fs.renameSync(oldDir, newDir);
 }
 
-// ponytail: MAX(seq)+1 can reuse a number if the highest-seq row for that
-// prefix is ever deleted — upgrade to a persisted per-project counter if
-// that gap ever matters in practice.
 // shared by POST /projects and POST /tasks (newProjectPrefix) -> { project } or { status: 409, body }
 export function insertProject(db, name, prefix) {
   try {
@@ -319,11 +339,17 @@ export function parseAliases(v) {
   return [];
 }
 
+// numbers come from id_counters (never handed out twice, see initSchema). The skip over taken ids guards
+// against a counter that's behind its tickets, e.g. a prefix a renamed project used to own.
 export function createTask(db, task) {
   return db.transaction((task) => {
-    const { next } = db
-      .prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM tasks WHERE projectPrefix = ?")
-      .get(task.projectPrefix);
+    const counter = db.prepare("SELECT lastSeq FROM id_counters WHERE prefix = ?").get(task.projectPrefix);
+    const taken = db.prepare("SELECT 1 FROM tasks WHERE id = ?");
+    let next = (counter ? counter.lastSeq : 0) + 1;
+    while (taken.get(`${task.projectPrefix}-${next}`)) next++;
+    db.prepare(
+      "INSERT INTO id_counters (prefix, lastSeq) VALUES (?, ?) ON CONFLICT(prefix) DO UPDATE SET lastSeq = excluded.lastSeq"
+    ).run(task.projectPrefix, next);
     const id = `${task.projectPrefix}-${next}`;
     const now = Date.now();
     db.prepare(
@@ -332,6 +358,17 @@ export function createTask(db, task) {
     ).run({ unconfirmed: null, ...task, id, seq: next, createdAt: now, updatedAt: now });
     return db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
   })(task);
+}
+
+// a project's prefix changed: its new tickets continue after the old prefix's numbers, and the old
+// prefix keeps its counter, so a project that takes that prefix later can't reissue those ids
+export function carryIdCounter(db, fromPrefix, toPrefix) {
+  if (fromPrefix === toPrefix) return;
+  const from = db.prepare("SELECT lastSeq FROM id_counters WHERE prefix = ?").get(fromPrefix);
+  if (!from) return;
+  db.prepare(
+    "INSERT INTO id_counters (prefix, lastSeq) VALUES (?, ?) ON CONFLICT(prefix) DO UPDATE SET lastSeq = MAX(lastSeq, excluded.lastSeq)"
+  ).run(toPrefix, from.lastSeq);
 }
 
 // used by the CLI/MCP `note` verb (append) — distinct from the "notes" PATCH

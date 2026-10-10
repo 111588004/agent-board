@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { insertProject, getConfig, addAliases, parseAliases } from "../db.js";
+import { insertProject, getConfig, addAliases, parseAliases, carryIdCounter } from "../db.js";
 import { needsInput, suggestPrefixes } from "../normalize.js";
 
 const router = Router();
@@ -82,6 +82,7 @@ router.patch("/:name", (req, res) => {
         existing.name
       );
       req.db.prepare("UPDATE project_aliases SET project = ? WHERE project = ?").run(name, existing.name);
+      carryIdCounter(req.db, existing.prefix, prefix);
     })();
   } catch (e) {
     if (e.code === "SQLITE_CONSTRAINT_PRIMARYKEY") {
