@@ -31,10 +31,11 @@ async function rawRequest(method, path, body) {
     if (res.ok) throw new Error(`unexpected response from the server: ${text.slice(0, 80)}`);
   }
   if (!res.ok) {
-    // code lets the UI react to a rule, not only show the message
+    // code / subtasks let the UI react to a rule (e.g. "has_subtasks"), not only show the message
     throw Object.assign(new Error((data && data.error) || `${res.status} ${res.statusText}`), {
       status: res.status,
       code: data && data.code,
+      subtasks: data && data.subtasks,
     });
   }
   return data;
@@ -59,6 +60,16 @@ export function createTask(task) {
 
 export function updateTask(id, patch) {
   return request("PATCH", `/tasks/${id}`, patch);
+}
+
+// one task by id — an old id of a moved ticket answers with the current one (and a hint saying so)
+export function getTask(id) {
+  return request("GET", `/tasks/${encodeURIComponent(id)}`);
+}
+
+// to another project: a new id there, its subtasks along; old ids keep working
+export function moveTask(id, body) {
+  return request("POST", `/tasks/${encodeURIComponent(id)}/move`, body);
 }
 
 export function deleteTask(id) {
