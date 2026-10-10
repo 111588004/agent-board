@@ -28,6 +28,17 @@ export function normalizeEnum(field, raw) {
   return { error: `invalid ${field} "${raw}" — allowed: ${allowed} (aliases: ${aliases})` };
 }
 
+// dueDate: a real calendar date as YYYY-MM-DD (what the web's date picker sends), or null/"" to clear
+// -> { value } (the date, or null) or { error, code } (400)
+export function normalizeDueDate(raw) {
+  if (raw === null || raw === "") return { value: null };
+  const s = typeof raw === "string" ? raw.trim() : "";
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const d = m && new Date(Date.UTC(+m[1], m[2] - 1, +m[3]));
+  if (d && d.toISOString().slice(0, 10) === s) return { value: s }; // round trip rules out 2026-02-30
+  return { error: `invalid dueDate ${JSON.stringify(raw)} — use YYYY-MM-DD, e.g. 2026-03-05 (or empty to clear it)`, code: "invalid_due_date" };
+}
+
 // The board can't tell what the user meant -> ask instead of guessing. 422 with
 // a question and <=4 options; each option's `args` are the fields to send again.
 // `answerArg` names the field a free-text answer goes in. Clients render it as

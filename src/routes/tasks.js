@@ -3,7 +3,7 @@ import {
   createTask, appendNote, insertProject, getConfig, getTask, TASK_SELECT, checkParent, subtaskIds, allDoneHint,
   resolveTaskId, movedHint, moveTask, forgetTaskAliases,
 } from "../db.js";
-import { normalizeEnum, needsInput, resolveProject } from "../normalize.js";
+import { normalizeEnum, normalizeDueDate, needsInput, resolveProject } from "../normalize.js";
 
 const router = Router();
 
@@ -92,6 +92,11 @@ router.post("/", (req, res) => {
     if (n.error) return res.status(400).json({ error: n.error });
     norm[field] = n.value;
   }
+  if (dueDate !== undefined) {
+    const d = normalizeDueDate(dueDate);
+    if (d.error) return res.status(400).json({ error: d.error, code: d.code });
+    norm.dueDate = d.value;
+  }
 
   // the parent is in another project: the caller meant one or the other, so ask (never guess a relationship).
   // Checked before a new project is created, so refusing doesn't leave one behind.
@@ -136,7 +141,7 @@ router.post("/", (req, res) => {
     worktree: worktree || null,
     branch: branch || null,
     link: link || null,
-    dueDate: dueDate || null,
+    dueDate: norm.dueDate || null,
     unconfirmed: unconfirmed.join("; ") || null,
   });
   let out = row;
@@ -173,6 +178,12 @@ router.patch("/:id", (req, res) => {
     const n = normalizeEnum(field, req.body[field]);
     if (n.error) return res.status(400).json({ error: n.error });
     req.body[field] = n.value;
+  }
+  // dueDate: unchanged (the web sends whole cards) is left alone, so a value stored before this check doesn't block other edits
+  if (req.body.dueDate !== undefined && (req.body.dueDate || null) !== (existing.dueDate || null)) {
+    const d = normalizeDueDate(req.body.dueDate);
+    if (d.error) return res.status(400).json({ error: d.error, code: d.code });
+    req.body.dueDate = d.value;
   }
   // `project` in a PATCH body is ignored (the web UI sends the whole card, so a stray value would move it):
   // moving is its own verb, POST /tasks/:id/move.
@@ -221,8 +232,9 @@ router.patch("/:id", (req, res) => {
   if (changes.length) appendNote(req.db, existing.id, changes.join(", "), req.body.agent);
 
   let row = getTask(req.db, existing.id);
+  // noteAgent tags the note and nothing else (CLI/MCP `note`); `agent` is the owner, so sending it reassigns
   if (req.body.note !== undefined) {
-    row = appendNote(req.db, existing.id, req.body.note, req.body.agent);
+    row = appendNote(req.db, existing.id, req.body.note, req.body.noteAgent || req.body.agent);
   }
   // this change may have finished a parent's subtasks: its own (went done, or moved in) or the one it left
   const wentDone = req.body.status === "done" && existing.status !== "done";

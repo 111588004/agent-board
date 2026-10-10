@@ -14,12 +14,34 @@ if (cmd === undefined) {
   await new Promise(() => {}); // server.js's own app.listen() keeps the process alive
 }
 
+// --name=value, plus the on/off flags, which also stand alone (--detach = --detach=true).
+// "--name value" is refused, not guessed: it used to be dropped without a word ("list --project Alpha" listed everything)
+const BOOLEAN_FLAGS = ["detach", "confirm"];
+const BOOLEAN_VALUES = { true: true, yes: true, on: true, 1: true, false: false, no: false, off: false, 0: false };
 const flags = {};
 const positional = [];
-for (const arg of rest) {
-  const m = arg.match(/^--([^=]+)=(.*)$/s);
-  if (m) flags[m[1]] = m[2];
-  else positional.push(arg);
+for (const [i, arg] of rest.entries()) {
+  const m = arg.match(/^--([^=]+)(?:=(.*))?$/s);
+  if (!m) {
+    positional.push(arg);
+    continue;
+  }
+  const [, name, value] = m;
+  if (BOOLEAN_FLAGS.includes(name)) {
+    const v = value === undefined ? "true" : value.trim().toLowerCase();
+    flags[name] = Object.hasOwn(BOOLEAN_VALUES, v) ? BOOLEAN_VALUES[v] : undefined;
+    if (flags[name] === undefined) {
+      console.error(`agent-board: --${name} is on or off: --${name}, --${name}=true or --${name}=false (got --${name}=${value})`);
+      process.exit(1);
+    }
+  } else if (value !== undefined) {
+    flags[name] = value;
+  } else {
+    const next = rest[i + 1];
+    const example = next !== undefined && !next.startsWith("--") ? JSON.stringify(next) : "<value>";
+    console.error(`agent-board: --${name} needs its value after "=": --${name}=${example}  (only --${BOOLEAN_FLAGS.join(" and --")} stand alone)`);
+    process.exit(1);
+  }
 }
 
 async function run(fn) {
@@ -140,7 +162,7 @@ switch (cmd) {
       }
       body.parentId = flags.parent.trim().toLowerCase() === "none" ? null : flags.parent.trim();
     }
-    if (positional.includes("--confirm")) body.unconfirmed = null; // clears the board's "unconfirmed" mark
+    if (flags.confirm) body.unconfirmed = null; // clears the board's "unconfirmed" mark
     const task = await run(() => client.updateTask(id, body));
     // a server from before parent changes ignores parentId silently — say so instead of claiming it worked
     if ("parentId" in body && (task.parentId ?? null) !== body.parentId) {
@@ -165,7 +187,7 @@ switch (cmd) {
         project: flags.project,
         newProjectPrefix: flags["new-project-prefix"],
         rememberAs: flags["remember-as"],
-        detach: positional.includes("--detach") || undefined,
+        detach: flags.detach || undefined,
         agent: flags.agent,
         workspace: flags.workspace,
       })
@@ -193,7 +215,8 @@ switch (cmd) {
       console.error('usage: agent-board note <id> "<text>" [--agent=<name>] [--workspace=<name>]');
       process.exit(1);
     }
-    const task = await run(() => client.updateTask(id, { note: text, agent: flags.agent, workspace: flags.workspace }));
+    // noteAgent, not agent: --agent tags the note line and never reassigns the ticket
+    const task = await run(() => client.updateTask(id, { note: text, noteAgent: flags.agent, workspace: flags.workspace }));
     console.log(`noted ${task.id}`);
     printHint(task); // e.g. "AB-5 is now OPS-12" when an old id was used
     break;
