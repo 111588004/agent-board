@@ -75,6 +75,11 @@ export function errorWithHint(e, surface) {
       ? `${e.message} New project: agent-board project create "${name}" --prefix=<PREFIX>`
       : `${e.message} New project: use the create_project tool (name, prefix).`;
   }
+  if (e.code === "unknown_workspace") {
+    return cli
+      ? `${e.message}. New workspace: agent-board workspace create "${e.input}" — or fix --workspace= / AGENT_BOARD_WORKSPACE / agent-board workspace use`
+      : `${e.message}. Use one of those, or omit workspace; creating a workspace is the user's call (agent-board workspace create).`;
+  }
   if (e.code === "is_subtask" && e.parentId) {
     return cli
       ? `${e.message}. Move the parent: agent-board move ${e.parentId} --project=<name> — or this one alone: add --detach`

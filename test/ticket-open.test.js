@@ -675,3 +675,31 @@ test("CLI move + MCP move_task: old → new printed, subtask needs --detach / de
   assert.equal(lone.isError, true);
   assert.match(lone.content[0].text, /move_task with taskId CM-\d+ — or this one alone: detach true/);
 });
+
+test("an unknown workspace is a 404, never created by a read; workspace use checks the name (#22)", async () => {
+  const r = await api("GET", "/api/w/typo/tasks");
+  assert.equal(r.status, 404);
+  assert.equal(r.body.code, "unknown_workspace");
+  assert.match(r.body.error, /no workspace "typo" — workspaces: .*\bt\b/);
+  assert.equal((await api("POST", "/api/w/typo/tasks", { title: "x", project: "BM" })).status, 404);
+  assert.equal((await api("GET", "/api/w/typo/projects")).status, 404);
+  assert.ok(!(await api("GET", "/api/workspaces")).body.includes("typo"));
+  assert.ok(!fs.existsSync(path.join(dir, "workspaces", "typo")));
+  assert.equal((await api("GET", "/api/w/t/config")).status, 200); // global settings don't open a workspace
+  assert.equal((await api("POST", "/api/workspaces", { name: "typo" })).status, 201); // creating one still works
+  assert.equal((await api("GET", "/api/w/typo/tasks")).status, 200);
+
+  const run = (...argv) => new Promise((resolve) => {
+    const p = spawn(process.execPath, [path.join(src, "cli.js"), ...argv], { env: { ...process.env, AGENT_BOARD_URL: base, AGENT_BOARD_DIR: dir } });
+    let err = "";
+    p.stderr.on("data", (d) => (err += d));
+    p.on("exit", (code) => resolve({ code, err }));
+  });
+  const list = await run("list", "--workspace=nope");
+  assert.equal(list.code, 1);
+  assert.match(list.err, /404 no workspace "nope".*agent-board workspace create "nope"/);
+  const use = await run("workspace", "use", "ghost");
+  assert.equal(use.code, 1);
+  assert.match(use.err, /no workspace "ghost"/);
+  assert.ok(!fs.existsSync(path.join(dir, "current-workspace")), "a bad name isn't written");
+});
