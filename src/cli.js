@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import * as client from "./client.js";
 
@@ -10,16 +10,40 @@ const [cmd, ...rest] = process.argv.slice(2);
 // An unrecognized verb still falls through to the usage error below.
 if (cmd === undefined) {
   const serverPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "server.js");
-  await import(serverPath);
+  // a file URL, not the path: on Windows an absolute path (C:\...) is read as a URL with scheme "c:" and
+  // import() refuses it (ERR_UNSUPPORTED_ESM_URL_SCHEME), so bare `agent-board` crashed there
+  await import(pathToFileURL(serverPath).href);
   await new Promise(() => {}); // server.js's own app.listen() keeps the process alive
 }
 
+// --name=value, plus the on/off flags, which also stand alone (--detach = --detach=true).
+// "--name value" is refused, not guessed: it used to be dropped without a word ("list --project Alpha" listed everything)
+const BOOLEAN_FLAGS = ["detach", "confirm"];
+const BOOLEAN_VALUES = { true: true, yes: true, on: true, 1: true, false: false, no: false, off: false, 0: false };
 const flags = {};
 const positional = [];
-for (const arg of rest) {
-  const m = arg.match(/^--([^=]+)=(.*)$/s);
-  if (m) flags[m[1]] = m[2];
-  else positional.push(arg);
+for (const [i, arg] of rest.entries()) {
+  const m = arg.match(/^--([^=]+)(?:=(.*))?$/s);
+  if (!m) {
+    positional.push(arg);
+    continue;
+  }
+  const [, name, value] = m;
+  if (BOOLEAN_FLAGS.includes(name)) {
+    const v = value === undefined ? "true" : value.trim().toLowerCase();
+    flags[name] = Object.hasOwn(BOOLEAN_VALUES, v) ? BOOLEAN_VALUES[v] : undefined;
+    if (flags[name] === undefined) {
+      console.error(`agent-board: --${name} is on or off: --${name}, --${name}=true or --${name}=false (got --${name}=${value})`);
+      process.exit(1);
+    }
+  } else if (value !== undefined) {
+    flags[name] = value;
+  } else {
+    const next = rest[i + 1];
+    const example = next !== undefined && !next.startsWith("--") ? JSON.stringify(next) : "<value>";
+    console.error(`agent-board: --${name} needs its value after "=": --${name}=${example}  (only --${BOOLEAN_FLAGS.join(" and --")} stand alone)`);
+    process.exit(1);
+  }
 }
 
 async function run(fn) {
@@ -42,10 +66,14 @@ async function run(fn) {
 // same question + options the MCP tools return; exit 2 so a calling agent can
 // tell "ask the user, then rerun with these flags" apart from a real error (1)
 function printQuestion(e) {
-  const flag = (k, v) => `--${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}=${JSON.stringify(String(v))}`;
+  // REST field -> CLI flag; parentId is --parent, and a null arg ("no parent") means leave the flag out
+  const flag = (k, v) => `--${k === "parentId" ? "parent" : k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}=${JSON.stringify(String(v))}`;
   const lines = [`agent-board: needs your input — ${e.question}`];
   e.options.forEach((o, i) => {
-    const args = Object.entries(o.args).filter(([k]) => k !== "name").map(([k, v]) => flag(k, v)).join(" "); // name is positional
+    const args = Object.entries(o.args)
+      .filter(([k, v]) => k !== "name" && v !== null && v !== undefined) // name is positional
+      .map(([k, v]) => flag(k, v))
+      .join(" ");
     lines.push(`  ${i + 1}) ${o.label} — ${o.description}`, `     rerun with: ${args}`);
   });
   if (e.answerArg) lines.push(`  or answer in your own words: ${flag(e.answerArg, "...")}`);
@@ -53,14 +81,26 @@ function printQuestion(e) {
   console.error(lines.join("\n"));
 }
 
+// subtasks are listed under their parent (indented), with the parent's progress; a subtask whose
+// parent isn't in this listing (filtered out) stays in place and names it
 function printTasks(tasks) {
   if (!tasks.length) {
     console.log("(no tasks)");
     return;
   }
+  const line = (t) => `${t.id}  [${t.status}]  ${t.title}  (${t.agent || "-"}, ${t.priority})`;
+  const listed = new Set(tasks.map((t) => t.id));
   for (const t of tasks) {
-    console.log(`${t.id}  [${t.status}]  ${t.title}  (${t.agent || "-"}, ${t.priority})`);
+    if (t.parentId && listed.has(t.parentId)) continue; // printed under its parent
+    const progress = t.subtaskCount ? `  [${t.subtasksDone}/${t.subtaskCount} done]` : "";
+    console.log(`${line(t)}${progress}${t.parentId ? `  (↳ ${t.parentId})` : ""}`);
+    for (const s of tasks) if (s.parentId === t.id) console.log(`  ↳ ${line(s)}`);
   }
+}
+
+// a server note worth seeing right after a write, e.g. "all subtasks of AB-4 are done"
+function printHint(task) {
+  if (task && task.hint) console.log(`note: ${task.hint}`);
 }
 
 switch (cmd) {
@@ -74,9 +114,9 @@ switch (cmd) {
   }
 
   case "create": {
-    if (!flags.project) {
+    if (!flags.project && !flags.parent) {
       console.error(
-        'usage: agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--remember-as=<word>] [--parent=<id>] [--agent=<name>] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=<path>] [--branch=<name>] [--link=<url>] [--notes="..."] [--workspace=<name>]\n  (--notes sets the Description field)'
+        'usage: agent-board create --title="..." --project=<name> [--new-project-prefix=<prefix>] [--remember-as=<word>] [--parent=<id>] [--agent=<name>] [--priority=<low|med|high>] [--status=<backlog|in_progress|review|done>] [--due-date=<YYYY-MM-DD>] [--worktree=<path>] [--branch=<name>] [--link=<url>] [--notes="..."] [--workspace=<name>]\n  (--notes sets the Description field; with --parent, --project can be left out: a subtask goes in its parent\'s project)'
       );
       process.exit(1);
     }
@@ -98,7 +138,8 @@ switch (cmd) {
         workspace: flags.workspace,
       })
     );
-    console.log(`created ${task.id}`);
+    console.log(`created ${task.id}${task.parentId ? ` (subtask of ${task.parentId})` : ""}`);
+    printHint(task);
     break;
   }
 
@@ -106,7 +147,7 @@ switch (cmd) {
     const id = positional[0];
     if (!id) {
       console.error(
-        "usage: agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=<name>] [--title=] [--worktree=] [--branch=] [--link=<url>] [--due-date=<YYYY-MM-DD>] [--notes=\"...\"] [--confirm] [--workspace=<name>]\n  (--notes overwrites the Description field; --confirm clears an \"unconfirmed\" mark)"
+        "usage: agent-board update <id> [--status=<backlog|in_progress|review|done>] [--priority=<low|med|high>] [--agent=<name>] [--title=] [--worktree=] [--branch=] [--link=<url>] [--due-date=<YYYY-MM-DD>] [--parent=<id>|none] [--notes=\"...\"] [--confirm] [--workspace=<name>]\n  (--notes overwrites the Description field; --parent=none detaches a subtask from its parent; --confirm clears an \"unconfirmed\" mark)"
       );
       process.exit(1);
     }
@@ -115,9 +156,46 @@ switch (cmd) {
       if (flags[key] !== undefined) body[key] = flags[key];
     }
     if (flags["due-date"] !== undefined) body.dueDate = flags["due-date"];
-    if (positional.includes("--confirm")) body.unconfirmed = null; // clears the board's "unconfirmed" mark
+    if (flags.parent !== undefined) {
+      // an empty --parent= is refused rather than read as "detach": it's what an unset shell variable looks like
+      if (!flags.parent.trim()) {
+        console.error("agent-board: --parent needs a ticket id, or --parent=none to detach it from its parent");
+        process.exit(1);
+      }
+      body.parentId = flags.parent.trim().toLowerCase() === "none" ? null : flags.parent.trim();
+    }
+    if (flags.confirm) body.unconfirmed = null; // clears the board's "unconfirmed" mark
     const task = await run(() => client.updateTask(id, body));
+    // a server from before parent changes ignores parentId silently — say so instead of claiming it worked
+    if ("parentId" in body && (task.parentId ?? null) !== body.parentId) {
+      console.error(`agent-board: the server didn't change ${task.id}'s parent — it's too old for that; update it`);
+      process.exit(1);
+    }
     console.log(`updated ${task.id}`);
+    printHint(task);
+    break;
+  }
+
+  case "move": {
+    const id = positional[0];
+    if (!id || !flags.project) {
+      console.error(
+        "usage: agent-board move <id> --project=<name> [--new-project-prefix=<prefix>] [--detach] [--agent=<name>] [--workspace=<name>]\n  (the ticket gets a new id in that project and its subtasks come along; old ids keep working. A subtask moves alone only with --detach, which takes it out of its parent)"
+      );
+      process.exit(1);
+    }
+    const res = await run(() =>
+      client.moveTask(id, {
+        project: flags.project,
+        newProjectPrefix: flags["new-project-prefix"],
+        rememberAs: flags["remember-as"],
+        detach: flags.detach || undefined,
+        agent: flags.agent,
+        workspace: flags.workspace,
+      })
+    );
+    for (const m of res.moved) console.log(`moved ${m.from} → ${m.to}`);
+    printHint(res);
     break;
   }
 
@@ -139,8 +217,10 @@ switch (cmd) {
       console.error('usage: agent-board note <id> "<text>" [--agent=<name>] [--workspace=<name>]');
       process.exit(1);
     }
-    const task = await run(() => client.updateTask(id, { note: text, agent: flags.agent, workspace: flags.workspace }));
+    // noteAgent, not agent: --agent tags the note line and never reassigns the ticket
+    const task = await run(() => client.updateTask(id, { note: text, noteAgent: flags.agent, workspace: flags.workspace }));
     console.log(`noted ${task.id}`);
+    printHint(task); // e.g. "AB-5 is now OPS-12" when an old id was used
     break;
   }
 
@@ -166,6 +246,12 @@ switch (cmd) {
       const name = positional[1];
       if (!name) {
         console.error("usage: agent-board workspace use <name>");
+        process.exit(1);
+      }
+      // every later command would hit it, so a typo here is checked now, not on each of those
+      const existing = await run(() => client.listWorkspaces());
+      if (!existing.includes(name)) {
+        console.error(`agent-board: no workspace "${name}" — workspaces: ${existing.join(", ")}. New one: agent-board workspace create "${name}"`);
         process.exit(1);
       }
       client.setCurrentWorkspace(name);

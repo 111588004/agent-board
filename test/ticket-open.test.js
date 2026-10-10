@@ -5,13 +5,16 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
 
 const src = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src");
 let child, base, dir;
 
 async function startOn(port) {
   child = spawn(process.execPath, [path.join(src, "server.js")], {
-    env: { ...process.env, PORT: String(port), AGENT_BOARD_DIR: dir, AGENT_BOARD_URL: `http://localhost:${port}` },
+    // AGENT_BOARD_URL names a port nothing listens on: the server's own HTTP /mcp must never follow it
+    // (it used to, so every MCP test below would fail with "fetch failed")
+    env: { ...process.env, PORT: String(port), AGENT_BOARD_DIR: dir, AGENT_BOARD_URL: "http://127.0.0.1:9" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let exited = false;
@@ -39,8 +42,9 @@ before(async () => {
   await api("POST", "/api/w/t/projects", { name: "發表會", prefix: "PR" });
 });
 
-after(() => {
-  child?.kill();
+after(async () => {
+  // wait for the server to exit before removing its data dir: on Windows its open SQLite files can't be deleted
+  if (child && child.exitCode === null) await new Promise((r) => { child.once("exit", r); child.kill(); });
   if (dir) fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -253,6 +257,30 @@ test("an answer is remembered: the same word resolves next time; forget undoes i
   assert.equal((await create({ project: "ops" }, "mem")).status, 422);
 });
 
+test("an answer that is the project's own name, ignoring case, is still remembered (#21)", async () => {
+  await api("POST", "/api/workspaces", { name: "mem2" });
+  await api("POST", "/api/w/mem2/projects", { name: "Beta", prefix: "BE" });
+  await api("POST", "/api/w/mem2/projects", { name: "Other", prefix: "BETA" });
+  const q = await create({ project: "beta" }, "mem2"); // Beta's name and Other's prefix
+  assert.equal(q.status, 422);
+  const pick = q.body.options.find((o) => o.args.project === "Beta");
+  const ok = await create({ project: "beta", ...pick.args }, "mem2");
+  assert.equal(ok.status, 201);
+  assert.match(ok.body.notes, /remembered "beta" → Beta/);
+  assert.equal((await create({ project: "beta" }, "mem2")).body.project, "Beta"); // no second question
+  assert.equal((await create({ project: "Beta" }, "mem2")).body.notes, null); // exact name: nothing to remember
+
+  // the same through move
+  await api("POST", "/api/w/mem2/projects", { name: "Gamma", prefix: "GA" });
+  await api("POST", "/api/w/mem2/projects", { name: "Misc", prefix: "GAMMA" });
+  const t = (await create({ project: "Beta" }, "mem2")).body;
+  const mq = await api("POST", `/api/w/mem2/tasks/${t.id}/move`, { project: "gamma" });
+  assert.equal(mq.status, 422);
+  const mpick = mq.body.options.find((o) => o.args.project === "Gamma");
+  assert.equal((await api("POST", `/api/w/mem2/tasks/${t.id}/move`, { project: "gamma", ...mpick.args })).status, 200);
+  assert.deepEqual((await api("GET", "/api/w/mem2/projects")).body.find((p) => p.name === "Gamma").aliases, ["gamma"]);
+});
+
 test("ask new/off: the board picks the busiest project and marks the ticket unconfirmed", async () => {
   await api("POST", "/api/workspaces", { name: "auto" });
   await api("POST", "/api/w/auto/projects", { name: "OPS", prefix: "OP" });
@@ -287,8 +315,10 @@ function cli(...argv) {
       env: { ...process.env, AGENT_BOARD_URL: base, AGENT_BOARD_DIR: dir },
     });
     let err = "";
+    let out = "";
     p.stderr.on("data", (d) => (err += d));
-    p.on("exit", (code) => resolve({ code, err }));
+    p.stdout.on("data", (d) => (out += d));
+    p.on("exit", (code) => resolve({ code, err, out }));
   });
 }
 
@@ -337,4 +367,422 @@ test("aliases registered up front: create with aliases, add more, clashes refuse
   const t = await create({ project: "準備發表會" }, "al");
   assert.equal(t.status, 201);
   assert.equal(t.body.project, "Launch");
+});
+
+// ---- parent / subtask rules (two levels, same project) — the server enforces them for every client
+
+async function subtaskBoard(ws) {
+  await api("POST", "/api/workspaces", { name: ws });
+  await api("POST", `/api/w/${ws}/projects`, { name: "Alpha", prefix: "AL" });
+  await api("POST", `/api/w/${ws}/projects`, { name: "Beta", prefix: "BE" });
+  return (await create({ project: "Alpha", status: "in_progress" }, ws)).body;
+}
+
+test("subtasks: project comes from the parent; two levels, existing parent, same project enforced on create", async () => {
+  const P = await subtaskBoard("sub1");
+  const child = await create({ parentId: P.id }, "sub1");
+  assert.equal(child.status, 201);
+  assert.equal(child.body.project, "Alpha");
+  assert.equal(child.body.parentId, P.id);
+
+  const grandchild = await create({ parentId: child.body.id }, "sub1");
+  assert.equal(grandchild.status, 409);
+  assert.equal(grandchild.body.code, "parent_is_subtask");
+  const missing = await create({ parentId: "AL-99" }, "sub1");
+  assert.equal(missing.status, 400);
+  assert.equal(missing.body.code, "parent_not_found");
+
+  // parent in another project: asked (never guessed), and with asking off, refused
+  const cross = await create({ project: "Beta", parentId: P.id }, "sub1");
+  assert.equal(cross.status, 422);
+  assert.equal(cross.body.code, "needs_input");
+  assert.deepEqual(cross.body.options.map((o) => o.args), [
+    { project: "Alpha", parentId: P.id },
+    { project: "Beta", parentId: null },
+  ]);
+  const answered = await create({ project: "Beta", parentId: null }, "sub1");
+  assert.equal(answered.status, 201);
+  assert.equal(answered.body.parentId, null);
+  try {
+    await setAsk("off");
+    const off = await create({ project: "Beta", parentId: P.id }, "sub1");
+    assert.equal(off.status, 400);
+    assert.equal(off.body.code, "parent_other_project");
+  } finally {
+    await setAsk("on");
+  }
+});
+
+test("subtasks: re-parenting via PATCH is checked, logged, and an unchanged parentId is a no-op", async () => {
+  const P = await subtaskBoard("sub2");
+  const kid = (await create({ parentId: P.id }, "sub2")).body;
+  const loose = (await create({ project: "Alpha" }, "sub2")).body;
+  const beta = (await create({ project: "Beta" }, "sub2")).body;
+  const patch = (id, b) => api("PATCH", `/api/w/sub2/tasks/${id}`, b);
+
+  assert.equal((await patch(loose.id, { parentId: loose.id })).body.code, "self_parent");
+  const parentWithKids = await patch(P.id, { parentId: loose.id });
+  assert.equal(parentWithKids.status, 409);
+  assert.equal(parentWithKids.body.code, "has_subtasks");
+  assert.deepEqual(parentWithKids.body.subtasks, [kid.id]);
+  assert.equal((await patch(loose.id, { parentId: kid.id })).body.code, "parent_is_subtask");
+  assert.equal((await patch(beta.id, { parentId: P.id })).body.code, "parent_other_project");
+
+  const attached = await patch(loose.id, { parentId: P.id });
+  assert.equal(attached.status, 200);
+  assert.equal(attached.body.parentId, P.id);
+  assert.match(attached.body.notes, new RegExp(`parentId: – → ${P.id}`));
+  // a whole card sent back with the same parentId (older clients) passes without re-checking
+  assert.equal((await patch(loose.id, { ...attached.body, title: "renamed" })).status, 200);
+
+  assert.equal((await patch(loose.id, { parentId: null })).body.parentId, null);
+  assert.equal((await patch(kid.id, { parentId: "" })).body.parentId, null);
+});
+
+test("subtasks: progress on every task; the all-done hint never changes the parent's status", async () => {
+  const P = await subtaskBoard("sub3");
+  const a = (await create({ parentId: P.id }, "sub3")).body;
+  const b = (await create({ parentId: P.id }, "sub3")).body;
+  const patch = (id, body) => api("PATCH", `/api/w/sub3/tasks/${id}`, body);
+  const get = async (id) => (await api("GET", "/api/w/sub3/tasks")).body.find((t) => t.id === id);
+
+  const before = await get(P.id);
+  assert.deepEqual([before.subtaskCount, before.subtasksDone], [2, 0]);
+  assert.equal((await patch(a.id, { status: "done" })).body.hint, undefined);
+  const last = await patch(b.id, { status: "done" });
+  assert.match(last.body.hint, new RegExp(`All 2 subtasks of ${P.id} are done`));
+  const parent = await get(P.id);
+  assert.equal(parent.status, "in_progress");
+  assert.deepEqual([parent.subtaskCount, parent.subtasksDone], [2, 2]);
+  assert.equal((await patch(b.id, { title: "again" })).body.hint, undefined);
+});
+
+test("subtasks: a parent can't be deleted while it has subtasks — JSON 409 listing them", async () => {
+  const P = await subtaskBoard("sub4");
+  const kid = (await create({ parentId: P.id }, "sub4")).body;
+  const blocked = await fetch(`${base}/api/w/sub4/tasks/${P.id}`, { method: "DELETE" });
+  assert.equal(blocked.status, 409);
+  assert.match(blocked.headers.get("content-type"), /json/);
+  const body = await blocked.json();
+  assert.equal(body.code, "has_subtasks");
+  assert.deepEqual(body.subtasks, [kid.id]);
+  await api("PATCH", `/api/w/sub4/tasks/${kid.id}`, { parentId: null });
+  assert.equal((await api("DELETE", `/api/w/sub4/tasks/${P.id}`)).status, 204);
+});
+
+test("errors are always JSON: bad JSON body, unknown /api path", async () => {
+  const bad = await fetch(`${base}/api/w/t/tasks`, { method: "POST", headers: { "content-type": "application/json" }, body: "{oops" });
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).code, "bad_json");
+  const nope = await fetch(`${base}/api/nope`);
+  assert.equal(nope.status, 404);
+  assert.match(nope.headers.get("content-type"), /json/);
+});
+
+// ---- ticket ids are never handed out twice
+
+test("ids: deleting the newest ticket doesn't free its number; a re-prefixed project keeps counting", async () => {
+  await api("POST", "/api/workspaces", { name: "ids" });
+  await api("POST", "/api/w/ids/projects", { name: "Web", prefix: "WB" });
+  for (let i = 0; i < 3; i++) await create({ project: "Web" }, "ids");
+  assert.equal((await api("DELETE", "/api/w/ids/tasks/WB-3")).status, 204);
+  assert.equal((await create({ project: "Web" }, "ids")).body.id, "WB-4");
+
+  // WB -> XY: new tickets continue after WB's numbers; a later project taking WB can't reissue them
+  assert.equal((await api("PATCH", "/api/w/ids/projects/Web", { prefix: "XY" })).status, 200);
+  assert.equal((await create({ project: "Web" }, "ids")).body.id, "XY-5");
+  await api("POST", "/api/w/ids/projects", { name: "Web2", prefix: "WB" });
+  assert.equal((await create({ project: "Web2" }, "ids")).body.id, "WB-5");
+});
+
+test("ids: an existing board is backfilled from its tickets the first time the new server opens it", async () => {
+  // a board from before id_counters: MG-1, MG-2, and a ticket re-prefixed from OLD to MG with seq 5
+  const wsDir = path.join(dir, "workspaces", "legacy");
+  fs.mkdirSync(wsDir, { recursive: true });
+  const db = new Database(path.join(wsDir, "tasks.db"));
+  db.exec(`CREATE TABLE projects (name TEXT PRIMARY KEY, prefix TEXT UNIQUE NOT NULL, createdAt INTEGER);
+    CREATE TABLE tasks (id TEXT PRIMARY KEY, seq INTEGER NOT NULL, title TEXT NOT NULL, project TEXT, projectPrefix TEXT,
+      parentId TEXT REFERENCES tasks(id), agent TEXT, priority TEXT, status TEXT, notes TEXT, worktree TEXT, branch TEXT,
+      link TEXT, dueDate TEXT, createdAt INTEGER, updatedAt INTEGER);
+    INSERT INTO projects VALUES ('Migrated', 'MG', 0);
+    INSERT INTO tasks (id, seq, title, project, projectPrefix, status, createdAt) VALUES
+      ('MG-1', 1, 'a', 'Migrated', 'MG', 'backlog', 1), ('MG-2', 2, 'b', 'Migrated', 'MG', 'backlog', 2),
+      ('OLD-5', 5, 'c', 'Migrated', 'MG', 'backlog', 3);`);
+  db.close();
+  const next = await create({ project: "Migrated" }, "legacy");
+  assert.equal(next.status, 201);
+  assert.equal(next.body.id, "MG-6");
+});
+
+// ---- the same rules through the CLI and MCP
+
+test("CLI: subtasks listed under their parent with progress; --parent=none detaches; empty --parent refused", async () => {
+  await api("POST", "/api/w/t/projects", { name: "Subtasks", prefix: "ST" });
+  const P = (await create({ project: "Subtasks" })).body;
+  const made = await cli("create", "--title=child", `--parent=${P.id}`);
+  assert.equal(made.code, 0);
+  assert.match(made.out, new RegExp(`subtask of ${P.id}`));
+  const kid = made.out.match(/created (\S+)/)[1];
+  const list = await cli("list", "--project=Subtasks");
+  assert.match(list.out, new RegExp(`${P.id} .*\\[0/1 done\\]`));
+  assert.match(list.out, new RegExp(`\\n  ↳ ${kid} `));
+  const done = await cli("update", kid, "--status=done");
+  assert.match(done.out, /note: The only subtask/);
+
+  const blocked = await cli("delete", P.id);
+  assert.equal(blocked.code, 1);
+  assert.match(blocked.err, /409 .*has 1 subtask/);
+  assert.match(blocked.err, new RegExp(`agent-board update ${kid} --parent=none`));
+  assert.ok(!blocked.err.includes("reach the server"));
+
+  const empty = await cli("update", kid, "--parent=");
+  assert.equal(empty.code, 1);
+  assert.match(empty.err, /--parent needs a ticket id/);
+  assert.equal((await cli("update", kid, "--parent=none")).code, 0);
+  assert.equal((await cli("delete", P.id)).code, 0);
+});
+
+test("MCP: update_task moves/detaches a parent; hint comes first; delete_task names the subtasks", async () => {
+  await api("POST", "/api/w/t/projects", { name: "McpSub", prefix: "MS" });
+  const call = (name, args) => rpc("tools/call", { name, arguments: { workspace: "t", ...args } });
+  const last = (r) => JSON.parse(r.content.at(-1).text);
+  const P = last(await call("create_task", { title: "parent", project: "McpSub" }));
+  const kid = last(await call("create_task", { title: "kid", parentId: P.id }));
+  assert.equal(kid.project, "McpSub");
+
+  const done = await call("update_task", { taskId: kid.id, status: "done" });
+  assert.match(done.content[0].text, /^Note: The only subtask/);
+  const del = await call("delete_task", { taskId: P.id });
+  assert.equal(del.isError, true);
+  assert.match(del.content[0].text, new RegExp(`${kid.id}.*update_task with taskId ${kid.id} and parentId null`));
+
+  assert.equal(last(await call("update_task", { taskId: kid.id, parentId: null })).parentId, null);
+  assert.equal(last(await call("update_task", { taskId: kid.id, parentId: P.id })).parentId, P.id);
+  assert.equal(last(await call("update_task", { taskId: kid.id, parentId: "none" })).parentId, null);
+});
+
+// ---- moving a ticket to another project (Jira's "Move"): new id, subtasks along, old ids keep working
+
+test("move: new id in the target project, subtasks come along under it, history says where from", async () => {
+  await api("POST", "/api/w/t/projects", { name: "MoveFrom", prefix: "MF" });
+  await api("POST", "/api/w/t/projects", { name: "MoveTo", prefix: "MT" });
+  const P = (await create({ project: "MoveFrom", title: "parent" })).body;
+  const k1 = (await create({ parentId: P.id, title: "kid 1" })).body;
+  const k2 = (await create({ parentId: P.id, title: "kid 2", status: "done" })).body;
+
+  const r = await api("POST", `/api/w/t/tasks/${P.id}/move`, { project: "mt", agent: "claude" });
+  assert.equal(r.status, 200);
+  assert.match(r.body.id, /^MT-\d+$/);
+  assert.equal(r.body.project, "MoveTo");
+  assert.equal(r.body.movedFrom, P.id);
+  assert.deepEqual(r.body.moved.map((m) => m.from), [P.id, k1.id, k2.id]);
+  assert.match(r.body.hint, new RegExp(`${P.id} is now ${r.body.id} in MoveTo\\. Its subtasks moved too: ${k1.id} → MT-\\d+, ${k2.id} → MT-\\d+`));
+  assert.equal(r.body.subtaskCount, 2);
+  assert.equal(r.body.subtasksDone, 1);
+  const kids = (await api("GET", `/api/w/t/tasks?parentId=${r.body.id}`)).body;
+  assert.deepEqual(kids.map((k) => k.id), r.body.moved.slice(1).map((m) => m.to));
+  assert.ok(kids.every((k) => k.project === "MoveTo" && k.projectPrefix === "MT"));
+  assert.match(kids[0].notes, new RegExp(`moved from ${k1.id} \\(MoveFrom → MoveTo\\)$`));
+
+  // the parentId foreign key survived the renumbering
+  const db = new Database(path.join(dir, "workspaces", "t", "tasks.db"), { readonly: true });
+  try { assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []); } finally { db.close(); }
+});
+
+test("move: old ids keep working everywhere (and say the new one); a second move repoints them; delete forgets them", async () => {
+  await api("POST", "/api/w/t/projects", { name: "Alias A", prefix: "AA" });
+  await api("POST", "/api/w/t/projects", { name: "Alias B", prefix: "AZ" });
+  const P = (await create({ project: "Alias A" })).body;
+  const kid = (await create({ parentId: P.id })).body;
+  const first = (await api("POST", `/api/w/t/tasks/${P.id}/move`, { project: "Alias B" })).body;
+  const newKid = first.moved[1].to;
+
+  const got = await api("GET", `/api/w/t/tasks/${P.id}`);
+  assert.equal(got.status, 200);
+  assert.equal(got.body.id, first.id);
+  assert.match(got.body.hint, new RegExp(`${P.id} is now ${first.id} \\(it moved projects\\)`));
+  const patched = await api("PATCH", `/api/w/t/tasks/${kid.id}`, { note: "still works" });
+  assert.equal(patched.body.id, newKid);
+  assert.match(patched.body.hint, new RegExp(`${kid.id} is now ${newKid}`));
+  assert.deepEqual((await api("GET", `/api/w/t/tasks?parentId=${P.id}`)).body.map((t) => t.id), [newKid]);
+  // a new subtask can name the parent by its old id; it's stored under the current one
+  assert.equal((await create({ parentId: P.id })).body.parentId, first.id);
+
+  const second = (await api("POST", `/api/w/t/tasks/${first.id}/move`, { project: "Alias A" })).body;
+  assert.equal((await api("GET", `/api/w/t/tasks/${P.id}`)).body.id, second.id); // straight to the latest, no chain
+  assert.match(second.id, /^AA-\d+$/);
+  assert.notEqual(second.id, P.id); // the old number isn't handed back
+
+  // moving it back needs its subtasks gone first only to delete it — detach them, then delete
+  for (const t of (await api("GET", `/api/w/t/tasks?parentId=${second.id}`)).body) await api("DELETE", `/api/w/t/tasks/${t.id}`);
+  assert.equal((await api("DELETE", `/api/w/t/tasks/${P.id}`)).status, 204); // by its first id
+  assert.equal((await api("GET", `/api/w/t/tasks/${P.id}`)).status, 404);
+  assert.equal((await api("GET", `/api/w/t/tasks/${second.id}`)).status, 404);
+});
+
+test("move: a subtask moves alone only with detach; same project, unknown project and a new project", async () => {
+  await api("POST", "/api/w/t/projects", { name: "Detach From", prefix: "DF" });
+  await api("POST", "/api/w/t/projects", { name: "Detach To", prefix: "DT" });
+  const P = (await create({ project: "Detach From" })).body;
+  const kid = (await create({ parentId: P.id, status: "in_progress" })).body;
+  const done = (await create({ parentId: P.id, status: "done" })).body;
+
+  const blocked = await api("POST", `/api/w/t/tasks/${kid.id}/move`, { project: "Detach To" });
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.body.code, "is_subtask");
+  assert.equal(blocked.body.parentId, P.id);
+  const alone = await api("POST", `/api/w/t/tasks/${kid.id}/move`, { project: "Detach To", detach: true });
+  assert.equal(alone.status, 200);
+  assert.equal(alone.body.parentId, null);
+  assert.match(alone.body.notes, new RegExp(`parentId: ${P.id} → –`));
+  assert.match(alone.body.hint, new RegExp(`The only subtask of ${P.id} is done`)); // what's left of the old parent
+
+  const same = await api("POST", `/api/w/t/tasks/${P.id}/move`, { project: "detach from" });
+  assert.equal(same.status, 400);
+  assert.equal(same.body.code, "same_project");
+  const unknown = await api("POST", `/api/w/t/tasks/${P.id}/move`, { project: "Brand New Place" });
+  assert.equal(unknown.status, 422);
+  assert.equal(unknown.body.code, "needs_input");
+  const pick = unknown.body.options.find((o) => o.args.newProjectPrefix);
+  const created = await api("POST", `/api/w/t/tasks/${P.id}/move`, { project: "Brand New Place", ...pick.args });
+  assert.equal(created.status, 200);
+  assert.equal(created.body.project, "Brand New Place");
+  assert.equal(created.body.projectPrefix, pick.args.newProjectPrefix);
+  assert.equal(created.body.moved.length, 2); // the parent and the subtask still under it
+  assert.equal((await api("POST", `/api/w/t/tasks/${done.id}/move`, {})).status, 400); // no project given
+});
+
+test("CLI move + MCP move_task: old → new printed, subtask needs --detach / detach", async () => {
+  await api("POST", "/api/w/t/projects", { name: "CliMove", prefix: "CM" });
+  await api("POST", "/api/w/t/projects", { name: "CliTarget", prefix: "CT" });
+  const P = (await create({ project: "CliMove" })).body;
+  const kid = (await create({ parentId: P.id })).body;
+
+  const sub = await cli("move", kid.id, "--project=CliTarget");
+  assert.equal(sub.code, 1);
+  assert.match(sub.err, new RegExp(`409 .*agent-board move ${P.id} --project=<name> — or this one alone: add --detach`));
+  const moved = await cli("move", P.id, "--project=CliTarget");
+  assert.equal(moved.code, 0);
+  assert.match(moved.out, new RegExp(`moved ${P.id} → CT-\\d+\\nmoved ${kid.id} → CT-\\d+`));
+  assert.match(moved.out, /note: .* is now CT-\d+ in CliTarget/);
+  const noted = await cli("note", kid.id, "by the old id");
+  assert.match(noted.out, new RegExp(`noted CT-\\d+\\nnote: ${kid.id} is now CT-\\d+`));
+
+  const call = (name, args) => rpc("tools/call", { name, arguments: { workspace: "t", ...args } });
+  const back = await call("move_task", { taskId: P.id, project: "CliMove" });
+  assert.match(back.content[0].text, new RegExp(`^Note: ${P.id} \\(later CT-\\d+\\) is now CM-\\d+ in CliMove`));
+  const lone = await call("move_task", { taskId: kid.id, project: "CliTarget" });
+  assert.equal(lone.isError, true);
+  assert.match(lone.content[0].text, /move_task with taskId CM-\d+ — or this one alone: detach true/);
+});
+
+test("dueDate: a real YYYY-MM-DD, or null/\"\" to clear — anything else is a 400 on create and update", async () => {
+  for (const bad of ["notadate", "2026-02-30", "2026-3-5", "05/03/2026"]) {
+    const r = await create({ project: "bm", dueDate: bad });
+    assert.equal(r.status, 400, bad);
+    assert.equal(r.body.code, "invalid_due_date");
+    assert.match(r.body.error, /YYYY-MM-DD/);
+  }
+  const t = (await create({ project: "bm", dueDate: "2026-03-05" })).body;
+  assert.equal(t.dueDate, "2026-03-05");
+  const bad = await api("PATCH", `/api/w/t/tasks/${t.id}`, { dueDate: "notadate" });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.code, "invalid_due_date");
+  assert.equal((await api("GET", `/api/w/t/tasks/${t.id}`)).body.dueDate, "2026-03-05");
+  assert.equal((await api("PATCH", `/api/w/t/tasks/${t.id}`, { dueDate: "2024-02-29" })).body.dueDate, "2024-02-29");
+  assert.equal((await api("PATCH", `/api/w/t/tasks/${t.id}`, { dueDate: "" })).body.dueDate, null); // the web's "clear"
+  assert.equal((await api("PATCH", `/api/w/t/tasks/${t.id}`, { dueDate: null })).body.dueDate, null);
+
+  // a value stored before the check doesn't block the web's whole-card saves
+  const db = new Database(path.join(dir, "workspaces", "t", "tasks.db"));
+  try { db.prepare("UPDATE tasks SET dueDate = 'someday' WHERE id = ?").run(t.id); } finally { db.close(); }
+  const card = (await api("GET", `/api/w/t/tasks/${t.id}`)).body;
+  const saved = await api("PATCH", `/api/w/t/tasks/${t.id}`, { ...card, title: "renamed" });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.title, "renamed");
+
+  const c = await cli("create", "--title=dated", "--project=bm", "--due-date=notadate");
+  assert.equal(c.code, 1);
+  assert.match(c.err, /400 invalid dueDate "notadate" — use YYYY-MM-DD/);
+});
+
+test("CLI: --flag value is refused, naming --flag=value; nothing is sent", async () => {
+  const before = (await api("GET", "/api/w/t/tasks")).body.length;
+  const r = await cli("list", "--project", "AB-Benchmark");
+  assert.equal(r.code, 1);
+  assert.match(r.err, /--project needs its value after "=": --project="AB-Benchmark"/);
+  assert.equal(r.out, "");
+  const c = await cli("create", "--title=spaced", "--project", "bm");
+  assert.equal(c.code, 1);
+  assert.match(c.err, /--project="bm"/);
+  assert.equal((await api("GET", "/api/w/t/tasks")).body.length, before);
+});
+
+test("note --agent tags the note and keeps the owner; update --agent reassigns", async () => {
+  const t = (await create({ project: "bm", agent: "claude" })).body;
+  const n = await cli("note", t.id, "just a comment", "--agent=codex");
+  assert.equal(n.code, 0);
+  let row = (await api("GET", `/api/w/t/tasks/${t.id}`)).body;
+  assert.equal(row.agent, "claude");
+  assert.match(row.notes, /· codex\] just a comment$/);
+
+  const r = await rpc("tools/call", { name: "add_task_note", arguments: { workspace: "t", taskId: t.id, note: "from mcp", agent: "gemini" } });
+  assert.ok(!r.isError);
+  row = (await api("GET", `/api/w/t/tasks/${t.id}`)).body;
+  assert.equal(row.agent, "claude");
+  assert.match(row.notes, /· gemini\] from mcp$/);
+
+  assert.equal((await cli("update", t.id, "--agent=codex")).code, 0);
+  row = (await api("GET", `/api/w/t/tasks/${t.id}`)).body;
+  assert.equal(row.agent, "codex");
+  assert.match(row.notes, /agent: claude → codex$/);
+});
+
+test("CLI --confirm: bare, =true and =false read the same way everywhere; any other value is an error", async () => {
+  const t = (await create({ project: "bm" })).body;
+  const mark = () => api("PATCH", `/api/w/t/tasks/${t.id}`, { unconfirmed: "picked a project" });
+  const unconfirmed = async () => (await api("GET", `/api/w/t/tasks/${t.id}`)).body.unconfirmed;
+
+  await mark();
+  assert.equal((await cli("update", t.id, "--confirm=false")).code, 0);
+  assert.equal(await unconfirmed(), "picked a project");
+  assert.equal((await cli("update", t.id, "--confirm=true")).code, 0);
+  assert.equal(await unconfirmed(), null);
+  await mark();
+  assert.equal((await cli("update", t.id, "--confirm")).code, 0);
+  assert.equal(await unconfirmed(), null);
+
+  await mark();
+  const r = await cli("update", t.id, "--confirm=maybe");
+  assert.equal(r.code, 1);
+  assert.match(r.err, /--confirm is on or off: --confirm, --confirm=true or --confirm=false/);
+  assert.equal(await unconfirmed(), "picked a project");
+});
+
+test("an unknown workspace is a 404, never created by a read; workspace use checks the name (#22)", async () => {
+  const r = await api("GET", "/api/w/typo/tasks");
+  assert.equal(r.status, 404);
+  assert.equal(r.body.code, "unknown_workspace");
+  assert.match(r.body.error, /no workspace "typo" — workspaces: .*\bt\b/);
+  assert.equal((await api("POST", "/api/w/typo/tasks", { title: "x", project: "BM" })).status, 404);
+  assert.equal((await api("GET", "/api/w/typo/projects")).status, 404);
+  assert.ok(!(await api("GET", "/api/workspaces")).body.includes("typo"));
+  assert.ok(!fs.existsSync(path.join(dir, "workspaces", "typo")));
+  assert.equal((await api("GET", "/api/w/t/config")).status, 200); // global settings don't open a workspace
+  assert.equal((await api("POST", "/api/workspaces", { name: "typo" })).status, 201); // creating one still works
+  assert.equal((await api("GET", "/api/w/typo/tasks")).status, 200);
+
+  const run = (...argv) => new Promise((resolve) => {
+    const p = spawn(process.execPath, [path.join(src, "cli.js"), ...argv], { env: { ...process.env, AGENT_BOARD_URL: base, AGENT_BOARD_DIR: dir } });
+    let err = "";
+    p.stderr.on("data", (d) => (err += d));
+    p.on("exit", (code) => resolve({ code, err }));
+  });
+  const list = await run("list", "--workspace=nope");
+  assert.equal(list.code, 1);
+  assert.match(list.err, /404 no workspace "nope".*agent-board workspace create "nope"/);
+  const use = await run("workspace", "use", "ghost");
+  assert.equal(use.code, 1);
+  assert.match(use.err, /no workspace "ghost"/);
+  assert.ok(!fs.existsSync(path.join(dir, "current-workspace")), "a bad name isn't written");
 });

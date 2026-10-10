@@ -91,6 +91,39 @@ function initSchema(db) {
   if (!db.prepare("PRAGMA table_info(tasks)").all().some((c) => c.name === "unconfirmed")) {
     db.exec("ALTER TABLE tasks ADD COLUMN unconfirmed TEXT");
   }
+  // subtask lookups (a parent's progress, "has subtasks?" checks) on every read
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parentId)");
+
+  // added after release: the last ticket number handed out per prefix, so a number is never handed out
+  // twice. MAX(seq)+1 reused the highest number once its ticket was deleted, and an agent still holding
+  // that id then found a different ticket. Keyed by prefix (the id is "<prefix>-<n>", and a prefix can
+  // move between projects); rows are never deleted. Backfilled once, when the table is first created.
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'id_counters'").get()) {
+    db.transaction(() => {
+      db.exec("CREATE TABLE id_counters (prefix TEXT PRIMARY KEY, lastSeq INTEGER NOT NULL)");
+      const last = new Map();
+      const bump = (prefix, n) => { if (prefix && n > (last.get(prefix) || 0)) last.set(prefix, n); };
+      // ids keep their original prefix after a re-prefix, so count both what the ids say...
+      for (const { id } of db.prepare("SELECT id FROM tasks").all()) {
+        const m = /^(.*)-(\d+)$/.exec(id);
+        if (m) bump(m[1], Number(m[2]));
+      }
+      // ...and the per-prefix seq the old MAX(seq)+1 numbering continued from
+      for (const { projectPrefix, s } of db.prepare("SELECT projectPrefix, MAX(seq) AS s FROM tasks GROUP BY projectPrefix").all()) {
+        bump(projectPrefix, s);
+      }
+      const insert = db.prepare("INSERT INTO id_counters (prefix, lastSeq) VALUES (?, ?)");
+      for (const [prefix, n] of last) insert.run(prefix, n);
+    })();
+  }
+
+  // a ticket that moved to another project gets a new id there; its old ids stay here, pointing at the
+  // current one, so an agent still holding AB-5 reaches OPS-12 (and is told so). Always the latest id —
+  // a second move repoints every old id, never a chain. Deleted with the ticket.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_aliases (oldId TEXT PRIMARY KEY, taskId TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_task_aliases_task ON task_aliases(taskId);
+  `);
 }
 
 // global settings (every workspace), next to the workspaces dir. Read on every
@@ -114,16 +147,24 @@ export function setConfig(patch) {
 
 const connections = new Map();
 
-// lazily opens (or creates) a workspace's SQLite file, caches the connection
+// lazily opens a workspace's SQLite file, caches the connection
 // for the process lifetime — no pooling/eviction, a handful of open handles
-// costs nothing for a low-traffic local tool.
-export function getDb(workspaceName) {
+// costs nothing for a low-traffic local tool. Only `create` (createWorkspace)
+// and "default" make a new one: any other name that doesn't exist is a 404, so
+// a typo in --workspace= or a stale link no longer starts a new, empty board.
+export function getDb(workspaceName, { create = false } = {}) {
   const name = workspaceName || "default";
   if (connections.has(name)) return connections.get(name);
   requireValidWorkspaceName(name);
   const dir = path.join(workspacesDir, name);
+  if (!create && name !== "default" && !fs.existsSync(path.join(dir, "tasks.db"))) {
+    const err = new Error(`no workspace "${name}" — workspaces: ${listWorkspaces().join(", ")}`);
+    throw Object.assign(err, { status: 404, code: "unknown_workspace", input: name });
+  }
   fs.mkdirSync(dir, { recursive: true });
   const db = new Database(path.join(dir, "tasks.db"));
+  // parentId REFERENCES tasks(id) has to hold whatever SQLite build better-sqlite3 ships with
+  db.pragma("foreign_keys = ON");
   initSchema(db);
   if (name === "default") seedOnboarding(db);
   connections.set(name, db);
@@ -213,7 +254,7 @@ export function listWorkspaces() {
 
 export function createWorkspace(name) {
   requireValidWorkspaceName(name);
-  getDb(name); // opens + initializes schema as a side effect
+  getDb(name, { create: true }); // opens + initializes schema as a side effect
   return name;
 }
 
@@ -272,9 +313,6 @@ export function renameWorkspace(oldName, newName) {
   fs.renameSync(oldDir, newDir);
 }
 
-// ponytail: MAX(seq)+1 can reuse a number if the highest-seq row for that
-// prefix is ever deleted — upgrade to a persisted per-project counter if
-// that gap ever matters in practice.
 // shared by POST /projects and POST /tasks (newProjectPrefix) -> { project } or { status: 409, body }
 export function insertProject(db, name, prefix) {
   try {
@@ -319,19 +357,153 @@ export function parseAliases(v) {
   return [];
 }
 
+// numbers come from id_counters (never handed out twice, see initSchema). The skip over taken ids guards
+// against a counter that's behind its tickets, e.g. a prefix a renamed project used to own.
 export function createTask(db, task) {
   return db.transaction((task) => {
-    const { next } = db
-      .prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM tasks WHERE projectPrefix = ?")
-      .get(task.projectPrefix);
-    const id = `${task.projectPrefix}-${next}`;
+    const { id, seq } = takeNextId(db, task.projectPrefix);
     const now = Date.now();
     db.prepare(
       `INSERT INTO tasks (id, seq, title, project, projectPrefix, parentId, agent, priority, status, notes, worktree, branch, link, dueDate, unconfirmed, createdAt, updatedAt)
        VALUES (@id, @seq, @title, @project, @projectPrefix, @parentId, @agent, @priority, @status, @notes, @worktree, @branch, @link, @dueDate, @unconfirmed, @createdAt, @updatedAt)`
-    ).run({ unconfirmed: null, ...task, id, seq: next, createdAt: now, updatedAt: now });
-    return db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
+    ).run({ unconfirmed: null, ...task, id, seq, createdAt: now, updatedAt: now });
+    return getTask(db, id);
   })(task);
+}
+
+// the next id for a prefix, and bump its counter. Call inside a transaction. An id an old ticket left
+// behind (task_aliases) counts as taken too: it still leads to that ticket.
+function takeNextId(db, prefix) {
+  const counter = db.prepare("SELECT lastSeq FROM id_counters WHERE prefix = ?").get(prefix);
+  const taken = db.prepare("SELECT 1 FROM tasks WHERE id = ? UNION ALL SELECT 1 FROM task_aliases WHERE oldId = ?");
+  let seq = (counter ? counter.lastSeq : 0) + 1;
+  while (taken.get(`${prefix}-${seq}`, `${prefix}-${seq}`)) seq++;
+  db.prepare(
+    "INSERT INTO id_counters (prefix, lastSeq) VALUES (?, ?) ON CONFLICT(prefix) DO UPDATE SET lastSeq = excluded.lastSeq"
+  ).run(prefix, seq);
+  return { id: `${prefix}-${seq}`, seq };
+}
+
+// an id as given -> the ticket's current id: { id } for a live id, { id, movedFrom } for one a moved
+// ticket left behind, null for neither
+export function resolveTaskId(db, id) {
+  if (!id) return null;
+  if (db.prepare("SELECT 1 FROM tasks WHERE id = ?").get(id)) return { id };
+  const alias = db.prepare("SELECT taskId FROM task_aliases WHERE oldId = ?").get(id);
+  return alias ? { id: alias.taskId, movedFrom: id } : null;
+}
+
+export function movedHint(from, to) {
+  return `${from} is now ${to} (it moved projects) — use ${to} from now on.`;
+}
+
+// Move a ticket to another project: it gets a new id there, and its subtasks come along (new ids too,
+// still under it). Every old id keeps leading to the ticket (task_aliases), and each ticket's notes say
+// where it came from. A subtask moving alone leaves its parent first (detach). One transaction.
+// -> [{ from, to }], the ticket first
+export function moveTask(db, id, project, { detach = false, agent } = {}) {
+  return db.transaction(() => {
+    const task = db.prepare("SELECT id, project, parentId FROM tasks WHERE id = ?").get(id);
+    const ids = [task.id, ...subtaskIds(db, task.id)];
+    // ids change underneath the parentId foreign key: check it once, at commit, not mid-move
+    db.pragma("defer_foreign_keys = ON");
+    const moved = [];
+    const now = Date.now();
+    for (const from of ids) {
+      const { id: to, seq } = takeNextId(db, project.prefix);
+      db.prepare("UPDATE tasks SET id = ?, seq = ?, project = ?, projectPrefix = ?, updatedAt = ? WHERE id = ?")
+        .run(to, seq, project.name, project.prefix, now, from);
+      db.prepare("UPDATE tasks SET parentId = ? WHERE parentId = ?").run(to, from);
+      db.prepare("UPDATE task_aliases SET taskId = ? WHERE taskId = ?").run(to, from);
+      db.prepare("INSERT INTO task_aliases (oldId, taskId) VALUES (?, ?)").run(from, to);
+      moved.push({ from, to });
+    }
+    if (task.parentId && detach) {
+      db.prepare("UPDATE tasks SET parentId = NULL WHERE id = ?").run(moved[0].to);
+      appendNote(db, moved[0].to, `parentId: ${task.parentId} → –`, agent);
+    }
+    for (const { from, to } of moved) appendNote(db, to, `moved from ${from} (${task.project} → ${project.name})`, agent);
+    return moved;
+  })();
+}
+
+// a deleted ticket takes its old ids with it — they'd otherwise lead nowhere
+export function forgetTaskAliases(db, id) {
+  db.prepare("DELETE FROM task_aliases WHERE taskId = ?").run(id);
+}
+
+// a project's prefix changed: its new tickets continue after the old prefix's numbers, and the old
+// prefix keeps its counter, so a project that takes that prefix later can't reissue those ids
+export function carryIdCounter(db, fromPrefix, toPrefix) {
+  if (fromPrefix === toPrefix) return;
+  const from = db.prepare("SELECT lastSeq FROM id_counters WHERE prefix = ?").get(fromPrefix);
+  if (!from) return;
+  db.prepare(
+    "INSERT INTO id_counters (prefix, lastSeq) VALUES (?, ?) ON CONFLICT(prefix) DO UPDATE SET lastSeq = MAX(lastSeq, excluded.lastSeq)"
+  ).run(toPrefix, from.lastSeq);
+}
+
+// a task row plus its subtasks' progress. Computed on read, never stored, so it can't drift from the
+// subtasks themselves. Filter on t.<column> — the joined counts have a parentId column too.
+export const TASK_SELECT = `SELECT t.*, COALESCE(c.n, 0) AS subtaskCount, COALESCE(c.d, 0) AS subtasksDone
+  FROM tasks t LEFT JOIN (
+    SELECT parentId, COUNT(*) AS n, SUM(status = 'done') AS d FROM tasks WHERE parentId IS NOT NULL GROUP BY parentId
+  ) c ON c.parentId = t.id`;
+
+export function getTask(db, id) {
+  return db.prepare(`${TASK_SELECT} WHERE t.id = ?`).get(id);
+}
+
+export function subtaskIds(db, id) {
+  return db.prepare("SELECT id FROM tasks WHERE parentId = ? ORDER BY createdAt").all(id).map((r) => r.id);
+}
+
+// Tickets nest two levels: a parent can't itself be a subtask, a subtask can't have subtasks, and both
+// sit in the same project (a ticket changes project only by moving, subtasks along — see moveTask). task: { id? (absent when creating), project }.
+// -> { parent } or { status, body } — the cross-project case is left to the caller (POST asks, PATCH refuses).
+export function checkParent(db, task, givenParentId) {
+  const parentId = resolveTaskId(db, givenParentId)?.id || givenParentId; // an old id of a moved ticket works too
+  if (task.id && parentId === task.id) {
+    return { status: 400, body: { error: `${task.id} can't be its own parent`, code: "self_parent" } };
+  }
+  const parent = db.prepare("SELECT id, title, project, status, parentId FROM tasks WHERE id = ?").get(parentId);
+  if (!parent) {
+    return { status: 400, body: { error: `there's no task ${parentId} to be the parent — check the id`, code: "parent_not_found" } };
+  }
+  if (parent.parentId) {
+    return {
+      status: 409,
+      body: {
+        error: `${parentId} is itself a subtask of ${parent.parentId} — tasks nest two levels only; use ${parent.parentId} as the parent`,
+        code: "parent_is_subtask",
+        parentOf: parent.parentId,
+      },
+    };
+  }
+  if (task.id) {
+    const subtasks = subtaskIds(db, task.id);
+    if (subtasks.length) {
+      return {
+        status: 409,
+        body: {
+          error: `${task.id} has subtasks (${subtasks.join(", ")}), so it can't become a subtask — tasks nest two levels only`,
+          code: "has_subtasks",
+          subtasks,
+        },
+      };
+    }
+  }
+  return { parent };
+}
+
+// a subtask just went done or moved: if that leaves every subtask of its parent done while the parent
+// isn't, say so — the parent's status is never changed for it (moving it on is the user's call)
+export function allDoneHint(db, parentId) {
+  if (!parentId) return undefined;
+  const p = getTask(db, parentId);
+  if (!p || p.status === "done" || !p.subtaskCount || p.subtasksDone < p.subtaskCount) return undefined;
+  const n = p.subtaskCount;
+  return `${n === 1 ? "The only subtask" : `All ${n} subtasks`} of ${p.id} ${n === 1 ? "is" : "are"} done — ${p.id} is still ${p.status}; move it on when ready.`;
 }
 
 // used by the CLI/MCP `note` verb (append) — distinct from the "notes" PATCH
@@ -343,5 +515,5 @@ export function appendNote(db, id, text, agent) {
   if (!row) return null;
   const notes = row.notes ? `${row.notes}\n${line}` : line;
   db.prepare("UPDATE tasks SET notes = ?, updatedAt = ? WHERE id = ?").run(notes, Date.now(), id);
-  return db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
+  return getTask(db, id);
 }

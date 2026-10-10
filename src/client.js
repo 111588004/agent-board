@@ -3,8 +3,17 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 const BASE = process.env.AGENT_BOARD_URL || "http://localhost:4317";
+
+// the server's own HTTP /mcp runs these same calls, and they must reach that server — not whatever
+// AGENT_BOARD_URL (or :4317) names in its environment. withBase(url, fn) points every call made
+// while fn runs at url; the CLI and stdio MCP never use it.
+const baseOverride = new AsyncLocalStorage();
+export function withBase(url, fn) {
+  return baseOverride.run(url, fn);
+}
 
 const baseDir = process.env.AGENT_BOARD_DIR || path.join(os.homedir(), ".agent-board");
 const currentWorkspaceFile = path.join(baseDir, "current-workspace");
@@ -30,18 +39,27 @@ export function setCurrentWorkspace(name) {
 }
 
 export async function apiRequest(method, path, body) {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${baseOverride.getStore() || BASE}${path}`, {
     method,
     headers: body ? { "content-type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  // a body that isn't JSON (an old server's HTML error page) still carries the status: with no status,
+  // the CLI would report "can't reach the server" about a server that answered
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    if (res.ok) throw Object.assign(new Error(`unexpected response from the server: ${text.slice(0, 80)}`), { status: res.status });
+  }
   if (!res.ok) {
-    const err = new Error((data && data.error) || res.statusText);
+    const err = new Error((data && data.error) || `${res.status} ${res.statusText}`);
     err.status = res.status;
     err.code = data && data.code;
     err.input = data && data.input;
+    err.subtasks = data && data.subtasks;
+    err.parentId = data && data.parentId;
     if (err.code === "needs_input") Object.assign(err, { question: data.question, options: data.options, answerArg: data.answerArg });
     throw err;
   }
@@ -50,11 +68,30 @@ export async function apiRequest(method, path, body) {
 
 // REST errors are caller-neutral; each front end appends its own next step.
 export function errorWithHint(e, surface) {
-  if (e.code !== "unknown_project") return e.message;
-  const name = e.input || "<name>";
-  return surface === "cli"
-    ? `${e.message} New project: agent-board project create "${name}" --prefix=<PREFIX>`
-    : `${e.message} New project: use the create_project tool (name, prefix).`;
+  const cli = surface === "cli";
+  if (e.code === "unknown_project") {
+    const name = e.input || "<name>";
+    return cli
+      ? `${e.message} New project: agent-board project create "${name}" --prefix=<PREFIX>`
+      : `${e.message} New project: use the create_project tool (name, prefix).`;
+  }
+  if (e.code === "unknown_workspace") {
+    return cli
+      ? `${e.message}. New workspace: agent-board workspace create "${e.input}" — or fix --workspace= / AGENT_BOARD_WORKSPACE / agent-board workspace use`
+      : `${e.message}. Use one of those, or omit workspace; creating a workspace is the user's call (agent-board workspace create).`;
+  }
+  if (e.code === "is_subtask" && e.parentId) {
+    return cli
+      ? `${e.message}. Move the parent: agent-board move ${e.parentId} --project=<name> — or this one alone: add --detach`
+      : `${e.message}. Move the parent: move_task with taskId ${e.parentId} — or this one alone: detach true.`;
+  }
+  if (e.code === "has_subtasks" && e.subtasks?.length) {
+    const first = e.subtasks[0];
+    return cli
+      ? `${e.message} Detach one: agent-board update ${first} --parent=none`
+      : `${e.message} Detach one: update_task with taskId ${first} and parentId null.`;
+  }
+  return e.message;
 }
 
 // global settings (every workspace) live on the server: ask = on | new | off
@@ -105,6 +142,11 @@ export function createTask({ workspace, ...task }) {
 
 export function updateTask(id, { workspace, ...patch } = {}) {
   return apiRequest("PATCH", `${workspacePath(workspace)}/tasks/${id}`, patch);
+}
+
+// to another project: a new id there, subtasks along, old ids keep working (POST /tasks/:id/move)
+export function moveTask(id, { workspace, ...body } = {}) {
+  return apiRequest("POST", `${workspacePath(workspace)}/tasks/${id}/move`, body);
 }
 
 export function deleteTask(id, { workspace } = {}) {

@@ -6,6 +6,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import tasksRouter from "./routes/tasks.js";
 import projectsRouter from "./routes/projects.js";
 import { createMcpServer } from "./mcp/tools.js";
+import { withBase } from "./client.js";
 import { getDb, listWorkspaces, createWorkspace, deleteWorkspace, renameWorkspace, getConfig, setConfig, ASK_MODES } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -84,7 +85,7 @@ function withWorkspace(explicitName) {
       req.db = getDb(explicitName || req.params.workspace);
       next();
     } catch (e) {
-      res.status(e.status || 500).json({ error: e.message });
+      res.status(e.status || 500).json({ error: e.message, code: e.code, input: e.input });
     }
   };
 }
@@ -97,12 +98,16 @@ app.use("/api/projects", withWorkspace("default"), projectsRouter);
 // MCP — http transport (not stdio), so multiple agent sessions can share
 // this one server instance. Stateless: no session to track between
 // requests, so each call gets its own short-lived server+transport pair.
+// The tools are REST clients (mcp/tools.js); they call back into this server through the address
+// the request came in on, not AGENT_BOARD_URL — that names whichever server the CLI uses, often another one.
 app.post("/mcp", async (req, res) => {
   try {
     const mcpServer = createMcpServer();
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     await mcpServer.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    const { localAddress, localPort } = req.socket;
+    const self = `http://${localAddress.includes(":") ? `[${localAddress}]` : localAddress}:${localPort}`;
+    await withBase(self, () => transport.handleRequest(req, res, req.body));
     res.on("close", () => {
       transport.close();
       mcpServer.close();
@@ -121,8 +126,31 @@ app.delete("/mcp", (req, res) => {
   res.status(405).json({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed." }, id: null });
 });
 
+// an /api path no route matched: JSON like every other API answer, not express's HTML page
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: `no such endpoint: ${req.method} ${req.originalUrl}`, code: "not_found" });
+});
+
 // serves the built web UI (npm run build in web/) — 404s harmlessly until built
 app.use(express.static(path.join(__dirname, "../web/dist")));
+
+// anything a route threw: JSON, never express's HTML error page — the clients read error bodies as
+// JSON, and an HTML 500 used to reach the CLI as "can't reach the server". Malformed JSON bodies are
+// the caller's 400; a foreign-key failure (a rule a route didn't catch) is a 409 conflict, not a crash.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  let status = err.status || err.statusCode || 500;
+  let code = typeof err.code === "string" ? err.code : undefined;
+  if (err.type === "entity.parse.failed") {
+    status = 400;
+    code = "bad_json";
+  } else if (code === "SQLITE_CONSTRAINT_FOREIGNKEY") {
+    status = 409;
+    code = "foreign_key";
+  }
+  if (status >= 500) console.error(err);
+  res.status(status).json({ error: status >= 500 ? `internal error: ${err.message}` : err.message, code });
+});
 
 // dev and npm default to different ports so both can run at once and be
 // compared directly — no more "stop one to test the other." PORT still wins

@@ -13,6 +13,14 @@ function json(value) {
   return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
 }
 
+// a task result; the server's hint (e.g. "all subtasks of AB-4 are done") goes first, on its own,
+// where an agent reads it instead of finding it inside the JSON
+function taskResult(task) {
+  const result = json(task);
+  if (task && task.hint) result.content.unshift({ type: "text", text: `Note: ${task.hint}` });
+  return result;
+}
+
 // needs_input (and asking is on): not an error — tell the agent to ask the user and retry.
 function toolError(e, name) {
   if (e.code === "needs_input") {
@@ -36,6 +44,7 @@ export const INSTRUCTIONS = [
   "A result starting with NEEDS USER INPUT means the board can't tell what the user wants (several projects match, the project doesn't exist yet, no title). Ask the user that question with your built-in ask tool (Claude Code: AskUserQuestion, Codex: request_user_input, Gemini: ask_user; none -> ask in chat), then call the same tool again with the chosen option's args. Never pick an option yourself.",
   "Ticket prefixes are the user's call: never invent one — omit prefix (create_project) and the board asks.",
   "Whether the board asks is the user's setting (set_ask_mode: on | new | off) — change it only when the user explicitly tells you to. A ticket with an \"unconfirmed\" field was auto-picked by the board; mention it to the user.",
+  "Subtasks: to split work across agents or sessions, make one parent ticket that coordinates it and one subtask per agent (create_task with parentId; the project comes from the parent). Two levels only — a subtask can't have subtasks. A parent's status never changes by itself: when a result says all its subtasks are done, tell the user or move the parent on. A ticket with subtasks can't be deleted; delete or detach them first (update_task parentId null). Ids can change: move_task renumbers a ticket into another project; an old id still works, but when a result says \"X is now Y\", use Y from then on.",
 ].join("\n");
 
 export function createMcpServer({ notice } = {}) {
@@ -59,7 +68,7 @@ export function createMcpServer({ notice } = {}) {
   tool(
     "list_tasks",
     {
-      description: "List tasks on the board. Always call this fresh before acting — the board can change between turns.",
+      description: "List tasks on the board. Always call this fresh before acting — the board can change between turns. Each task has parentId (null unless it's a subtask) and subtaskCount / subtasksDone (its subtasks' progress).",
       inputSchema: {
         project: z.string().optional().describe(`Filter to one project's tasks. ${PROJECT_DESC}`),
         status: z.string().optional().describe(STATUS_DESC),
@@ -78,13 +87,13 @@ export function createMcpServer({ notice } = {}) {
       description: "Create a new task on the board (or a subtask, if parentId is given). One call is enough — if the project is ambiguous or doesn't exist yet, the result asks you to check with the user.",
       inputSchema: {
         title: z.string().optional().describe("Short title — omit only if you truly don't know it; the board will ask the user"),
-        project: z.string().describe(PROJECT_DESC),
+        project: z.string().optional().describe(`${PROJECT_DESC}. Required unless parentId is given — a subtask goes in its parent's project`),
         newProjectPrefix: z.string().optional().describe("Only from a NEEDS USER INPUT option the user chose: creates the project with this prefix in the same call. Never invent one"),
         rememberAs: z.string().optional().describe("Only from a NEEDS USER INPUT option the user chose: copy it unchanged — the board remembers what the user meant by that word"),
         agent: z.string().optional().describe("Your agent id, e.g. claude, codex, opencode, gemini, pi — omit to leave unassigned"),
         priority: z.string().optional().describe(`${PRIORITY_DESC}. Defaults to med`),
         status: z.string().optional().describe(`${STATUS_DESC}. Defaults to backlog`),
-        parentId: z.string().optional().describe("Ticket id of the parent task, to create this as a subtask"),
+        parentId: z.string().optional().describe("Ticket id of the parent task, to create this as a subtask. The parent can't itself be a subtask (two levels only)"),
         dueDate: z.string().optional().describe("ISO date, e.g. 2026-03-05"),
         worktree: z.string().optional().describe("Filesystem path of the git worktree this task is being worked in"),
         branch: z.string().optional().describe("Git branch name"),
@@ -94,7 +103,7 @@ export function createMcpServer({ notice } = {}) {
       },
     },
     async ({ title, project, newProjectPrefix, rememberAs, agent, priority, status, parentId, dueDate, worktree, branch, link, notes, workspace }) => {
-      return json(
+      return taskResult(
         await client.createTask({ title, project, newProjectPrefix, rememberAs, agent, priority, status, parentId, dueDate, worktree, branch, link, notes, workspace })
       );
     }
@@ -116,12 +125,15 @@ export function createMcpServer({ notice } = {}) {
         dueDate: z.string().optional().describe("ISO date, e.g. 2026-03-05"),
         notes: z.string().optional().describe("Full description overwrite, markdown — headings, bold, `code`, bullet/numbered lists, [links](url), ![images](url) all render"),
         confirm: z.boolean().optional().describe("true clears the board's \"unconfirmed\" mark — only after the user has confirmed the auto-picked choice"),
+        parentId: z.string().nullable().optional().describe("Move this task under another parent (a ticket id in the same project), or null to detach it. Two levels only: the parent can't be a subtask, and a task with subtasks can't get a parent"),
         workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
-    async ({ taskId, status, priority, agent, title, worktree, branch, link, dueDate, notes, confirm, workspace }) => {
-      return json(
-        await client.updateTask(taskId, { status, priority, agent, title, worktree, branch, link, dueDate, notes, workspace, ...(confirm && { unconfirmed: null }) })
+    async ({ taskId, status, priority, agent, title, worktree, branch, link, dueDate, notes, confirm, parentId, workspace }) => {
+      // "none" / "" read as detach too — what an agent writes when it means "no parent"
+      const parent = parentId === undefined ? {} : { parentId: parentId && parentId.trim().toLowerCase() !== "none" ? parentId.trim() : null };
+      return taskResult(
+        await client.updateTask(taskId, { status, priority, agent, title, worktree, branch, link, dueDate, notes, workspace, ...parent, ...(confirm && { unconfirmed: null }) })
       );
     }
   );
@@ -133,19 +145,19 @@ export function createMcpServer({ notice } = {}) {
       inputSchema: {
         taskId: z.string(),
         note: z.string(),
-        agent: z.string().optional().describe("Your agent id, e.g. claude"),
+        agent: z.string().optional().describe("Your agent id, e.g. claude — tags the note; the ticket's owner stays as it is"),
         workspace: z.string().optional().describe(WORKSPACE_DESC),
       },
     },
     async ({ taskId, note, agent, workspace }) => {
-      return json(await client.updateTask(taskId, { note, agent, workspace }));
+      return taskResult(await client.updateTask(taskId, { note, noteAgent: agent, workspace }));
     }
   );
 
   tool(
     "delete_task",
     {
-      description: "Permanently delete a task. This can't be undone — prefer moving it to \"done\" via update_task unless it genuinely shouldn't exist (e.g. created by mistake).",
+      description: "Permanently delete a task. This can't be undone — prefer moving it to \"done\" via update_task unless it genuinely shouldn't exist (e.g. created by mistake). Fails for a task that has subtasks; the error lists them — delete them or detach them (update_task parentId null) first, and don't do either without the user's go-ahead.",
       inputSchema: {
         taskId: z.string(),
         workspace: z.string().optional().describe(WORKSPACE_DESC),
@@ -154,6 +166,25 @@ export function createMcpServer({ notice } = {}) {
     async ({ taskId, workspace }) => {
       await client.deleteTask(taskId, { workspace });
       return json({ deleted: taskId });
+    }
+  );
+
+  tool(
+    "move_task",
+    {
+      description: "Move a task to another project — only when the user asks for it. It gets a new id there (e.g. AB-5 → OPS-12) and its subtasks come along with new ids too; the result lists every old → new id. Old ids keep working, but use the new ones from then on. A subtask can't move alone unless detach is true, which takes it out of its parent — ask the user first. If the project is unclear or doesn't exist, the result asks you to check with the user.",
+      inputSchema: {
+        taskId: z.string(),
+        project: z.string().describe(`The project to move it to. ${PROJECT_DESC}`),
+        newProjectPrefix: z.string().optional().describe("Only from a NEEDS USER INPUT option the user chose: creates the project with this prefix in the same call. Never invent one"),
+        rememberAs: z.string().optional().describe("Only from a NEEDS USER INPUT option the user chose: copy it unchanged"),
+        detach: z.boolean().optional().describe("true moves a subtask alone, taking it out of its parent — only with the user's go-ahead"),
+        agent: z.string().optional().describe("Your agent id, e.g. claude — tags the history line"),
+        workspace: z.string().optional().describe(WORKSPACE_DESC),
+      },
+    },
+    async ({ taskId, project, newProjectPrefix, rememberAs, detach, agent, workspace }) => {
+      return taskResult(await client.moveTask(taskId, { project, newProjectPrefix, rememberAs, detach, agent, workspace }));
     }
   );
 
